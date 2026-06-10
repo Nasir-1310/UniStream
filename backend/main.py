@@ -8,6 +8,9 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from typing import Optional
 from pathlib import Path
+import requests
+from fastapi.responses import StreamingResponse
+from urllib.parse import quote
 
 # Absolute path setup for Windows .env loader
 backend_dir = Path(__file__).resolve().parent
@@ -65,7 +68,8 @@ def normalize(identifier: str) -> str:
 
 
 def get_user(identifier: str):
-    resp = supabase.table("users").select("*").eq("identifier", normalize(identifier)).execute()
+    resp = supabase.table("users").select(
+        "*").eq("identifier", normalize(identifier)).execute()
     if resp.data:
         return resp.data[0]
     return None
@@ -103,9 +107,8 @@ def _parse_formats(formats: list, info: dict) -> list:
         height = f.get("height")
         if not height:
             continue
-        
-        vcodec = f.get("vcodec", "none")
-        # Ensure we capture combined streams or video-only formats appropriately
+
+        vcodec = f.get("vcodec")
         if vcodec == "none" or vcodec is None:
             continue
 
@@ -115,7 +118,11 @@ def _parse_formats(formats: list, info: dict) -> list:
         seen_heights.add(h)
 
         label, icon = PRIORITY.get(h, (f"{h}p", "📹"))
+        # ডিফল্ট এক্সটেনশন সবসময় mp4 বা webm নিশ্চিত করা
         ext = f.get("ext", "mp4")
+        if ext not in ("mp4", "webm"):
+            ext = "mp4"
+
         filesize = f.get("filesize") or f.get("filesize_approx")
 
         video_options.append({
@@ -124,19 +131,20 @@ def _parse_formats(formats: list, info: dict) -> list:
             "label": label,
             "icon": icon,
             "resolution": f"{height}p",
-            "ext": ext if ext in ("mp4", "webm") else "mp4",
+            "ext": ext,
             "filesize_bytes": filesize,
             "filesize_human": _human_size(filesize),
         })
 
     # Sort resolutions descending
-    video_options.sort(key=lambda x: int(x["resolution"].replace("p", "")), reverse=True)
+    video_options.sort(key=lambda x: int(
+        x["resolution"].replace("p", "")), reverse=True)
 
     # Extract best audio-only (MP3) Option
     best_audio = None
     best_abr = 0
     for f in formats:
-        vcodec = f.get("vcodec", "")
+        vcodec = f.get("vcodec")
         acodec = f.get("acodec", "none")
         if (vcodec == "none" or not vcodec) and acodec != "none":
             abr = f.get("abr") or 0
@@ -149,7 +157,7 @@ def _parse_formats(formats: list, info: dict) -> list:
         video_options.append({
             "type": "audio",
             "format_id": best_audio["format_id"],
-            "label": f"MP3 Audio ({abr_val}kbps)",
+            "label": f"MP3 Audio Only",
             "icon": "🎵",
             "resolution": f"{abr_val}kbps",
             "ext": "mp3",
@@ -202,7 +210,8 @@ def video_info(body: VideoInfoRequest):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(body.url, download=False)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"ভিডিও তথ্য পাওয়া যায়নি: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"ভিডিও তথ্য পাওয়া যায়নি: {str(e)}")
 
     formats = info.get("formats", [])
     result = _parse_formats(formats, info)
@@ -234,7 +243,7 @@ def get_download_url(url: str, format_id: str, identifier: str, ext: str = "mp4"
     if ext == "mp3":
         target_format = "bestaudio/best"
     else:
-        target_format = f"{format_id}/best"
+        target_format = f"{format_id}+bestaudio/bestvideo+bestaudio/best"
 
     ydl_opts = {
         "quiet": True,
@@ -256,15 +265,41 @@ def get_download_url(url: str, format_id: str, identifier: str, ext: str = "mp4"
             if not direct_url:
                 direct_url = info.get("url") or info.get("webpage_url")
 
+        if not direct_url:
+            raise HTTPException(
+                status_code=400, detail="ডাউনলোড ইউআরএল পাওয়া যায়নি")
+
+        # ── CORS এবং Direct Download ফিক্সের আসল ট্রিক ──
+        # থার্ড-পার্টি ইউআরএল থেকে ব্যাকএন্ড ডাটা স্ট্রিম করবে
+        response_headers = {
+            "no_warnings": "True",
+        }
+
+        req = requests.get(direct_url, stream=True, headers={
+                           "User-Agent": "Mozilla/5.0"})
+
+        video_title = info.get("title", "unistream_video")
+        # ফাইলের নামের স্পেশাল ক্যারেক্টার ক্লিন করা
+        clean_title = "".join(
+            c for c in video_title if c.isalnum() or c in (" ", "_", "-")).strip()
+        filename = f"{clean_title}.{ext}"
+
+        # ব্রাউজারকে বাধ্য করা ফাইলটি সরাসরি ডাউনলোড বক্সে পুশ করতে
+        return StreamingResponse(
+            req.iter_content(chunk_size=1024 * 1024),  # 1MB chunks
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    return {"download_url": direct_url, "ext": ext}
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # ADMIN ENDPOINTS (protected by X-Admin-Secret header)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @app.get("/admin/users", dependencies=[Depends(require_admin)])
 def admin_list_users(status: Optional[str] = None):
@@ -311,5 +346,6 @@ def admin_delete_user(identifier: str):
 
 @app.get("/admin/logs", dependencies=[Depends(require_admin)])
 def admin_download_logs(limit: int = 50):
-    resp = supabase.table("download_logs").select("*").order("created_at", desc=True).limit(limit).execute()
+    resp = supabase.table("download_logs").select(
+        "*").order("created_at", desc=True).limit(limit).execute()
     return {"logs": resp.data}

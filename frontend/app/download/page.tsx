@@ -32,7 +32,7 @@ export default function DownloadPage() {
 
   useEffect(() => {
     const id = sessionStorage.getItem('us_identifier')
-    const n  = sessionStorage.getItem('us_name')
+    const n = sessionStorage.getItem('us_name')
     if (!id) { router.push('/'); return }
     setIdentifier(id)
     setName(n || id)
@@ -63,22 +63,49 @@ export default function DownloadPage() {
   async function handleDownload(fmt: VideoFormat) {
     setDownloading(fmt.format_id)
     setDownloadSuccess(null)
+    setError('')
+
     try {
-      const res = await getDownloadUrl(url.trim(), fmt.format_id, identifier, fmt.ext)
-      // Open direct URL in new tab — browser handles download
-      const a = document.createElement('a')
-      a.href = res.download_url
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      a.click()
+      // ব্যাকএন্ডের ডিরেক্ট এপিআই ইউআরএল তৈরি করা
+      const backendBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const downloadApiUrl = `${backendBaseUrl}/download?url=${encodeURIComponent(url.trim())}&format_id=${fmt.format_id}&identifier=${identifier}&ext=${fmt.ext}`
+
+      // ১. ব্যাকএন্ডের স্ট্রিম রিকোয়েস্ট কল করা
+      const fileResponse = await fetch(downloadApiUrl)
+      if (!fileResponse.ok) throw new Error('সার্ভার থেকে ফাইল স্ট্রিম করতে ব্যর্থ হয়েছে।')
+
+      // ২. স্ট্রিমটিকে ব্লব-এ রূপান্তর করা
+      const fileBlob = await fileResponse.blob()
+      const blobUrl = window.URL.createObjectURL(fileBlob)
+
+      // ৩. ব্যাকএন্ডের পাঠানো Content-Disposition হেডার থেকে অরিজিনাল ফাইলের নাম নেওয়া (অপশনাল সেফটি)
+      const contentDisposition = fileResponse.headers.get('Content-Disposition')
+      let fileName = `unistream_${fmt.resolution}.${fmt.ext}`
+
+      if (contentDisposition && contentDisposition.includes("filename*=UTF-8''")) {
+        const parts = contentDisposition.split("filename*=UTF-8''")
+        if (parts[1]) fileName = decodeURIComponent(parts[1])
+      }
+
+      // ৪. ভার্চুয়াল ক্লিক দিয়ে ডিরেক্ট সেভ ট্রিগার করা
+      const downloadLink = document.createElement('a')
+      downloadLink.href = blobUrl
+      downloadLink.setAttribute('download', fileName)
+      document.body.appendChild(downloadLink)
+      downloadLink.click()
+
+      // ৫. ক্লিনআপ
+      document.body.removeChild(downloadLink)
+      window.URL.revokeObjectURL(blobUrl)
+
       setDownloadSuccess(fmt.format_id)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'ডাউনলোড লিংক পাওয়া যায়নি।')
+      console.error(err)
+      setError(err.message || 'ডাউনলোড সম্পূর্ণ করা যায়নি।')
     } finally {
       setDownloading(null)
     }
   }
-
   function handleReset() {
     setUrl('')
     setVideoInfo(null)
@@ -163,7 +190,7 @@ export default function DownloadPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {[1,2,3,4].map(i => <div key={i} className="h-12 rounded-lg shimmer" />)}
+              {[1, 2, 3, 4].map(i => <div key={i} className="h-12 rounded-lg shimmer" />)}
             </div>
           </div>
         )}

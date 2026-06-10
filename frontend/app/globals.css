@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body { background: #0f1117; }
+}
+
+@layer components {
+  .glass {
+    @apply bg-card/80 backdrop-blur border border-border rounded-xl;
+  }
+  .btn-primary {
+    @apply bg-brand-500 hover:bg-brand-400 text-white font-semibold
+           px-6 py-3 rounded-lg transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed
+           active:scale-95;
+  }
+  .btn-outline {
+    @apply border border-brand-500 text-brand-400 hover:bg-brand-500/10
+           font-medium px-4 py-2 rounded-lg transition-all duration-200;
+  }
+  .input-field {
+    @apply w-full bg-surface border border-border rounded-lg
+           px-4 py-3 text-white placeholder-gray-500
+           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/40
+           transition-all duration-200;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0f1117; }
+::-webkit-scrollbar-thumb { background: #21262d; border-radius: 3px; }
+
+/* Pulse animation for loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, #161b22 25%, #21262d 50%, #161b22 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}

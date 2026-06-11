@@ -1,4 +1,5 @@
 'use client'
+// frontend/app/admin/page.tsx
 import { useState, useEffect, useCallback } from 'react'
 import {
   adminListUsers, adminAddUser, adminUpdateStatus,
@@ -7,7 +8,8 @@ import {
 import {
   Shield, Plus, Trash2, CheckCircle2, XCircle,
   Clock, Loader2, AlertCircle, Users, Activity,
-  LogIn, Eye, EyeOff, RefreshCw, Search
+  LogIn, Eye, EyeOff, RefreshCw, Search, ExternalLink,
+  ChevronDown, UserCheck, UserX, Download
 } from 'lucide-react'
 
 interface User {
@@ -29,9 +31,45 @@ interface Log {
 }
 
 const STATUS_CONFIG = {
-  approved: { label: 'অ্যাপ্রুভড', color: 'text-brand-400', bg: 'bg-brand-500/10 border-brand-500/20', icon: <CheckCircle2 className="w-3 h-3" /> },
-  pending:  { label: 'পেন্ডিং',   color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20', icon: <Clock className="w-3 h-3" /> },
-  blocked:  { label: 'ব্লকড',     color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20',       icon: <XCircle className="w-3 h-3" /> },
+  approved: {
+    label: 'Approved',
+    textColor: 'text-emerald-400',
+    badgeBg: 'bg-emerald-500/10 border-emerald-500/25',
+    icon: <CheckCircle2 className="w-3 h-3" />,
+  },
+  pending: {
+    label: 'Pending',
+    textColor: 'text-amber-400',
+    badgeBg: 'bg-amber-500/10 border-amber-500/25',
+    icon: <Clock className="w-3 h-3" />,
+  },
+  blocked: {
+    label: 'Blocked',
+    textColor: 'text-red-400',
+    badgeBg: 'bg-red-500/10 border-red-500/25',
+    icon: <XCircle className="w-3 h-3" />,
+  },
+}
+
+// ── Reusable stat card ────────────────────────────────────────────────────────
+function StatCard({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div className="admin-card p-4 flex flex-col gap-1">
+      <span className={`text-3xl font-bold font-display ${color}`}>{value}</span>
+      <span className="text-xs text-gray-500 font-medium">{label}</span>
+    </div>
+  )
+}
+
+// ── Status badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: 'approved' | 'pending' | 'blocked' }) {
+  const sc = STATUS_CONFIG[status]
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${sc.badgeBg} ${sc.textColor}`}>
+      {sc.icon}
+      {sc.label}
+    </span>
+  )
 }
 
 export default function AdminPage() {
@@ -47,13 +85,11 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Add user form
   const [newId, setNewId] = useState('')
   const [newNote, setNewNote] = useState('')
   const [adding, setAdding] = useState(false)
   const [addSuccess, setAddSuccess] = useState('')
 
-  // Filter
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
 
@@ -73,9 +109,9 @@ export default function AdminPage() {
       if (e?.response?.status === 401) {
         setLoggedIn(false)
         setSecret('')
-        setError('সিক্রেট কী ভুল।')
+        setError('Invalid secret key. Please log in again.')
       } else {
-        setError('ডেটা লোড করা যায়নি।')
+        setError('Failed to load data. Please try again.')
       }
     } finally {
       setLoading(false)
@@ -100,12 +136,12 @@ export default function AdminPage() {
     setError('')
     try {
       await adminAddUser(secret, newId.trim(), newNote.trim() || undefined)
-      setAddSuccess(`"${newId.trim()}" অ্যাপ্রুভ করা হয়েছে!`)
+      setAddSuccess(`"${newId.trim()}" has been approved.`)
       setNewId('')
       setNewNote('')
       load()
     } catch (e: any) {
-      setError(e?.response?.data?.detail || 'ইউজার অ্যাড করা যায়নি।')
+      setError(e?.response?.data?.detail || 'Could not add user.')
     } finally {
       setAdding(false)
     }
@@ -115,15 +151,19 @@ export default function AdminPage() {
     try {
       await adminUpdateStatus(secret, identifier, status)
       load()
-    } catch { setError('স্ট্যাটাস আপডেট করা যায়নি।') }
+    } catch {
+      setError('Could not update status.')
+    }
   }
 
   async function handleDelete(identifier: string) {
-    if (!confirm(`"${identifier}" ডিলিট করতে চান?`)) return
+    if (!confirm(`Permanently delete "${identifier}"? This cannot be undone.`)) return
     try {
       await adminDeleteUser(secret, identifier)
       load()
-    } catch { setError('ডিলিট করা যায়নি।') }
+    } catch {
+      setError('Could not delete user.')
+    }
   }
 
   const filteredUsers = users.filter(u =>
@@ -131,248 +171,358 @@ export default function AdminPage() {
     (u.note || '').toLowerCase().includes(search.toLowerCase())
   )
 
-  // ── Login Screen ──
+  // ── Login screen ──────────────────────────────────────────────────────────
   if (!loggedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-sm glass p-6">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
-              <Shield className="w-4 h-4 text-white" />
+      <div className="min-h-screen flex items-center justify-center px-4 bg-[#0a0d14]">
+        {/* Ambient glow */}
+        <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full bg-brand-500/6 blur-[100px]" />
+        </div>
+
+        <div className="relative w-full max-w-sm">
+          {/* Logo mark */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-14 h-14 bg-brand-500 rounded-2xl flex items-center justify-center shadow-lg shadow-brand-500/30 mb-4">
+              <Shield className="w-7 h-7 text-white" strokeWidth={2} />
             </div>
-            <div>
-              <div className="font-bold text-white text-sm">Admin Panel</div>
-              <div className="text-xs text-gray-500">UniStream Saver</div>
-            </div>
+            <h1 className="text-xl font-bold text-white font-display">Admin Panel</h1>
+            <p className="text-sm text-gray-500 mt-1">UniStream Saver · Restricted Access</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Admin Secret Key</label>
-              <div className="relative">
-                <input
-                  type={showSecret ? 'text' : 'password'}
-                  value={secretInput}
-                  onChange={e => setSecretInput(e.target.value)}
-                  placeholder="আপনার সিক্রেট কী দিন"
-                  className="input-field pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret(!showSecret)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                >
-                  {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          <div className="admin-card p-7">
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">
+                  Admin Secret Key
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSecret ? 'text' : 'password'}
+                    value={secretInput}
+                    onChange={e => setSecretInput(e.target.value)}
+                    placeholder="Enter your secret key"
+                    className="input-field pr-11"
+                    autoFocus
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors p-1"
+                    tabIndex={-1}
+                    aria-label={showSecret ? 'Hide key' : 'Show key'}
+                  >
+                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {authError && (
+                  <p className="text-xs text-red-400 mt-2 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" /> {authError}
+                  </p>
+                )}
               </div>
-            </div>
-            {authError && <p className="text-xs text-red-400">{authError}</p>}
-            <button type="submit" className="btn-primary w-full flex items-center justify-center gap-2">
-              <LogIn className="w-4 h-4" /> লগইন
-            </button>
-          </form>
+
+              <button
+                type="submit"
+                className="btn-primary w-full flex items-center justify-center gap-2"
+                disabled={!secretInput.trim()}
+              >
+                <LogIn className="w-4 h-4" />
+                Sign in to Admin
+              </button>
+            </form>
+          </div>
+
+          <p className="text-center text-xs text-gray-700 mt-5">
+            This area is restricted to authorised university staff only.
+          </p>
         </div>
       </div>
     )
   }
 
-  // ── Admin Dashboard ──
+  // ── Dashboard ────────────────────────────────────────────────────────────
   const stats = {
     total: users.length,
     approved: users.filter(u => u.status === 'approved').length,
     pending: users.filter(u => u.status === 'pending').length,
+    blocked: users.filter(u => u.status === 'blocked').length,
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-border px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-brand-500" />
-          <span className="font-bold text-white text-sm">Admin Panel</span>
+    <div className="min-h-screen flex flex-col bg-[#0a0d14]">
+
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-20 border-b border-white/5 bg-[#0a0d14]/90 backdrop-blur-xl px-4 sm:px-6 py-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
+              <Shield className="w-4 h-4 text-white" strokeWidth={2} />
+            </div>
+            <div>
+              <span className="font-bold text-white text-sm font-display">Admin Panel</span>
+              <span className="hidden sm:inline text-gray-600 text-xs ml-2">UniStream Saver</span>
+            </div>
+          </div>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/8"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          রিফ্রেশ
-        </button>
       </header>
 
-      <main className="max-w-3xl mx-auto w-full px-4 py-6 space-y-5">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'মোট ইউজার', value: stats.total, color: 'text-white' },
-            { label: 'অ্যাপ্রুভড', value: stats.approved, color: 'text-brand-400' },
-            { label: 'পেন্ডিং', value: stats.pending, color: 'text-yellow-400' },
-          ].map(s => (
-            <div key={s.label} className="glass p-3 text-center">
-              <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
-            </div>
-          ))}
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+
+        {/* ── Stats ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard value={stats.total} label="Total users" color="text-white" />
+          <StatCard value={stats.approved} label="Approved" color="text-emerald-400" />
+          <StatCard value={stats.pending} label="Pending" color="text-amber-400" />
+          <StatCard value={stats.blocked} label="Blocked" color="text-red-400" />
         </div>
 
-        {/* Add User */}
-        <div className="glass p-4">
-          <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-brand-500" /> নতুন ইউজার অ্যাড করুন
-          </h2>
-          <form onSubmit={handleAddUser} className="space-y-2">
-            <div className="flex gap-2">
+        {/* ── Add User ── */}
+        <div className="admin-card p-5 sm:p-6">
+          <div className="flex items-center gap-2.5 mb-5">
+            <div className="w-8 h-8 bg-brand-500/15 rounded-lg flex items-center justify-center">
+              <UserCheck className="w-4 h-4 text-brand-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white font-display">Approve new user</h2>
+              <p className="text-xs text-gray-600 mt-0.5">Grant access by Gmail or phone number</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddUser} className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2.5">
               <input
                 type="text"
                 value={newId}
                 onChange={e => setNewId(e.target.value)}
-                placeholder="Gmail বা Phone Number"
+                placeholder="Gmail address or phone number"
                 className="input-field text-sm flex-1"
               />
               <input
                 type="text"
                 value={newNote}
                 onChange={e => setNewNote(e.target.value)}
-                placeholder="নোট (CSE B24)"
-                className="input-field text-sm w-32"
+                placeholder="Note, e.g. CSE B24"
+                className="input-field text-sm sm:w-44"
               />
             </div>
-            <button type="submit" disabled={adding || !newId.trim()} className="btn-primary text-sm flex items-center gap-1.5">
-              {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-              অ্যাপ্রুভ করুন
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={adding || !newId.trim()}
+                className="btn-primary flex items-center gap-2 text-sm"
+              >
+                {adding
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Plus className="w-3.5 h-3.5" />
+                }
+                {adding ? 'Approving…' : 'Approve user'}
+              </button>
+              {addSuccess && (
+                <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {addSuccess}
+                </p>
+              )}
+            </div>
           </form>
-          {addSuccess && <p className="text-xs text-brand-400 mt-2">✓ {addSuccess}</p>}
+
           {error && (
-            <div className="flex items-center gap-1.5 text-xs text-red-400 mt-2">
-              <AlertCircle className="w-3.5 h-3.5" /> {error}
+            <div className="mt-3 flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-lg px-3 py-2.5">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              {error}
             </div>
           )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-card border border-border rounded-lg p-1">
-          {([['users', 'ইউজার', <Users className="w-3.5 h-3.5" />], ['logs', 'লগ', <Activity className="w-3.5 h-3.5" />]] as const).map(([t, label, icon]) => (
+        {/* ── Tab bar ── */}
+        <div className="flex gap-1 bg-white/3 border border-white/6 rounded-xl p-1">
+          {([
+            ['users', 'Users', <Users className="w-3.5 h-3.5" />],
+            ['logs', 'Download logs', <Activity className="w-3.5 h-3.5" />],
+          ] as const).map(([t, label, icon]) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md text-xs font-medium transition-all ${
-                tab === t ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-white'
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                tab === t
+                  ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/30'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
               }`}
             >
-              {icon}{label}
+              {icon}
+              <span>{label}</span>
+              {t === 'users' && users.length > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  tab === t ? 'bg-white/20 text-white' : 'bg-white/8 text-gray-500'
+                }`}>
+                  {users.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
+        {/* ── Users tab ── */}
         {tab === 'users' && (
-          <>
+          <div className="space-y-4">
             {/* Filters */}
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2.5">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-600 pointer-events-none" />
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="ইউজার খুঁজুন..."
-                  className="input-field pl-8 text-sm py-2"
+                  placeholder="Search by identifier or note…"
+                  className="input-field pl-9 text-sm"
                 />
               </div>
-              <select
-                value={statusFilter}
-                onChange={e => { setStatusFilter(e.target.value); load() }}
-                className="input-field text-sm py-2 w-32"
-              >
-                <option value="">সব</option>
-                <option value="approved">অ্যাপ্রুভড</option>
-                <option value="pending">পেন্ডিং</option>
-                <option value="blocked">ব্লকড</option>
-              </select>
+              <div className="relative sm:w-44">
+                <select
+                  value={statusFilter}
+                  onChange={e => { setStatusFilter(e.target.value); load() }}
+                  className="input-field text-sm appearance-none pr-8 cursor-pointer"
+                >
+                  <option value="">All statuses</option>
+                  <option value="approved">Approved</option>
+                  <option value="pending">Pending</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+              </div>
             </div>
 
-            {/* User List */}
+            {/* User list */}
             {loading ? (
               <div className="space-y-2">
-                {[1,2,3].map(i => <div key={i} className="h-14 rounded-lg shimmer" />)}
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="h-[72px] rounded-xl shimmer" />
+                ))}
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="admin-card flex flex-col items-center justify-center py-16 text-center">
+                <Users className="w-8 h-8 text-gray-700 mb-3" />
+                <p className="text-sm font-medium text-gray-500">No users found</p>
+                <p className="text-xs text-gray-700 mt-1">
+                  {search || statusFilter ? 'Try adjusting your filters.' : 'Add the first approved user above.'}
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
-                {filteredUsers.length === 0 && (
-                  <div className="text-center py-8 text-gray-600 text-sm">কোনো ইউজার নেই</div>
-                )}
                 {filteredUsers.map(user => {
                   const sc = STATUS_CONFIG[user.status]
                   return (
-                    <div key={user.id} className="glass p-3 flex items-center gap-3">
-                      <div className={`badge border ${sc.bg} ${sc.color} flex-shrink-0`}>
-                        {sc.icon} {sc.label}
-                      </div>
+                    <div
+                      key={user.id}
+                      className="admin-card px-4 py-3.5 flex items-center gap-3 hover:border-white/10 transition-colors"
+                    >
+                      {/* Status badge */}
+                      <StatusBadge status={user.status} />
+
+                      {/* Identity */}
                       <div className="flex-1 min-w-0">
-                        <div className="text-white text-sm font-medium truncate">{user.identifier}</div>
-                        {user.note && <div className="text-xs text-gray-500 truncate">{user.note}</div>}
-                        <div className="text-xs text-gray-700">
-                          {new Date(user.created_at).toLocaleDateString('bn-BD')}
+                        <p className="text-white text-sm font-medium truncate leading-snug">
+                          {user.identifier}
+                        </p>
+                        <div className="flex items-center gap-2.5 mt-0.5">
+                          {user.note && (
+                            <span className="text-xs text-gray-500 truncate">{user.note}</span>
+                          )}
+                          <span className="text-xs text-gray-700">
+                            {new Date(user.created_at).toLocaleDateString('en-GB', {
+                              day: 'numeric', month: 'short', year: 'numeric',
+                            })}
+                          </span>
                         </div>
                       </div>
+
+                      {/* Actions */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {user.status !== 'approved' && (
-                          <button
+                          <ActionButton
                             onClick={() => handleStatus(user.identifier, 'approved')}
-                            title="অ্যাপ্রুভ"
-                            className="p-1.5 rounded hover:bg-brand-500/20 text-brand-500 transition-colors"
+                            label="Approve"
+                            className="text-emerald-500 hover:bg-emerald-500/15"
                           >
                             <CheckCircle2 className="w-4 h-4" />
-                          </button>
+                          </ActionButton>
                         )}
                         {user.status !== 'blocked' && (
-                          <button
+                          <ActionButton
                             onClick={() => handleStatus(user.identifier, 'blocked')}
-                            title="ব্লক"
-                            className="p-1.5 rounded hover:bg-red-500/20 text-red-500 transition-colors"
+                            label="Block"
+                            className="text-amber-500 hover:bg-amber-500/15"
                           >
-                            <XCircle className="w-4 h-4" />
-                          </button>
+                            <UserX className="w-4 h-4" />
+                          </ActionButton>
                         )}
-                        <button
+                        <ActionButton
                           onClick={() => handleDelete(user.identifier)}
-                          title="ডিলিট"
-                          className="p-1.5 rounded hover:bg-red-500/20 text-red-700 hover:text-red-400 transition-colors"
+                          label="Delete"
+                          className="text-red-600 hover:text-red-400 hover:bg-red-500/15"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </ActionButton>
                       </div>
                     </div>
                   )
                 })}
               </div>
             )}
-          </>
+
+            {/* Count footer */}
+            {!loading && filteredUsers.length > 0 && (
+              <p className="text-xs text-gray-700 text-center pt-1">
+                Showing {filteredUsers.length} of {users.length} users
+              </p>
+            )}
+          </div>
         )}
 
+        {/* ── Logs tab ── */}
         {tab === 'logs' && (
           <div className="space-y-2">
             {loading ? (
               <div className="space-y-2">
-                {[1,2,3].map(i => <div key={i} className="h-14 rounded-lg shimmer" />)}
+                {[1, 2, 3, 4, 5].map(i => (
+                  <div key={i} className="h-[72px] rounded-xl shimmer" />
+                ))}
               </div>
             ) : logs.length === 0 ? (
-              <div className="text-center py-8 text-gray-600 text-sm">কোনো লগ নেই</div>
+              <div className="admin-card flex flex-col items-center justify-center py-16 text-center">
+                <Download className="w-8 h-8 text-gray-700 mb-3" />
+                <p className="text-sm font-medium text-gray-500">No downloads yet</p>
+                <p className="text-xs text-gray-700 mt-1">Activity will appear here once users start downloading.</p>
+              </div>
             ) : (
               logs.map(log => (
-                <div key={log.id} className="glass p-3">
-                  <div className="flex items-start justify-between gap-2">
+                <div key={log.id} className="admin-card px-4 py-3.5 hover:border-white/10 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="text-white text-xs font-medium truncate">{log.title || 'Unknown'}</div>
-                      <div className="text-gray-500 text-xs truncate">{log.identifier}</div>
-                      <div className="flex gap-2 mt-1">
+                      <p className="text-white text-sm font-medium truncate leading-snug">
+                        {log.title || 'Untitled video'}
+                      </p>
+                      <p className="text-gray-500 text-xs truncate mt-0.5">{log.identifier}</p>
+                      <div className="flex items-center gap-2.5 mt-1.5">
                         {log.platform && (
-                          <span className="badge bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-500/10 text-brand-400 border border-brand-500/20">
                             {log.platform}
                           </span>
                         )}
                         <span className="text-xs text-gray-700">
-                          {new Date(log.created_at).toLocaleString('bn-BD')}
+                          {new Date(log.created_at).toLocaleString('en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit',
+                          })}
                         </span>
                       </div>
                     </div>
@@ -380,9 +530,11 @@ export default function AdminPage() {
                       href={log.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-gray-600 hover:text-brand-400 transition-colors flex-shrink-0"
+                      className="flex-shrink-0 p-2 rounded-lg text-gray-600 hover:text-brand-400 hover:bg-brand-500/10 transition-colors"
+                      title="Open video"
+                      aria-label="Open original video"
                     >
-                      <Activity className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   </div>
                 </div>
@@ -391,6 +543,35 @@ export default function AdminPage() {
           </div>
         )}
       </main>
+
+      {/* ── Footer ── */}
+      <footer className="border-t border-white/5 px-4 py-4 text-center text-xs text-gray-700">
+        UniStream Saver Admin · Authorised access only
+      </footer>
     </div>
+  )
+}
+
+// ── Tiny helper: icon action button ──────────────────────────────────────────
+function ActionButton({
+  onClick,
+  label,
+  className,
+  children,
+}: {
+  onClick: () => void
+  label: string
+  className: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`p-2 rounded-lg transition-colors ${className}`}
+    >
+      {children}
+    </button>
   )
 }

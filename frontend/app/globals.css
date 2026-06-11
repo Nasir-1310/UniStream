@@ -1,49 +1,259 @@
+/* frontend/app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Google Fonts: Space Grotesk (display) + Inter (body) ── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
 @layer base {
-  * { box-sizing: border-box; }
-  body { background: #0f1117; }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: #0a0d14;
+    color: #e2e8f0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100svh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  ::selection {
+    background: rgba(35, 165, 103, 0.35);
+    color: #fff;
+  }
 }
 
 @layer components {
+  /* ── Glass card ── */
   .glass {
-    @apply bg-card/80 backdrop-blur border border-border rounded-xl;
+    background: rgba(255, 255, 255, 0.035);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
   }
+
+  .glass:hover {
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+
+  /* ── Primary button ── */
   .btn-primary {
-    @apply bg-brand-500 hover:bg-brand-400 text-white font-semibold
-           px-6 py-3 rounded-lg transition-all duration-200
-           disabled:opacity-50 disabled:cursor-not-allowed
-           active:scale-95;
+    background: #23a567;
+    color: #ffffff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    letter-spacing: -0.01em;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.75rem;
+    border: none;
+    cursor: pointer;
+    transition: background 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
+    box-shadow: 0 0 0 0 rgba(35, 165, 103, 0);
+    display: inline-flex;
+    align-items: center;
   }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #1db368;
+    box-shadow: 0 4px 24px rgba(35, 165, 103, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+    box-shadow: none;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ── Outline button ── */
   .btn-outline {
-    @apply border border-brand-500 text-brand-400 hover:bg-brand-500/10
-           font-medium px-4 py-2 rounded-lg transition-all duration-200;
+    background: transparent;
+    color: #4ade80;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.5rem 1.125rem;
+    border-radius: 0.625rem;
+    border: 1px solid rgba(35, 165, 103, 0.4);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
   }
+
+  .btn-outline:hover {
+    background: rgba(35, 165, 103, 0.1);
+    border-color: rgba(35, 165, 103, 0.6);
+  }
+
+  /* ── Input field ── */
   .input-field {
-    @apply w-full bg-surface border border-border rounded-lg
-           px-4 py-3 text-white placeholder-gray-500
-           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/40
-           transition-all duration-200;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.75rem;
+    padding: 0.8125rem 1rem;
+    color: #f1f5f9;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
   }
+
+  .input-field::placeholder {
+    color: rgba(255, 255, 255, 0.22);
+    font-size: 0.875rem;
+  }
+
+  .input-field:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.055);
+  }
+
+  .input-field:focus {
+    border-color: #23a567;
+    box-shadow: 0 0 0 3px rgba(35, 165, 103, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .input-field:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ── Input validation states ── */
+  .input-valid {
+    border-color: rgba(52, 211, 153, 0.55) !important;
+    background: rgba(52, 211, 153, 0.04) !important;
+  }
+
+  .input-valid:focus {
+    border-color: rgba(52, 211, 153, 0.8) !important;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14) !important;
+  }
+
+  .input-error {
+    border-color: rgba(248, 113, 113, 0.55) !important;
+    background: rgba(248, 113, 113, 0.04) !important;
+  }
+
+  .input-error:focus {
+    border-color: rgba(248, 113, 113, 0.8) !important;
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.14) !important;
+  }
+
+  /* ── Badge ── */
   .badge {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+
+  .badge-brand {
+    background: rgba(35, 165, 103, 0.12);
+    color: #4ade80;
+    border: 1px solid rgba(35, 165, 103, 0.25);
   }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #0f1117; }
-::-webkit-scrollbar-thumb { background: #21262d; border-radius: 3px; }
-
-/* Pulse animation for loading */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
 }
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ── Shimmer skeleton loader ── */
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+
 .shimmer {
-  background: linear-gradient(90deg, #161b22 25%, #21262d 50%, #161b22 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 25%,
+    rgba(255,255,255,0.07) 50%,
+    rgba(255,255,255,0.03) 75%
+  );
+  background-size: 600px 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+/* ── Spin animation (for loader) ── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 0.75s linear infinite;
+}
+
+/* ── Fade-in on load ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up {
+  animation: fadeUp 0.45s ease both;
+}
+
+/* ── Accessibility: reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Focus visible ── */
+:focus-visible {
+  outline: 2px solid rgba(35, 165, 103, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
 }

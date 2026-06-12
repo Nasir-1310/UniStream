@@ -12,54 +12,62 @@ import {
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 
-/** Exactly: <word chars or dots>@gmail.com — case-insensitive */
-const GMAIL_RE = /^[a-zA-Z0-9]([a-zA-Z0-9._+\-]{0,62}[a-zA-Z0-9])?@gmail\.com$/i
+/**
+ * Standard email: local@domain.tld
+ * Accepts any domain (gmail, yahoo, university, corporate, etc.)
+ * Rules:
+ *  - local part: letters, digits, dots, plus, hyphen, underscore — no leading/trailing dot
+ *  - one @ symbol
+ *  - domain: at least one label, each label letters/digits/hyphens, no leading/trailing hyphen
+ *  - TLD: 2–24 letters
+ */
+const EMAIL_RE = /^[a-zA-Z0-9][a-zA-Z0-9._%+\-]{0,63}@[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,24}$/
 
 /**
  * Bangladesh mobile numbers:
  *  - Optionally starts with +880 or 880 (country code)
- *  - Then an 11-digit number starting with 01
+ *  - Then 01 followed by operator digit 3–9 and 8 more digits (11 digits total)
  *  - Operators: 013x, 014x, 015x, 016x, 017x, 018x, 019x
- *  - Spaces, dashes, dots between groups are accepted
  */
 const BD_PHONE_RE = /^(?:\+?880)?01[3-9]\d{8}$/
 
-type FieldType = 'gmail' | 'phone' | null
+type FieldType = 'email' | 'phone' | null
 
 interface ValidationResult {
   type: FieldType
   valid: boolean
-  /** Only set when the field has content but is invalid */
   hint: string
 }
 
 function validate(raw: string): ValidationResult {
-  const v = raw.trim().replace(/[\s\-.()\u00A0]/g, '') // strip spaces/dashes
+  const v = raw.trim()
 
   if (!v) return { type: null, valid: false, hint: '' }
 
-  // Looks like it's meant to be an email (contains @)
+  // Looks like an email (contains @)
   if (v.includes('@')) {
-    if (GMAIL_RE.test(v)) return { type: 'gmail', valid: true, hint: '' }
-    if (!v.includes('.')) return { type: 'gmail', valid: false, hint: 'Missing domain — did you mean @gmail.com?' }
-    if (!v.toLowerCase().endsWith('@gmail.com')) return { type: 'gmail', valid: false, hint: 'Only @gmail.com addresses are accepted.' }
-    return { type: 'gmail', valid: false, hint: 'Check your email address — something looks off.' }
+    if (EMAIL_RE.test(v)) return { type: 'email', valid: true, hint: '' }
+    const parts = v.split('@')
+    if (parts.length > 2)      return { type: 'email', valid: false, hint: 'Email address can only contain one @ symbol.' }
+    if (!parts[0])             return { type: 'email', valid: false, hint: 'Enter a username before the @ symbol.' }
+    if (!parts[1]?.includes('.')) return { type: 'email', valid: false, hint: 'Missing domain — e.g. @gmail.com or @iit.du.ac.bd' }
+    return { type: 'email', valid: false, hint: 'Invalid email address — check the format.' }
   }
 
-  // Looks like it's meant to be a phone number (all digits or starts with +)
+  // Looks like a phone number (starts with digit or +)
   if (/^[\d+]/.test(v)) {
     const digits = v.replace(/\D/g, '')
-    if (BD_PHONE_RE.test(v)) return { type: 'phone', valid: true, hint: '' }
-    if (digits.length < 11) return { type: 'phone', valid: false, hint: `Too short — Bangladeshi numbers need 11 digits (e.g. 01XXXXXXXXX).` }
-    if (digits.length > 13) return { type: 'phone', valid: false, hint: 'Too long — check your number.' }
-    if (!digits.replace(/^880/, '').startsWith('01')) return { type: 'phone', valid: false, hint: 'Number must start with 01 (e.g. 017XXXXXXXX).' }
+    if (BD_PHONE_RE.test(v))                              return { type: 'phone', valid: true,  hint: '' }
+    if (digits.length < 11)                               return { type: 'phone', valid: false, hint: 'Too short — needs 11 digits, e.g. 017XXXXXXXX.' }
+    if (digits.length > 13)                               return { type: 'phone', valid: false, hint: 'Too long — check your number.' }
+    if (!/^(?:\+?880)?01/.test(v))                        return { type: 'phone', valid: false, hint: 'Number must start with 01, e.g. 017XXXXXXXX.' }
     const op = parseInt(digits.replace(/^(?:880)?0?1/, '').charAt(0))
-    if (op < 3 || op > 9) return { type: 'phone', valid: false, hint: 'Unrecognised operator prefix — use 013–019.' }
+    if (isNaN(op) || op < 3 || op > 9)                   return { type: 'phone', valid: false, hint: 'Unrecognised operator — valid prefixes are 013–019.' }
     return { type: 'phone', valid: false, hint: 'Invalid number — use format 01XXXXXXXXX.' }
   }
 
-  // Ambiguous / neither
-  return { type: null, valid: false, hint: 'Enter a Gmail address or a Bangladeshi phone number (01XXXXXXXXX).' }
+  // Neither
+  return { type: null, valid: false, hint: 'Enter a valid email address or Bangladeshi phone number.' }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -230,7 +238,7 @@ export default function HomePage() {
                   <div className="relative">
                     {/* Detected-type icon on the left */}
                     <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                      {validation.type === 'gmail'
+                      {validation.type === 'email'
                         ? <Mail className="w-4 h-4 text-brand-400" />
                         : validation.type === 'phone'
                         ? <Phone className="w-4 h-4 text-brand-400" />
@@ -245,7 +253,7 @@ export default function HomePage() {
                       value={identifier}
                       onChange={e => handleChange(e.target.value)}
                       onBlur={() => setTouched(true)}
-                      placeholder="you@gmail.com  or  01XXXXXXXXX"
+                      placeholder="your@email.com  or  01XXXXXXXXX"
                       className={`${inputBorderClass} pl-10 pr-20`}
                       disabled={loading}
                       autoComplete="email"
@@ -286,24 +294,10 @@ export default function HomePage() {
                   {touched && validation.valid && (
                     <p className="mt-2 text-xs text-emerald-400 flex items-center gap-1.5 fade-up">
                       <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                      {validation.type === 'gmail' ? 'Valid Gmail address' : 'Valid Bangladeshi phone number'}
+                      {validation.type === 'email' ? 'Valid email address' : 'Valid Bangladeshi phone number'}
                     </p>
                   )}
                 </div>
-
-                {/* Accepted formats helper */}
-                {!touched && (
-                  <div className="flex gap-3">
-                    <div className="flex-1 flex items-center gap-2 bg-white/3 border border-white/6 rounded-lg px-3 py-2">
-                      <Mail className="w-3.5 h-3.5 text-gray-600 flex-shrink-0" />
-                      <span className="text-xs text-gray-600">you@gmail.com</span>
-                    </div>
-                    <div className="flex-1 flex items-center gap-2 bg-white/3 border border-white/6 rounded-lg px-3 py-2">
-                      <Phone className="w-3.5 h-3.5 text-gray-600 flex-shrink-0" />
-                      <span className="text-xs text-gray-600">01XXXXXXXXX</span>
-                    </div>
-                  </div>
-                )}
 
                 {/* Server-side error */}
                 {serverError && (

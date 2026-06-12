@@ -230,6 +230,21 @@
   animation: spin 0.75s linear infinite;
 }
 
+/* ── Indeterminate slide (merging bar) ── */
+@keyframes slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%);  }
+}
+
+/* ── Ping (live status dot) ── */
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+.animate-ping {
+  animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
 /* ── Fade-in on load ── */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }

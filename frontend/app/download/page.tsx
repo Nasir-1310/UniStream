@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { getVideoInfo, VideoInfo, VideoFormat } from '@/lib/api'
+import Navbar from '@/components/Navbar'
+import Footer from '@/components/Footer'
 import {
   Download, LogOut, Link2, Loader2, AlertCircle, CheckCircle2,
-  Film, Music, Clock, User, RefreshCw, XCircle, Play,
-  Clipboard, Shield, Zap, HardDrive, Timer, BarChart3,
-  Merge, FileDown, CircleCheck, TriangleAlert,
+  Film, Clock, RefreshCw, XCircle, Play, Clipboard,
+  CircleCheck, Eye, ThumbsUp, Calendar, Globe, Hash, Layers,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,15 +19,15 @@ type DlStatus = 'idle' | 'starting' | 'downloading' | 'merging' | 'complete' | '
 
 interface ProgressData {
   status:         DlStatus
-  percent:        number          // 0–100
-  speed:          string          // "4.2 MB/s"
-  eta:            string          // "01:23"
-  downloaded_fmt: string          // "42.1 MB"
-  total_fmt:      string          // "310.5 MB"
-  downloaded:     number          // bytes
-  total:          number | null   // bytes | null when unknown
-  token?:         string          // set on 'complete'
-  error?:         string          // set on 'error'
+  percent:        number
+  speed:          string
+  eta:            string
+  downloaded_fmt: string
+  total_fmt:      string
+  downloaded:     number
+  total:          number | null
+  token?:         string
+  error?:         string
 }
 
 type FormatDlState =
@@ -34,6 +35,8 @@ type FormatDlState =
   | { status: 'active'; progress: ProgressData }
   | { status: 'complete' }
   | { status: 'error'; message: string }
+
+type FormatFilter = 'all' | 'mp4' | 'webm' | 'mkv' | 'audio'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -47,339 +50,266 @@ function formatDuration(s: number): string {
     : `${m}:${String(sec).padStart(2, '0')}`
 }
 
-const PLATFORM_COLORS: Record<string, string> = {
-  YouTube:   'bg-red-500/15 text-red-400 border-red-500/25',
-  Facebook:  'bg-blue-500/15 text-blue-400 border-blue-500/25',
-  Instagram: 'bg-pink-500/15 text-pink-400 border-pink-500/25',
-  TikTok:    'bg-cyan-500/15 text-cyan-400 border-cyan-500/25',
+function formatViews(n: number): string {
+  if (!n) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
 }
 
-function PlatformBadge({ platform }: { platform: string }) {
-  const cls = PLATFORM_COLORS[platform] ?? 'bg-brand-500/15 text-brand-400 border-brand-500/25'
+const FORMAT_TAG_COLORS: Record<string, string> = {
+  mp4:  'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
+  webm: 'bg-teal-500/20 text-teal-300 border border-teal-500/30',
+  mkv:  'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+  m4a:  'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+  mp3:  'bg-pink-500/20 text-pink-300 border border-pink-500/30',
+  opus: 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30',
+}
+
+function ExtTag({ ext }: { ext: string }) {
+  const cls = FORMAT_TAG_COLORS[ext.toLowerCase()] ?? 'bg-white/10 text-gray-300 border border-white/15'
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>
-      {platform}
+    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${cls}`}>
+      {ext.toUpperCase()}
     </span>
   )
 }
 
+function QualityBadge({ label }: { label?: string }) {
+  if (!label) return null
+  const isBest = label === 'best'
+  const isRec  = label === 'recommended'
+  if (isBest) return (
+    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/25 whitespace-nowrap">
+      ★ Best
+    </span>
+  )
+  if (isRec) return (
+    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 whitespace-nowrap">
+      ★ Rec
+    </span>
+  )
+  return null
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// ProgressPanel  — the rich live progress UI shown while downloading
+// InlineProgress — expands below the row while/after downloading
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProgressPanel({
-  fmt,
-  progress,
-  onDismiss,
-}: {
-  fmt: VideoFormat
-  progress: ProgressData
-  onDismiss?: () => void
-}) {
+function InlineProgress({ progress }: { progress: ProgressData }) {
   const { status, percent, speed, eta, downloaded_fmt, total_fmt } = progress
-
-  const isActive   = status === 'downloading' || status === 'starting'
-  const isMerging  = status === 'merging'
   const isComplete = status === 'complete'
+  const isMerging  = status === 'merging'
   const isError    = status === 'error'
-
-  // Smooth animated percent (avoids jumps from 0→actual on first render)
   const displayPct = isComplete ? 100 : percent
 
-  // Status config
-  const statusConfig: Record<DlStatus, { label: string; color: string; pulse: boolean }> = {
-    idle:        { label: 'Waiting',    color: 'text-gray-400',    pulse: false },
-    starting:    { label: 'Starting…',  color: 'text-brand-400',   pulse: true  },
-    downloading: { label: 'Downloading',color: 'text-brand-400',   pulse: true  },
-    merging:     { label: 'Merging…',   color: 'text-purple-400',  pulse: true  },
-    complete:    { label: 'Complete',   color: 'text-emerald-400', pulse: false },
-    error:       { label: 'Failed',     color: 'text-red-400',     pulse: false },
-  }
-  const sc = statusConfig[status]
-
-  // Progress bar gradient
-  const barGradient = isComplete
-    ? 'from-emerald-500 to-emerald-400'
-    : isMerging
-    ? 'from-purple-500 to-violet-400'
-    : 'from-brand-500 to-emerald-400'
-
   return (
-    <div className={`dl-card p-5 space-y-4 transition-all duration-300 ${
-      isComplete ? 'border-emerald-500/25' : isError ? 'border-red-500/20' : 'border-brand-500/15'
-    }`}>
-      {/* ── Header row ── */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Format icon */}
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl ${
-            isComplete ? 'bg-emerald-500/15' : isError ? 'bg-red-500/10' : 'bg-brand-500/12'
-          }`}>
-            {fmt.icon}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-white truncate">{fmt.label}</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              {/* Pulse dot */}
-              {sc.pulse && (
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500" />
-                </span>
-              )}
-              <span className={`text-xs font-semibold ${sc.color}`}>{sc.label}</span>
-              {isActive && (
-                <span className="text-xs text-gray-600">· {fmt.ext.toUpperCase()}</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Percentage badge */}
-        <div className={`flex-shrink-0 text-right`}>
-          {isComplete ? (
-            <div className="w-9 h-9 rounded-full bg-emerald-500/15 flex items-center justify-center">
-              <CircleCheck className="w-5 h-5 text-emerald-400" />
-            </div>
-          ) : isError ? (
-            <div className="w-9 h-9 rounded-full bg-red-500/12 flex items-center justify-center">
-              <TriangleAlert className="w-5 h-5 text-red-400" />
-            </div>
-          ) : isMerging ? (
-            <div className="w-9 h-9 rounded-full bg-purple-500/12 flex items-center justify-center">
-              <Merge className="w-5 h-5 text-purple-400" />
-            </div>
-          ) : (
-            <div className="relative w-12 h-12 flex-shrink-0">
-              {/* Circular progress ring */}
-              <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
-                <circle cx="24" cy="24" r="20" fill="none" strokeWidth="3"
-                  className="stroke-white/8" />
-                <circle cx="24" cy="24" r="20" fill="none" strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 20}`}
-                  strokeDashoffset={`${2 * Math.PI * 20 * (1 - displayPct / 100)}`}
-                  className="stroke-brand-500 transition-[stroke-dashoffset] duration-500 ease-out" />
-              </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white">
-                {displayPct}%
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Progress bar ── */}
+    <div className="space-y-1.5">
+      {/* Bar */}
       {!isError && (
-        <div>
-          <div className="relative h-2 bg-white/6 rounded-full overflow-hidden">
-            {isMerging ? (
-              /* Indeterminate bar for merging */
-              <div className="absolute inset-y-0 w-1/2 rounded-full bg-gradient-to-r from-purple-500/0 via-purple-400 to-purple-500/0 animate-[slide_1.5s_ease-in-out_infinite]" />
-            ) : (
-              <div
-                className={`h-full rounded-full bg-gradient-to-r ${barGradient} transition-[width] duration-500 ease-out`}
-                style={{ width: `${displayPct}%` }}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Stats grid ── */}
-      {(isActive || isMerging || isComplete) && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-
-          {/* Speed */}
-          <StatPill
-            icon={<Zap className="w-3 h-3" />}
-            label="Speed"
-            value={isActive ? speed : '—'}
-            accent={isActive}
-          />
-
-          {/* ETA */}
-          <StatPill
-            icon={<Timer className="w-3 h-3" />}
-            label="ETA"
-            value={isComplete ? '00:00' : isMerging ? 'Processing' : eta}
-            accent={isActive}
-          />
-
-          {/* Downloaded */}
-          <StatPill
-            icon={<FileDown className="w-3 h-3" />}
-            label="Downloaded"
-            value={isComplete ? total_fmt : `${downloaded_fmt} / ${total_fmt}`}
-            accent={false}
-          />
-
-          {/* Progress % */}
-          <StatPill
-            icon={<BarChart3 className="w-3 h-3" />}
-            label="Progress"
-            value={isComplete ? '100%' : isMerging ? '99%' : `${displayPct}%`}
-            accent={isComplete}
-            accentColor={isComplete ? 'text-emerald-400' : undefined}
-          />
-        </div>
-      )}
-
-      {/* ── Error message ── */}
-      {isError && (
-        <div className="flex items-start gap-2.5 bg-red-500/8 border border-red-500/20 text-red-300 text-xs rounded-xl px-3.5 py-3">
-          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-          <span>{progress.error || 'Download failed. Please try again.'}</span>
-        </div>
-      )}
-
-      {/* ── Complete message ── */}
-      {isComplete && (
-        <div className="flex items-center gap-2.5 bg-emerald-500/8 border border-emerald-500/20 text-emerald-300 text-xs rounded-xl px-3.5 py-3">
-          <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-          <span>Your file is saved to your Downloads folder.</span>
-          {onDismiss && (
-            <button
-              onClick={onDismiss}
-              className="ml-auto text-emerald-500 hover:text-emerald-300 transition-colors text-xs font-medium"
-            >
-              Dismiss
-            </button>
+        <div className="relative h-1.5 rounded-full bg-white/6 overflow-hidden">
+          {isMerging ? (
+            <div className="absolute inset-y-0 w-1/2 rounded-full bg-gradient-to-r from-purple-500/0 via-purple-400 to-purple-500/0 animate-[slide_1.5s_ease-in-out_infinite]" />
+          ) : (
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+                isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-sky-400'
+              }`}
+              style={{ width: `${displayPct}%` }}
+            />
           )}
         </div>
       )}
-
-      {/* ── Merging info ── */}
-      {isMerging && (
-        <div className="flex items-center gap-2.5 bg-purple-500/8 border border-purple-500/20 text-purple-300 text-xs rounded-xl px-3.5 py-3">
-          <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
-          <span>Merging video and audio tracks — almost done…</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Small stat pill ───────────────────────────────────────────────────────────
-function StatPill({
-  icon, label, value, accent, accentColor,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  accent: boolean
-  accentColor?: string
-}) {
-  return (
-    <div className="bg-white/3 border border-white/6 rounded-xl px-3 py-2.5">
-      <div className={`flex items-center gap-1.5 mb-1 ${accent ? 'text-brand-400' : 'text-gray-600'}`}>
-        {icon}
-        <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+      {/* Stats */}
+      <div className="flex items-center gap-3 text-[11px] flex-wrap">
+        {isComplete ? (
+          <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+            <CheckCircle2 className="w-3 h-3" /> Saved to downloads
+          </span>
+        ) : isError ? (
+          <span className="flex items-center gap-1 text-red-400">
+            <AlertCircle className="w-3 h-3" /> {progress.error || 'Download failed'}
+          </span>
+        ) : isMerging ? (
+          <span className="flex items-center gap-1 text-purple-400">
+            <Loader2 className="w-3 h-3 animate-spin" /> Merging tracks…
+          </span>
+        ) : (
+          <>
+            <span className="text-gray-400 font-medium">{displayPct}%</span>
+            <span className="text-gray-500">{speed}</span>
+            <span className="text-gray-500">ETA {eta}</span>
+            <span className="text-gray-600">{downloaded_fmt} / {total_fmt}</span>
+          </>
+        )}
       </div>
-      <p className={`text-xs font-bold truncate ${accentColor ?? (accent ? 'text-brand-300' : 'text-gray-300')}`}>
-        {value}
-      </p>
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FormatButton  — compact card in the format grid
+// FormatRow — responsive: card on mobile, table row on sm+
 // ─────────────────────────────────────────────────────────────────────────────
 
-function FormatButton({
-  fmt,
-  dlState,
-  onDownload,
-  locked,
+function FormatRow({
+  fmt, dlState, onDownload, locked, qualityBadge,
 }: {
-  fmt:       VideoFormat
-  dlState:   FormatDlState
-  onDownload:(f: VideoFormat) => void
-  locked:    boolean
+  fmt:           VideoFormat
+  dlState:       FormatDlState
+  onDownload:    (f: VideoFormat) => void
+  locked:        boolean
+  qualityBadge?: string
 }) {
   const isActive   = dlState.status === 'active'
   const isComplete = dlState.status === 'complete'
   const isError    = dlState.status === 'error'
-  const isIdle     = dlState.status === 'idle'
-  const isDisabled = isActive || locked
+  const isDisabled = isActive || (locked && !isComplete && !isError)
+  const progress   = isActive ? dlState.progress : null
 
-  const progress = isActive ? dlState.progress : null
-  const pct      = progress?.percent ?? 0
+  // Download button — shared between mobile card + desktop row
+  const DownloadBtn = () => (
+    isActive ? (
+      <div className="flex items-center gap-1.5 text-indigo-400 text-xs font-medium whitespace-nowrap">
+        <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+        <span>{progress?.percent ?? 0}%</span>
+      </div>
+    ) : isComplete ? (
+      <div className="flex items-center gap-1 text-emerald-400 text-xs font-semibold whitespace-nowrap">
+        <CircleCheck className="w-4 h-4 flex-shrink-0" /> Done
+      </div>
+    ) : isError ? (
+      <button
+        onClick={() => onDownload(fmt)}
+        className="flex items-center gap-1 text-xs font-semibold text-red-400 hover:text-red-300 transition-colors whitespace-nowrap"
+      >
+        <RefreshCw className="w-3.5 h-3.5 flex-shrink-0" /> Retry
+      </button>
+    ) : (
+      <button
+        onClick={() => !isDisabled && onDownload(fmt)}
+        disabled={isDisabled}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap ${
+          locked
+            ? 'bg-white/5 text-gray-600 cursor-not-allowed'
+            : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-900/30 cursor-pointer active:scale-95'
+        }`}
+      >
+        <Download className="w-3 h-3 flex-shrink-0" />
+        Download
+      </button>
+    )
+  )
 
-  const containerCls = [
-    'relative overflow-hidden flex items-center gap-3 p-3.5 rounded-xl border',
-    'transition-all duration-200 text-left w-full group',
-    isComplete ? 'border-emerald-500/30 bg-emerald-500/8 cursor-default'
-    : isError   ? 'border-red-500/25 bg-red-500/6 cursor-pointer hover:border-red-500/40'
-    : isActive  ? 'border-brand-500/35 bg-brand-500/6 cursor-wait'
-    : locked    ? 'border-white/5 bg-white/2 opacity-35 cursor-not-allowed'
-    :             'border-white/8 bg-white/2 hover:border-brand-500/35 hover:bg-brand-500/6 cursor-pointer',
-  ].join(' ')
+  const rowBg = isActive ? 'bg-indigo-500/5' : isComplete ? 'bg-emerald-500/4' : isError ? 'bg-red-500/4' : 'hover:bg-white/3'
 
   return (
-    <button
-      onClick={() => !isDisabled && !isComplete && onDownload(fmt)}
-      disabled={isDisabled}
-      className={containerCls}
-      title={isError ? (dlState as any).message : undefined}
-    >
-      {/* Thin progress fill strip at the bottom */}
-      {isActive && (
-        <div
-          className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-brand-500 to-emerald-400 transition-[width] duration-500 ease-out pointer-events-none"
-          style={{ width: `${pct}%` }}
-          aria-hidden="true"
-        />
+    <div className={`group transition-colors duration-150 ${rowBg}`}>
+
+      {/* ── Mobile card layout (< sm) ── */}
+      <div className="sm:hidden flex items-center gap-3 px-3 py-3">
+        <ExtTag ext={fmt.ext} />
+        <div className="flex-1 min-w-0">
+          <p className={`text-[13px] font-semibold truncate leading-tight ${
+            isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
+          }`}>
+            {fmt.label}
+          </p>
+          <p className="text-[11px] text-gray-600 mt-0.5">
+            {fmt.resolution || ''}{fmt.resolution && fmt.filesize_human ? ' · ' : ''}{fmt.filesize_human || ''}
+          </p>
+        </div>
+        {/* Download button always visible on mobile */}
+        <div className="flex-shrink-0">
+          <DownloadBtn />
+        </div>
+      </div>
+
+      {/* ── Desktop table row layout (sm+) ── */}
+      <div className="hidden sm:grid grid-cols-[72px_1fr_120px_90px_80px_52px_110px] items-center gap-2 px-4 py-3">
+        <div><ExtTag ext={fmt.ext} /></div>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`text-sm font-semibold truncate ${
+            isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
+          }`}>
+            {fmt.label}
+          </span>
+          <QualityBadge label={qualityBadge} />
+        </div>
+        <div className="text-xs text-gray-500 font-mono truncate">{fmt.resolution || '—'}</div>
+        <div className="text-xs text-gray-400">{fmt.filesize_human || '—'}</div>
+        <div className="text-xs text-gray-500">{fmt.bitrate || '—'}</div>
+        <div className="text-xs text-gray-500">{fmt.fps || '—'}</div>
+        <div className="flex justify-end"><DownloadBtn /></div>
+      </div>
+
+      {/* Progress bar — spans full width on both layouts */}
+      {isActive && progress && (
+        <div className="px-3 sm:px-4 pb-3">
+          <InlineProgress progress={progress} />
+        </div>
       )}
+    </div>
+  )
+}
 
-      {/* Format emoji */}
-      <span className="relative text-2xl leading-none flex-shrink-0 select-none" aria-hidden="true">
-        {fmt.icon}
-      </span>
+// ─────────────────────────────────────────────────────────────────────────────
+// FormatSection — one group per container ext (MP4, WebM, …)
+// ─────────────────────────────────────────────────────────────────────────────
 
-      {/* Labels */}
-      <div className="relative flex-1 min-w-0">
-        <p className={`text-sm font-semibold truncate leading-tight ${
-          isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
-        }`}>
-          {fmt.label}
-        </p>
-        <p className={`text-xs mt-0.5 truncate ${
-          isActive    ? 'text-brand-400'
-          : isComplete ? 'text-emerald-500'
-          : isError    ? 'text-red-500'
-          :              'text-gray-500'
-        }`}>
-          {isActive
-            ? `${pct}% · ${progress?.speed ?? '…'}`
-            : isComplete
-            ? 'Saved to downloads'
-            : isError
-            ? 'Failed — tap to retry'
-            : `${fmt.filesize_human || ''} · ${fmt.ext.toUpperCase()}`}
-        </p>
+function FormatSection({
+  ext, formats, dlStates, onDownload, anyActive, activeId,
+}: {
+  ext:        string
+  formats:    VideoFormat[]
+  dlStates:   Record<string, FormatDlState>
+  onDownload: (f: VideoFormat) => void
+  anyActive:  boolean
+  activeId:   string | null
+}) {
+  const tagCls = FORMAT_TAG_COLORS[ext.toLowerCase()] ?? 'bg-white/10 text-gray-300 border border-white/15'
+
+  function getBadge(fmt: VideoFormat, idx: number): string | undefined {
+    if (idx !== 0) return undefined
+    const res = fmt.resolution?.toLowerCase() ?? ''
+    if (res.includes('3840') || res.includes('4k') || res.includes('2160')) return 'best'
+    if (res.includes('2560') || res.includes('1440')) return 'recommended'
+    return undefined
+  }
+
+  return (
+    <div className="rounded-xl border border-white/8 overflow-hidden">
+      {/* Section header */}
+      <div className="flex items-center gap-3 px-3 sm:px-4 py-2.5 bg-white/2 border-b border-white/6">
+        <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded text-[11px] font-bold tracking-wider uppercase ${tagCls}`}>
+          {ext.toUpperCase()}
+        </span>
+        <span className="text-[11px] text-gray-500 font-medium">
+          {formats.length} stream{formats.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      {/* Right indicator */}
-      <div className="relative flex-shrink-0">
-        {isActive ? (
-          <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />
-        ) : isComplete ? (
-          <div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+      {/* Column headers — desktop only */}
+      <div className="hidden sm:grid grid-cols-[72px_1fr_120px_90px_80px_52px_110px] items-center gap-2 px-4 py-2 bg-[#0d0f1a]/60 border-b border-white/5">
+        {['FORMAT', 'QUALITY', 'RESOLUTION', 'FILE SIZE', 'BITRATE', 'FPS', ''].map((h, i) => (
+          <div key={i} className={`text-[10px] font-bold text-gray-600 uppercase tracking-widest ${i === 6 ? 'text-right' : ''}`}>
+            {h}
           </div>
-        ) : isError ? (
-          <div className="w-8 h-8 rounded-full bg-red-500/15 flex items-center justify-center">
-            <XCircle className="w-4 h-4 text-red-400" />
-          </div>
-        ) : (
-          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-brand-500/15 transition-colors">
-            <Download className="w-3.5 h-3.5 text-gray-500 group-hover:text-brand-400 transition-colors" />
-          </div>
-        )}
+        ))}
       </div>
-    </button>
+
+      <div className="divide-y divide-white/4">
+        {formats.map((fmt, idx) => (
+          <FormatRow
+            key={fmt.format_id}
+            fmt={fmt}
+            dlState={dlStates[fmt.format_id] ?? { status: 'idle' }}
+            onDownload={onDownload}
+            locked={anyActive && activeId !== fmt.format_id}
+            qualityBadge={getBadge(fmt, idx)}
+          />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -395,14 +325,11 @@ export default function DownloadPage() {
   const [fetching,   setFetching]   = useState(false)
   const [videoInfo,  setVideoInfo]  = useState<VideoInfo | null>(null)
   const [fetchError, setFetchError] = useState('')
+  const [filter,     setFilter]     = useState<FormatFilter>('all')
 
-  // Per-format state
-  const [dlStates,    setDlStates]    = useState<Record<string, FormatDlState>>({})
-  // The format that has an active SSE connection
-  const [activeId,    setActiveId]    = useState<string | null>(null)
-  // Full progress data for the active download (drives ProgressPanel)
+  const [dlStates,       setDlStates]       = useState<Record<string, FormatDlState>>({})
+  const [activeId,       setActiveId]       = useState<string | null>(null)
   const [activeProgress, setActiveProgress] = useState<ProgressData | null>(null)
-  const [activeFmt,   setActiveFmt]   = useState<VideoFormat | null>(null)
   const sseRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
@@ -433,7 +360,7 @@ export default function DownloadPage() {
     setDlStates({})
     setActiveId(null)
     setActiveProgress(null)
-    setActiveFmt(null)
+    setFilter('all')
     try {
       const info = await getVideoInfo(url.trim(), identifier)
       setVideoInfo(info)
@@ -448,21 +375,22 @@ export default function DownloadPage() {
     try {
       const text = await navigator.clipboard.readText()
       if (text) setUrl(text)
-    } catch { /* denied — silent */ }
+    } catch { /* clipboard denied */ }
   }
 
-  // ── SSE download ─────────────────────────────────────────────────────────
   const handleDownload = useCallback((fmt: VideoFormat) => {
-    if (activeId !== null) return   // one at a time
-
+    if (activeId !== null) return
     const fmtId  = fmt.format_id
     const base   = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
     const sseUrl = `${base}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${fmtId}&identifier=${encodeURIComponent(identifier)}&ext=${fmt.ext}`
 
+    const initProgress: ProgressData = {
+      status: 'starting', percent: 0, speed: '0 KB/s', eta: '--:--',
+      downloaded_fmt: '0 KB', total_fmt: '?', downloaded: 0, total: null,
+    }
     setActiveId(fmtId)
-    setActiveFmt(fmt)
-    setFmtState(fmtId, { status: 'active', progress: { status: 'starting', percent: 0, speed: '0 KB/s', eta: '--:--', downloaded_fmt: '0 KB', total_fmt: '?', downloaded: 0, total: null } })
-    setActiveProgress({ status: 'starting', percent: 0, speed: '0 KB/s', eta: '--:--', downloaded_fmt: '0 KB', total_fmt: '?', downloaded: 0, total: null })
+    setFmtState(fmtId, { status: 'active', progress: initProgress })
+    setActiveProgress(initProgress)
 
     const es = new EventSource(sseUrl)
     sseRef.current = es
@@ -475,27 +403,18 @@ export default function DownloadPage() {
       setFmtState(fmtId, { status: 'active', progress: data })
 
       if (data.status === 'complete' && data.token) {
-        es.close()
-        sseRef.current = null
-
-        // Trigger browser file download via token
+        es.close(); sseRef.current = null
         const fileUrl = `${base}/download/file?token=${data.token}`
         const a = document.createElement('a')
-        a.href = fileUrl
-        a.download = ''
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-
-        // Update states
+        a.href = fileUrl; a.download = ''
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
         setFmtState(fmtId, { status: 'complete' })
         setActiveProgress({ ...data, status: 'complete', percent: 100 })
-        // Keep progress panel visible — don't clear activeId yet
+        setActiveId(null)  // re-enable all other buttons
       }
 
       if (data.status === 'error') {
-        es.close()
-        sseRef.current = null
+        es.close(); sseRef.current = null
         setFmtState(fmtId, { status: 'error', message: data.error || 'Download failed.' })
         setActiveProgress(data)
         setActiveId(null)
@@ -503,249 +422,341 @@ export default function DownloadPage() {
     }
 
     es.onerror = () => {
-      es.close()
-      sseRef.current = null
-      const errMsg = 'Connection lost. Please try again.'
-      setFmtState(fmtId, { status: 'error', message: errMsg })
-      setActiveProgress(prev => prev ? { ...prev, status: 'error', error: errMsg } : null)
+      es.close(); sseRef.current = null
+      const msg = 'Connection lost. Please try again.'
+      setFmtState(fmtId, { status: 'error', message: msg })
+      setActiveProgress(prev => prev ? { ...prev, status: 'error', error: msg } : null)
       setActiveId(null)
     }
   }, [activeId, url, identifier])
 
-  function dismissProgress() {
-    setActiveId(null)
-    setActiveProgress(null)
-    setActiveFmt(null)
-  }
-
   function handleReset() {
     sseRef.current?.close()
-    setUrl('')
-    setVideoInfo(null)
-    setFetchError('')
-    setDlStates({})
-    setActiveId(null)
-    setActiveProgress(null)
-    setActiveFmt(null)
+    setUrl(''); setVideoInfo(null); setFetchError('')
+    setDlStates({}); setActiveId(null); setActiveProgress(null)
+    setFilter('all')
   }
 
-  const videoFormats = videoInfo?.formats.filter(f => f.type === 'video') ?? []
-  const audioFormats = videoInfo?.formats.filter(f => f.type === 'audio') ?? []
-  const anyActive    = activeId !== null
+  // Group formats by extension
+  const allFormats = videoInfo?.formats ?? []
+  const videoExts  = ['mp4', 'webm', 'mkv', 'mov', 'avi']
+
+  const grouped = allFormats.reduce<Record<string, VideoFormat[]>>((acc, f) => {
+    const key = f.ext.toLowerCase()
+    if (!acc[key]) acc[key] = []
+    acc[key].push(f)
+    return acc
+  }, {})
+
+  const sortedExts = Object.keys(grouped).sort((a, b) => {
+    const ai = videoExts.indexOf(a), bi = videoExts.indexOf(b)
+    if (ai !== -1 && bi !== -1) return ai - bi
+    if (ai !== -1) return -1
+    if (bi !== -1) return 1
+    return a.localeCompare(b)
+  })
+
+  const hasAudio = sortedExts.some(e => !videoExts.includes(e))
+
+  const filteredExts = filter === 'all'
+    ? sortedExts
+    : filter === 'audio'
+    ? sortedExts.filter(e => !videoExts.includes(e))
+    : sortedExts.filter(e => e === filter)
+
+  const totalStreams = allFormats.length
+  const anyActive   = activeId !== null
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col bg-[#0a0d14]">
+    <div className="min-h-screen flex flex-col bg-[#0d0f1a] text-white">
 
       {/* Ambient glow */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[300px] rounded-full bg-brand-500/5 blur-[110px]" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[350px] rounded-full bg-indigo-600/4 blur-[140px]" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] rounded-full bg-sky-600/3 blur-[120px]" />
       </div>
 
-      {/* ── Header ── */}
-      <header className="relative z-20 sticky top-0 border-b border-white/5 bg-[#0a0d14]/90 backdrop-blur-xl px-4 sm:px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
-              <Download className="w-4 h-4 text-white" strokeWidth={2.5} />
-            </div>
-            <span className="font-bold text-white text-sm font-display tracking-tight">UniStream Saver</span>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden sm:flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 px-3 py-1.5 rounded-full">
-              <User className="w-3 h-3 text-brand-400" />
-              <span className="text-brand-300 text-xs font-medium truncate max-w-[140px]">{name}</span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-400 transition-colors py-1.5 px-3 rounded-lg hover:bg-red-500/10 border border-transparent hover:border-red-500/15"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
+      {/* Navbar — passes user name + logout handler; no overlay needed */}
+      <Navbar userName={name} onSignOut={handleLogout} />
+
+      <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
+
+        {/* Page heading */}
+        <div className="mb-5 sm:mb-7">
+          <p className="text-[10px] sm:text-[11px] font-bold text-indigo-400/80 uppercase tracking-widest mb-1">
+            Processing Engine — v2.4.1
+          </p>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h1 className="text-xl sm:text-3xl font-bold text-white tracking-tight">
+              Video Analysis Workspace
+            </h1>
+            {videoInfo && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                {totalStreams} streams resolved
+              </div>
+            )}
           </div>
         </div>
-      </header>
 
-      <main className="relative z-10 flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-5">
-
-        {/* Hero */}
-        <div className="text-center space-y-2 pb-2">
-          <div className="inline-flex items-center gap-1.5 bg-brand-500/10 border border-brand-500/20 text-brand-300 text-xs font-semibold px-3 py-1.5 rounded-full">
-            <Shield className="w-3 h-3" />
-            Access verified
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white font-display tracking-tight">
-            Paste a video link
-          </h1>
-          <p className="text-gray-500 text-sm">YouTube · Facebook · Instagram · TikTok and more</p>
-        </div>
-
-        {/* URL input */}
-        <form onSubmit={handleFetch} className="dl-card p-4 sm:p-5 space-y-3">
-          <div className="flex gap-2.5">
+        {/* ── URL bar ── */}
+        <form onSubmit={handleFetch} className="mb-6 sm:mb-8">
+          <div className="flex gap-2 items-center">
             <div className="relative flex-1 min-w-0">
-              <Link2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 pointer-events-none" />
+              <Link2 className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600 pointer-events-none" />
               <input
                 type="url"
                 value={url}
                 onChange={e => setUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=…"
-                className="input-field pl-10 text-sm w-full"
+                placeholder="https://youtu.be/…"
+                className="w-full bg-[#131627] border border-white/8 rounded-xl pl-9 sm:pl-11 pr-8 py-3 sm:py-3.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                 disabled={fetching}
                 autoComplete="off"
                 spellCheck={false}
               />
+              {url && (
+                <button type="button" onClick={() => setUrl('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400 transition-colors p-0.5">
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
             </div>
-            <button type="button" onClick={handlePaste} disabled={fetching}
-              className="btn-outline hidden sm:flex items-center gap-1.5 text-sm px-3 flex-shrink-0">
-              <Clipboard className="w-3.5 h-3.5" /> Paste
+
+            {/* Paste — icon only on mobile, icon+text on sm+ */}
+            <button
+              type="button" onClick={handlePaste} disabled={fetching}
+              className="flex items-center gap-1.5 py-3 px-3 sm:px-4 rounded-xl border border-white/10
+                         text-gray-400 hover:text-white hover:border-white/20 bg-white/3 hover:bg-white/5
+                         transition-all flex-shrink-0 disabled:opacity-40"
+              title="Paste URL"
+            >
+              <Clipboard className="w-4 h-4 flex-shrink-0" />
+              <span className="hidden sm:inline text-sm">Paste</span>
             </button>
-            <button type="submit" disabled={fetching || !url.trim()}
-              className="btn-primary flex items-center gap-2 text-sm flex-shrink-0">
-              {fetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-              <span className="hidden sm:inline">{fetching ? 'Fetching…' : 'Fetch video'}</span>
+
+            {/* Analyze — icon only on mobile, icon+text on sm+ */}
+            <button
+              type="submit" disabled={fetching || !url.trim()}
+              className="flex items-center gap-1.5 py-3 px-3 sm:px-5 rounded-xl text-sm font-semibold
+                         bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed
+                         text-white transition-all flex-shrink-0 shadow-lg shadow-indigo-900/30"
+            >
+              {fetching
+                ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                : <Play   className="w-4 h-4 fill-current flex-shrink-0" />
+              }
+              <span className="hidden sm:inline">{fetching ? 'Analyzing…' : 'Analyze'}</span>
             </button>
           </div>
+
           {fetchError && (
-            <div className="flex items-start gap-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl px-3.5 py-3">
+            <div className="flex items-start gap-2.5 mt-3 bg-red-500/8 border border-red-500/20 text-red-400 text-xs rounded-xl px-4 py-3">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
               <span>{fetchError}</span>
             </div>
           )}
         </form>
 
-        {/* Loading skeleton */}
+        {/* ── Fetching spinner ── */}
         {fetching && (
-          <div className="dl-card p-5 space-y-5">
-            <div className="flex gap-4">
-              <div className="w-28 h-[80px] rounded-xl bg-white/5 flex-shrink-0 shimmer" />
-              <div className="flex-1 space-y-2.5 pt-1">
-                <div className="h-4 rounded-lg bg-white/5 w-4/5 shimmer" />
-                <div className="h-3 rounded-lg bg-white/5 w-1/2 shimmer" />
-                <div className="h-3 rounded-lg bg-white/5 w-1/4 shimmer" />
+          <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
+            <div className="relative w-20 h-20">
+              <svg className="absolute inset-0 w-20 h-20 animate-spin" style={{ animationDuration: '3s' }} viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="36" fill="none" strokeWidth="2" className="stroke-white/6" />
+                <circle cx="40" cy="40" r="36" fill="none" strokeWidth="2" strokeLinecap="round"
+                  strokeDasharray="56 170" className="stroke-indigo-500/70" />
+              </svg>
+              <svg className="absolute inset-0 w-20 h-20 animate-spin"
+                style={{ animationDuration: '1.8s', animationDirection: 'reverse' }} viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="26" fill="none" strokeWidth="2" className="stroke-white/4" />
+                <circle cx="40" cy="40" r="26" fill="none" strokeWidth="2" strokeLinecap="round"
+                  strokeDasharray="30 133" className="stroke-sky-400/60" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center">
+                  <Film className="w-5 h-5 text-indigo-400" />
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {[1,2,3,4].map(i => <div key={i} className="h-16 rounded-xl bg-white/5 shimmer" />)}
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold text-white">Analyzing stream…</p>
+              <p className="text-xs text-gray-600">Fetching formats, resolutions &amp; metadata</p>
             </div>
+            <div className="flex items-end gap-1 h-8">
+              {[40, 65, 50, 80, 55, 70, 45, 60, 75, 50].map((h, i) => (
+                <div key={i} className="w-1.5 rounded-full bg-indigo-500/40"
+                  style={{ height: `${h}%`, animation: `dlbar 1.2s ease-in-out ${i * 0.1}s infinite alternate` }} />
+              ))}
+            </div>
+            <style>{`
+              @keyframes dlbar {
+                from { opacity: 0.3; transform: scaleY(0.6); }
+                to   { opacity: 1;   transform: scaleY(1);   }
+              }
+            `}</style>
           </div>
         )}
 
-        {/* Video info + formats */}
+        {/* ── Main content ── */}
         {videoInfo && !fetching && (
-          <div className="space-y-4 fade-up">
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
 
-            {/* Metadata card */}
-            <div className="dl-card p-4 sm:p-5">
-              <div className="flex gap-4 items-start">
-                {videoInfo.thumbnail && (
+            {/* ── LEFT: Thumbnail + Metadata ── */}
+            <div className="space-y-4">
+              {/* Thumbnail */}
+              <div className="relative rounded-xl overflow-hidden bg-white/4 aspect-video">
+                {videoInfo.thumbnail ? (
                   <img src={videoInfo.thumbnail} alt={videoInfo.title}
-                    className="w-28 sm:w-36 rounded-xl object-cover bg-white/5 flex-shrink-0"
-                    style={{ height: 80, objectFit: 'cover' }}
-                    onError={e => (e.currentTarget.style.display = 'none')} />
-                )}
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-white font-semibold text-sm sm:text-base leading-snug line-clamp-2 mb-2.5 font-display">
-                    {videoInfo.title}
-                  </h2>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                    {videoInfo.platform && <PlatformBadge platform={videoInfo.platform} />}
-                    {videoInfo.uploader && (
-                      <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                        <User className="w-3 h-3" />{videoInfo.uploader}
-                      </span>
-                    )}
-                    {videoInfo.duration > 0 && (
-                      <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                        <Clock className="w-3 h-3" />{formatDuration(videoInfo.duration)}
-                      </span>
-                    )}
+                    className="w-full h-full object-cover"
+                    onError={e => { e.currentTarget.style.display = 'none' }} />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Film className="w-10 h-10 text-white/20" />
                   </div>
+                )}
+                {videoInfo.duration > 0 && (
+                  <div className="absolute bottom-2 right-2 bg-black/75 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded-lg font-mono">
+                    {formatDuration(videoInfo.duration)}
+                  </div>
+                )}
+              </div>
+
+              {/* Title + uploader */}
+              <div>
+                <h2 className="text-sm font-semibold text-white leading-snug line-clamp-3">
+                  {videoInfo.title}
+                </h2>
+                {videoInfo.uploader && (
+                  <p className="text-xs text-sky-400 mt-1.5 font-medium">{videoInfo.uploader}</p>
+                )}
+              </div>
+
+              {/* Metadata inspector */}
+              <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
+                <div className="px-4 py-2 border-b border-white/6">
+                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Metadata Inspector</p>
+                </div>
+                <div className="divide-y divide-white/4">
+                  {([
+                    videoInfo.duration   && { icon: <Clock     className="w-3.5 h-3.5" />, label: 'Duration',  value: formatDuration(videoInfo.duration),   accent: 'text-sky-400'     },
+                    videoInfo.view_count && { icon: <Eye       className="w-3.5 h-3.5" />, label: 'Views',     value: formatViews(videoInfo.view_count),     accent: 'text-sky-400'     },
+                    videoInfo.like_count && { icon: <ThumbsUp  className="w-3.5 h-3.5" />, label: 'Likes',     value: formatViews(videoInfo.like_count),     accent: 'text-emerald-400' },
+                    videoInfo.upload_date && { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Uploaded',  value: videoInfo.upload_date,                 accent: 'text-gray-300'    },
+                    videoInfo.platform   && { icon: <Globe     className="w-3.5 h-3.5" />, label: 'Platform',  value: videoInfo.platform,                    accent: 'text-sky-400'     },
+                    videoInfo.id         && { icon: <Hash      className="w-3.5 h-3.5" />, label: 'Video ID',  value: videoInfo.id,                          accent: 'text-gray-500'    },
+                    { icon: <Layers      className="w-3.5 h-3.5" />, label: 'Formats',  value: `${totalStreams} available`,                  accent: 'text-indigo-400' },
+                  ] as const).filter(Boolean).map((row: any, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                      <div className="flex items-center gap-2 text-gray-600">
+                        {row.icon}
+                        <span className="text-[11px] font-medium text-gray-500">{row.label}</span>
+                      </div>
+                      <span className={`text-[11px] font-semibold truncate max-w-[130px] text-right ${row.accent}`}>
+                        {row.value}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
+
+              {/* Reset */}
+              <button
+                onClick={handleReset}
+                disabled={anyActive}
+                className="w-full flex items-center justify-center gap-2 text-xs font-semibold py-2.5 px-4 rounded-xl border border-white/8 text-gray-500 hover:text-white hover:border-white/15 bg-white/2 hover:bg-white/4 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Analyze another video
+              </button>
             </div>
 
-            {/* ── LIVE PROGRESS PANEL ── shown whenever a download is active or complete */}
-            {activeProgress && activeFmt && (
-              <ProgressPanel
-                fmt={activeFmt}
-                progress={activeProgress}
-                onDismiss={activeProgress.status === 'complete' || activeProgress.status === 'error'
-                  ? dismissProgress : undefined}
-              />
-            )}
+            {/* ── RIGHT: Resolution Matrix ── */}
+            <div className="space-y-4">
 
-            {/* Lock notice when downloading */}
-            {anyActive && activeProgress?.status !== 'complete' && activeProgress?.status !== 'error' && (
-              <div className="flex items-center gap-2.5 text-xs text-brand-300 bg-brand-500/8 border border-brand-500/15 rounded-xl px-4 py-3">
-                <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0 text-brand-400" />
-                Download in progress — other formats are locked until it completes.
-              </div>
-            )}
-
-            {/* Video formats */}
-            {videoFormats.length > 0 && (
-              <div className="dl-card p-4 sm:p-5 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Film className="w-4 h-4 text-gray-500" />
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Video quality</h3>
+              {/* Header + filter tabs */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-400" />
+                  <h3 className="text-sm font-bold text-white">Resolution Matrix</h3>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {videoFormats.map(fmt => (
-                    <FormatButton key={fmt.format_id} fmt={fmt}
-                      dlState={dlStates[fmt.format_id] ?? { status: 'idle' }}
-                      onDownload={handleDownload}
-                      locked={anyActive && activeId !== fmt.format_id} />
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { key: 'all',   label: 'All' },
+                    ...sortedExts.filter(e => videoExts.includes(e)).map(e => ({ key: e, label: e.toUpperCase() })),
+                    ...(hasAudio ? [{ key: 'audio', label: 'Audio' }] : []),
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setFilter(key as FormatFilter)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                        filter === key
+                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/40'
+                          : 'bg-white/4 text-gray-500 hover:text-gray-300 hover:bg-white/7 border border-white/6'
+                      }`}
+                    >
+                      {label}
+                    </button>
                   ))}
+                  <span className="text-[11px] text-gray-600 ml-1 font-mono">{totalStreams} streams</span>
                 </div>
               </div>
-            )}
 
-            {/* Audio formats */}
-            {audioFormats.length > 0 && (
-              <div className="dl-card p-4 sm:p-5 space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Music className="w-4 h-4 text-gray-500" />
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Audio only</h3>
+              {/* Active download notice */}
+              {anyActive && (
+                <div className="flex items-center gap-2.5 text-xs text-indigo-300 bg-indigo-500/6 border border-indigo-500/15 rounded-xl px-4 py-2.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400 flex-shrink-0" />
+                  Download in progress — other formats locked until complete.
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {audioFormats.map(fmt => (
-                    <FormatButton key={fmt.format_id} fmt={fmt}
-                      dlState={dlStates[fmt.format_id] ?? { status: 'idle' }}
-                      onDownload={handleDownload}
-                      locked={anyActive && activeId !== fmt.format_id} />
-                  ))}
+              )}
+
+              {/* Sections */}
+              {filteredExts.map(ext => (
+                <FormatSection
+                  key={ext}
+                  ext={ext}
+                  formats={grouped[ext]}
+                  dlStates={dlStates}
+                  onDownload={handleDownload}
+                  anyActive={anyActive}
+                  activeId={activeId}
+                />
+              ))}
+
+              {filteredExts.length === 0 && (
+                <div className="rounded-xl border border-white/6 py-12 text-center text-sm text-gray-600">
+                  No {filter.toUpperCase()} streams available
                 </div>
+              )}
+
+              {/* Status footer */}
+              <div className="flex items-center gap-3 text-[11px] text-gray-700 pt-1 flex-wrap">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  All streams verified &amp; available
+                </span>
+                <span>·</span>
+                <span>cache-hit: true · ttl: 3600s · engine: v2.4.1</span>
               </div>
-            )}
-
-            {/* Reset */}
-            <button onClick={handleReset} disabled={anyActive && activeProgress?.status !== 'complete'}
-              className="btn-outline w-full flex items-center justify-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
-              <RefreshCw className="w-3.5 h-3.5" />
-              Download another video
-            </button>
+            </div>
           </div>
         )}
 
-        {/* Empty state */}
+        {/* ── Empty state ── */}
         {!videoInfo && !fetching && !fetchError && (
-          <div className="dl-card flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-brand-500/10 border border-brand-500/15 flex items-center justify-center mb-5">
-              <Film className="w-7 h-7 text-brand-500/70" />
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/15 flex items-center justify-center mb-5">
+              <Film className="w-7 h-7 text-indigo-500/60" />
             </div>
-            <p className="text-base font-semibold text-gray-400 font-display">Ready to download</p>
-            <p className="text-sm text-gray-600 mt-1.5 max-w-xs">
-              Paste any YouTube, Facebook, Instagram, or TikTok link above and choose your quality.
+            <p className="text-base font-semibold text-gray-400">Ready to analyze</p>
+            <p className="text-sm text-gray-600 mt-1.5 max-w-sm">
+              Paste any YouTube, Facebook, Instagram, or TikTok link above and hit Analyze.
             </p>
           </div>
         )}
       </main>
 
-      <footer className="relative z-10 border-t border-white/5 px-4 py-4 text-center text-xs text-gray-700">
-        UniStream Saver · Personal use only · Respect copyright laws
-      </footer>
+      <Footer />
     </div>
   )
 }

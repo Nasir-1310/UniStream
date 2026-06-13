@@ -3,70 +3,43 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { checkAccess } from '@/lib/api'
+import Navbar from '@/components/Navbar'
+import Footer from '@/components/Footer'
 import {
-  Download, ShieldCheck, Youtube, Facebook, Instagram,
-  Music2, Wifi, AlertCircle, CheckCircle2,
-  Loader2, GraduationCap, Zap, Video, Headphones,
-  Smartphone, Star, Lock, ArrowRight, Mail, Phone, X
+  Youtube, Facebook, Instagram, Music2,
+  AlertCircle, CheckCircle2, Loader2,
+  Lock, ArrowRight, Mail, Phone, X, ChevronRight,
 } from 'lucide-react'
 
-// ── Validation helpers ────────────────────────────────────────────────────────
-
-/**
- * Standard email: local@domain.tld
- * Accepts any domain (gmail, yahoo, university, corporate, etc.)
- * Rules:
- *  - local part: letters, digits, dots, plus, hyphen, underscore — no leading/trailing dot
- *  - one @ symbol
- *  - domain: at least one label, each label letters/digits/hyphens, no leading/trailing hyphen
- *  - TLD: 2–24 letters
- */
-const EMAIL_RE = /^[a-zA-Z0-9][a-zA-Z0-9._%+\-]{0,63}@[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,24}$/
-
-/**
- * Bangladesh mobile numbers:
- *  - Optionally starts with +880 or 880 (country code)
- *  - Then 01 followed by operator digit 3–9 and 8 more digits (11 digits total)
- *  - Operators: 013x, 014x, 015x, 016x, 017x, 018x, 019x
- */
+// ── Validation ────────────────────────────────────────────────────────────────
+const EMAIL_RE =
+  /^[a-zA-Z0-9][a-zA-Z0-9._%+\-]{0,63}@[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,24}$/
 const BD_PHONE_RE = /^(?:\+?880)?01[3-9]\d{8}$/
 
 type FieldType = 'email' | 'phone' | null
-
-interface ValidationResult {
-  type: FieldType
-  valid: boolean
-  hint: string
-}
+interface ValidationResult { type: FieldType; valid: boolean; hint: string }
 
 function validate(raw: string): ValidationResult {
   const v = raw.trim()
-
   if (!v) return { type: null, valid: false, hint: '' }
-
-  // Looks like an email (contains @)
   if (v.includes('@')) {
     if (EMAIL_RE.test(v)) return { type: 'email', valid: true, hint: '' }
     const parts = v.split('@')
-    if (parts.length > 2)      return { type: 'email', valid: false, hint: 'Email address can only contain one @ symbol.' }
-    if (!parts[0])             return { type: 'email', valid: false, hint: 'Enter a username before the @ symbol.' }
-    if (!parts[1]?.includes('.')) return { type: 'email', valid: false, hint: 'Missing domain — e.g. @gmail.com or @iit.du.ac.bd' }
-    return { type: 'email', valid: false, hint: 'Invalid email address — check the format.' }
+    if (parts.length > 2)          return { type: 'email', valid: false, hint: 'Only one @ symbol allowed.' }
+    if (!parts[0])                 return { type: 'email', valid: false, hint: 'Enter a username before @.' }
+    if (!parts[1]?.includes('.'))  return { type: 'email', valid: false, hint: 'Missing domain — e.g. @gmail.com' }
+    return { type: 'email', valid: false, hint: 'Invalid email — check the format.' }
   }
-
-  // Looks like a phone number (starts with digit or +)
   if (/^[\d+]/.test(v)) {
     const digits = v.replace(/\D/g, '')
-    if (BD_PHONE_RE.test(v))                              return { type: 'phone', valid: true,  hint: '' }
-    if (digits.length < 11)                               return { type: 'phone', valid: false, hint: 'Too short — needs 11 digits, e.g. 017XXXXXXXX.' }
-    if (digits.length > 13)                               return { type: 'phone', valid: false, hint: 'Too long — check your number.' }
-    if (!/^(?:\+?880)?01/.test(v))                        return { type: 'phone', valid: false, hint: 'Number must start with 01, e.g. 017XXXXXXXX.' }
+    if (BD_PHONE_RE.test(v))                          return { type: 'phone', valid: true, hint: '' }
+    if (digits.length < 11)                           return { type: 'phone', valid: false, hint: 'Too short — needs 11 digits, e.g. 017XXXXXXXX.' }
+    if (digits.length > 13)                           return { type: 'phone', valid: false, hint: 'Too long — check your number.' }
+    if (!/^(?:\+?880)?01/.test(v))                    return { type: 'phone', valid: false, hint: 'Must start with 01, e.g. 017XXXXXXXX.' }
     const op = parseInt(digits.replace(/^(?:880)?0?1/, '').charAt(0))
-    if (isNaN(op) || op < 3 || op > 9)                   return { type: 'phone', valid: false, hint: 'Unrecognised operator — valid prefixes are 013–019.' }
-    return { type: 'phone', valid: false, hint: 'Invalid number — use format 01XXXXXXXXX.' }
+    if (isNaN(op) || op < 3 || op > 9)               return { type: 'phone', valid: false, hint: 'Unrecognised operator — valid: 013–019.' }
+    return { type: 'phone', valid: false, hint: 'Invalid number — use 01XXXXXXXXX.' }
   }
-
-  // Neither
   return { type: null, valid: false, hint: 'Enter a valid email address or Bangladeshi phone number.' }
 }
 
@@ -74,20 +47,17 @@ function validate(raw: string): ValidationResult {
 export default function HomePage() {
   const router = useRouter()
   const [identifier, setIdentifier] = useState('')
-  const [touched, setTouched] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [touched, setTouched]       = useState(false)
+  const [loading, setLoading]       = useState(false)
   const [serverError, setServerError] = useState('')
 
   const validation = useMemo(() => validate(identifier), [identifier])
-
-  // Show inline hint only after user has typed something and blurred, or tried to submit
   const showHint = touched && identifier.trim().length > 0 && !validation.valid && validation.hint
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setTouched(true)
     if (!validation.valid) return
-
     setLoading(true)
     setServerError('')
     try {
@@ -100,7 +70,7 @@ export default function HomePage() {
         setServerError(res.message)
       }
     } catch {
-      setServerError('Unable to connect to the server. Please try again later.')
+      setServerError('Unable to reach the server. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -109,10 +79,8 @@ export default function HomePage() {
   function handleChange(v: string) {
     setIdentifier(v)
     setServerError('')
-    // Once touched, keep showing hints live
   }
 
-  // Dynamic input border colour
   const inputBorderClass =
     !touched || !identifier.trim()
       ? 'input-field'
@@ -120,129 +88,142 @@ export default function HomePage() {
       ? 'input-field input-valid'
       : 'input-field input-error'
 
+  // ── Data ──────────────────────────────────────────────────────────────────
   const platforms = [
-    { icon: <Youtube className="w-5 h-5" />, name: 'YouTube', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', desc: 'All resolutions' },
-    { icon: <Facebook className="w-5 h-5" />, name: 'Facebook', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', desc: 'Reels & videos' },
-    { icon: <Instagram className="w-5 h-5" />, name: 'Instagram', color: 'text-pink-400', bg: 'bg-pink-500/10 border-pink-500/20', desc: 'Posts & stories' },
-    { icon: <Music2 className="w-5 h-5" />, name: 'TikTok', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/20', desc: 'No watermark' },
-  ]
-
-  const features = [
-    { icon: <Video className="w-5 h-5 text-brand-400" />, label: '4K / 1080p HD', desc: 'Crystal-clear video at full resolution' },
-    { icon: <Smartphone className="w-5 h-5 text-purple-400" />, label: '480p / 360p', desc: 'Bandwidth-friendly mobile quality' },
-    { icon: <Headphones className="w-5 h-5 text-pink-400" />, label: 'MP3 Audio', desc: 'Extract clean audio from any video' },
-    { icon: <Zap className="w-5 h-5 text-yellow-400" />, label: 'Instant Links', desc: 'Direct stream — no waiting' },
+    { icon: <Youtube  className="w-3.5 h-3.5" />, name: 'YouTube',   color: 'text-red-400'  },
+    { icon: <Facebook className="w-3.5 h-3.5" />, name: 'Facebook',  color: 'text-blue-400' },
+    { icon: <Instagram className="w-3.5 h-3.5" />, name: 'Instagram', color: 'text-pink-400' },
+    { icon: <Music2   className="w-3.5 h-3.5" />, name: 'TikTok',    color: 'text-cyan-400' },
   ]
 
   const stats = [
-    { value: '10K+', label: 'Downloads daily' },
-    { value: '4', label: 'Platforms supported' },
-    { value: '99.9%', label: 'Uptime' },
-    { value: '0s', label: 'Processing delay' },
+    { value: '12,400+', label: 'Active Students' },
+    { value: '340+',    label: 'Universities'    },
+    { value: '98K+',    label: 'Downloads / Day' },
+    { value: '99.97%',  label: 'Uptime'          },
   ]
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col bg-[#0a0d14]">
+    <div className="min-h-screen flex flex-col bg-[#0d0f1a]">
 
-      {/* ── Ambient glow ── */}
+      {/* Ambient glows — match image: top-center indigo blob, right-mid purple blob */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full bg-brand-500/5 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-500/5 blur-[100px]" />
+        <div className="absolute top-[-120px] left-1/2 -translate-x-1/2 w-[900px] h-[480px] rounded-full"
+          style={{ background: 'radial-gradient(ellipse, rgba(79,70,229,0.12) 0%, transparent 65%)' }} />
+        <div className="absolute top-[10%] right-[-80px] w-[420px] h-[420px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 65%)' }} />
+        <div className="absolute bottom-0 left-[-60px] w-[300px] h-[300px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(79,70,229,0.07) 0%, transparent 65%)' }} />
       </div>
 
-      {/* ── Header ── */}
-      <header className="relative z-10 border-b border-white/5 px-4 sm:px-6 py-4 flex items-center justify-between max-w-7xl mx-auto w-full">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-brand-500 rounded-xl flex items-center justify-center shadow-lg shadow-brand-500/30">
-            <Download className="w-4 h-4 text-white" strokeWidth={2.5} />
-          </div>
-          <div>
-            <span className="font-bold text-white text-sm tracking-tight">UniStream Saver</span>
-            <span className="hidden sm:block text-xs text-gray-500 leading-none mt-0.5">University Video Downloader</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 px-3 py-1.5 rounded-full">
-          <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />
-          <span className="text-xs font-medium text-brand-300">Secure Access</span>
-        </div>
-      </header>
+      <Navbar />
 
       <main className="relative z-10 flex-1 flex flex-col">
 
-        {/* ── Hero ── */}
-        <section className="flex flex-col items-center text-center px-4 pt-16 pb-12 sm:pt-24 sm:pb-16">
-          <div className="inline-flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 text-brand-300 text-xs font-semibold px-4 py-2 rounded-full mb-7 tracking-wide uppercase">
-            <GraduationCap className="w-3.5 h-3.5" />
-            Approved Students Only
-          </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-5 leading-[1.1] tracking-tight max-w-2xl">
-            Download Any Video{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-emerald-300">
-              Instantly
-            </span>
-          </h1>
-          <p className="text-gray-400 text-base sm:text-lg leading-relaxed max-w-xl mb-10">
-            YouTube, Facebook, Instagram, TikTok — pick any quality, from 4K down to data-saving 360p.
-            Available exclusively for{' '}
-            <strong className="text-gray-200 font-semibold">verified university students</strong>.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3 mb-6">
-            {platforms.map(p => (
-              <div key={p.name} className={`flex items-center gap-2 ${p.bg} border px-4 py-2 rounded-full transition-transform hover:scale-105`}>
-                <span className={p.color}>{p.icon}</span>
-                <span className="text-sm font-medium text-white">{p.name}</span>
-                <span className="hidden sm:inline text-xs text-gray-500">· {p.desc}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* ── Hero — two-column, matching image exactly ── */}
+        <section className="flex flex-col lg:flex-row items-start lg:items-center
+                            gap-10 lg:gap-8 max-w-7xl mx-auto w-full
+                            px-5 sm:px-10 pt-14 pb-16 sm:pt-20 sm:pb-20">
 
-        {/* ── Stats bar ── */}
-        <section className="px-4 pb-12 sm:pb-16">
-          <div className="max-w-2xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 rounded-2xl overflow-hidden border border-white/5">
-            {stats.map(s => (
-              <div key={s.label} className="bg-[#0a0d14] flex flex-col items-center py-4 px-2">
-                <span className="text-xl font-bold text-white">{s.value}</span>
-                <span className="text-xs text-gray-500 mt-0.5">{s.label}</span>
-              </div>
-            ))}
+          {/* ── LEFT: Copy + stats ── */}
+          <div className="flex-1 min-w-20">
+
+            {/* Eyebrow */}
+            <div className="eyebrow-badge mb-7">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0" />
+               Video Platform
+            </div>
+
+            {/* Headline — Space Grotesk, very large */}
+            <h1
+              className="text-[2.75rem] sm:text-[3.25rem] lg:text-[3.6rem]
+                         font-extrabold text-white mb-5 max-w-xl"
+              style={{ lineHeight: 1.06, letterSpacing: '-0.025em' }}
+            >
+              Your academic{' '}
+              <span
+                style={{
+                  background: 'linear-gradient(90deg, #60a5fa 0%, #818cf8 50%, #a78bfa 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                video library
+              </span>  unlocked.
+             
+            </h1>
+
+            {/* Body */}
+            <p className="text-slate-400 text-[15px] leading-relaxed max-w-[650px] mb-2">
+              UniStreamSaver is a gated-access video management engine for university students.
+              Paste any lecture URL — receive a full resolution matrix, metadata analysis, and instant download.
+            </p>
+            <p className="text-slate-500 text-[13px] leading-relaxed max-w-[440px] mb-8">
+              <span className="text-indigo-400 font-medium">Free for verified university students</span> — expanding to everyone soon.
+            </p>
+
+            {/* Stats in bordered cards — matching image row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-7 max-w-[500px]">
+              {stats.map(s => (
+                <div key={s.label} className="stat-card">
+                  <span className="font-bold text-white text-[1.125rem] leading-none"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    {s.value}
+                  </span>
+                  <span className="text-slate-500 text-[11px] leading-snug mt-1">{s.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Platform pills */}
+            <div className="flex flex-wrap gap-2">
+              {platforms.map(p => (
+                <div key={p.name} className="platform-pill">
+                  <span className={p.color}>{p.icon}</span>
+                  {p.name}
+                </div>
+              ))}
+            </div>
           </div>
-        </section>
 
-        {/* ── Access check + features ── */}
-        <section className="px-4 pb-20 flex flex-col lg:flex-row gap-6 max-w-5xl mx-auto w-full">
-
-          {/* ── Left: Access check card ── */}
-          <div className="flex-1 max-w-md mx-auto lg:mx-0">
-            <div className="glass p-8 rounded-2xl">
+          {/* ── RIGHT: Access Portal card ── */}
+          <div className="w-full max-w-[360px] lg:max-w-[330px] flex-shrink-0 self-start lg:self-center ">
+            <div className="portal-card p-10 pt-12">
 
               {/* Card header */}
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-brand-500/15 rounded-xl flex items-center justify-center">
-                  <Lock className="w-5 h-5 text-brand-400" />
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 "
+                  style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                  <Lock className="w-3.5 h-3.5 text-indigo-400" />
                 </div>
                 <div>
-                  <h2 className="text-white font-bold text-base">Verify Your Access</h2>
-                  <p className="text-gray-500 text-xs mt-0.5">Enter your Gmail or phone number</p>
+                  <p className="text-white font-semibold text-[13px] leading-none mb-1">Access Portal</p>
+                  <p className="text-slate-500 text-[11px] leading-none">University credentials required</p>
                 </div>
               </div>
 
               <form onSubmit={handleSubmit} noValidate className="space-y-4">
 
-                {/* ── Input with floating type icon + clear button ── */}
+                {/* Email / phone field */}
                 <div>
-                  <label htmlFor="identifier" className="block text-xs font-medium text-gray-400 mb-2">
-                    Gmail address or phone number
+                  <label
+                    htmlFor="identifier"
+                    className="block text-[11px]  font-semibold tracking-widest uppercase mb-2 "
+                    style={{ color: '#64748b', letterSpacing: '0.08em' }}
+                  >
+                    University Email
                   </label>
 
-                  <div className="relative">
-                    {/* Detected-type icon on the left */}
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                  <div className="relative xl:pb-4 sm:pb-3 pb-2">
+                    {/* Left icon */}
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none xl:pb-4 sm:pb-3 pb-2">
                       {validation.type === 'email'
-                        ? <Mail className="w-4 h-4 text-brand-400" />
+                        ? <Mail  className="w-3.5 h-3.5 text-indigo-400 " />
                         : validation.type === 'phone'
-                        ? <Phone className="w-4 h-4 text-brand-400" />
-                        : <Lock className="w-4 h-4" />
+                        ? <Phone className="w-3.5 h-3.5 text-indigo-400 " />
+                        : <Mail  className="w-3.5 h-3.5 text-slate-600"  />
                       }
                     </div>
 
@@ -253,146 +234,154 @@ export default function HomePage() {
                       value={identifier}
                       onChange={e => handleChange(e.target.value)}
                       onBlur={() => setTouched(true)}
-                      placeholder="your@email.com  or  01XXXXXXXXX"
-                      className={`${inputBorderClass} pl-10 pr-20`}
+                      placeholder="student@university.edu"
+                      className={`${inputBorderClass} pl-9 pr-16`}
+                      style={{ paddingTop: '0.6875rem', paddingBottom: '0.6875rem' }}
                       disabled={loading}
                       autoComplete="email"
                       aria-describedby={showHint ? 'field-hint' : undefined}
                       aria-invalid={touched && !validation.valid && identifier.trim().length > 0}
                     />
 
-                    {/* Right-side indicators: clear button + validation tick/cross */}
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                    {/* Right: clear + validity icon */}
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 xl:pb-4 sm:pb-3 pb-2">
                       {identifier.length > 0 && !loading && (
                         <button
                           type="button"
                           onClick={() => { setIdentifier(''); setTouched(false); setServerError('') }}
-                          className="p-0.5 rounded-full text-gray-600 hover:text-gray-300 transition-colors"
-                          aria-label="Clear input"
+                          className="rounded-full text-slate-600 hover:text-slate-300 transition-colors p-0.5 "
+                          aria-label="Clear"
                           tabIndex={-1}
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3 h-3 " />
                         </button>
                       )}
                       {touched && identifier.trim().length > 0 && (
                         validation.valid
-                          ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                          : <AlertCircle  className="w-4 h-4 text-red-400 flex-shrink-0" />
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 " />
+                          : <AlertCircle  className="w-3.5 h-3.5 text-red-400 flex-shrink-0 "    />
                       )}
                     </div>
                   </div>
 
-                  {/* Inline validation hint — animates in */}
+                  {/* Hint text */}
                   {showHint && (
-                    <p id="field-hint" role="alert" className="mt-2 text-xs text-red-400 flex items-start gap-1.5 fade-up">
-                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <p id="field-hint" role="alert"
+                      className="mt-1.5 text-[11px] text-red-400 flex items-start gap-1 fade-up ">
+                      <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                       {validation.hint}
                     </p>
                   )}
-
-                  {/* Valid confirmation hint */}
                   {touched && validation.valid && (
-                    <p className="mt-2 text-xs text-emerald-400 flex items-center gap-1.5 fade-up">
-                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    <p className="mt-1.5 text-[11px] text-emerald-400 flex items-center gap-1 fade-up">
+                      <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
                       {validation.type === 'email' ? 'Valid email address' : 'Valid Bangladeshi phone number'}
                     </p>
                   )}
                 </div>
 
-                {/* Server-side error */}
+                {/* Server error */}
                 {serverError && (
-                  <div className="flex items-start gap-2.5 bg-red-500/10 border border-red-500/20 text-red-300 text-sm rounded-xl px-4 py-3">
-                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start gap-2 rounded-lg px-3.5 py-3 text-[12px] text-red-300 fade-up"
+                    style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                     <span>{serverError}</span>
                   </div>
                 )}
 
+                {/* Submit button */}
                 <button
                   type="submit"
-                  className="btn-primary w-full flex items-center justify-center gap-2"
+                  className="btn-primary w-full"
+                  style={{ marginTop: '0.25rem' }}
                   disabled={loading || (touched && !validation.valid)}
                 >
                   {loading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Verifying access…</>
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
                   ) : (
-                    <><CheckCircle2 className="w-4 h-4" /> Check Access <ArrowRight className="w-4 h-4 ml-auto" /></>
+                    <>Verify & Enter <ArrowRight className="w-4 h-4" /></>
                   )}
                 </button>
               </form>
 
-              <div className="mt-5 pt-5 border-t border-white/5 flex items-start gap-2 text-xs text-gray-600">
-                <ShieldCheck className="w-3.5 h-3.5 text-brand-600 mt-0.5 flex-shrink-0" />
-                <span>No access? <span className="text-gray-500">Contact your university admin to get approved.</span></span>
-              </div>
-            </div>
+              {/* Disclaimer */}
+              <p className="mt-4 text-center text-[11px] text-slate-600 leading-relaxed">
+                By accessing UniStreamSaver, you agree to the Academic Use Policy.
+              </p>
 
-            {/* Trust indicators */}
-            <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-600">
-              <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-brand-600" /> SSL Secured</span>
-              <span className="flex items-center gap-1"><Star className="w-3 h-3 text-yellow-600" /> No ads, ever</span>
-              <span className="flex items-center gap-1"><Wifi className="w-3 h-3 text-blue-600" /> Always online</span>
-            </div>
-          </div>
-
-          {/* ── Right: Features ── */}
-          <div className="flex-1 flex flex-col justify-center gap-4">
-            <div className="mb-2">
-              <h2 className="text-xl font-bold text-white mb-1">What you get</h2>
-              <p className="text-gray-500 text-sm">Every format, every platform, zero friction.</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {features.map(f => (
-                <div key={f.label} className="glass p-4 rounded-xl hover:border-white/10 transition-colors group">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 bg-white/5 rounded-lg flex items-center justify-center group-hover:bg-white/8 transition-colors">
-                      {f.icon}
-                    </div>
-                    <span className="text-sm font-semibold text-white">{f.label}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 leading-relaxed pl-12">{f.desc}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-2 glass p-4 rounded-xl">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">How it works</h3>
-              <div className="flex flex-col gap-3">
-                {[
-                  { step: '1', text: 'Verify your student identity' },
-                  { step: '2', text: 'Paste a video URL from any platform' },
-                  { step: '3', text: 'Choose your format & quality' },
-                  { step: '4', text: 'Download instantly to your device' },
-                ].map(item => (
-                  <div key={item.step} className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-brand-500/20 border border-brand-500/30 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-brand-400">{item.step}</span>
-                    </div>
-                    <span className="text-sm text-gray-400">{item.text}</span>
-                  </div>
-                ))}
+              {/* Skip link */}
+              <div className="mt-3 pt-3 border-t border-white/5 flex justify-center">
+                <button className="flex items-center gap-1 text-[11px] text-slate-600 hover:text-slate-400 transition-colors">
+                  <ChevronRight className="w-3 h-3" />
+                  Skip verification — Preview the engine
+                </button>
               </div>
             </div>
           </div>
 
         </section>
+
+        {/* ── Below-the-fold: feature cards ── */}
+        <section className="px-5 sm:px-8 pb-20 max-w-7xl mx-auto w-full">
+          <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-slate-600 mb-6 text-center">
+            Built for Academic Workflows
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              {
+                color: 'text-indigo-400',
+                bgColor: 'rgba(99,102,241,0.1)',
+                borderColor: 'rgba(99,102,241,0.15)',
+                icon: (
+                  <svg className="w-4.5 h-4.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.868V15.13a1 1 0 01-1.447.899L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                  </svg>
+                ),
+                title: '4K Resolution Engine',
+                desc: 'Extract up to 4K UHD streams from any lecture recording platform with a single URL.',
+              },
+              {
+                color: 'text-violet-400',
+                bgColor: 'rgba(139,92,246,0.1)',
+                borderColor: 'rgba(139,92,246,0.15)',
+                icon: (
+                  <svg className="w-4.5 h-4.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                  </svg>
+                ),
+                title: 'University-Gated Access',
+                desc: 'Restricted to verified .edu addresses. Every session is authenticated and encrypted. Expanding to everyone soon.',
+              },
+              {
+                color: 'text-emerald-400',
+                bgColor: 'rgba(52,211,153,0.08)',
+                borderColor: 'rgba(52,211,153,0.15)',
+                icon: (
+                  <svg className="w-4.5 h-4.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5" />
+                  </svg>
+                ),
+                title: 'Academic Use Only',
+                desc: 'Built exclusively for students. Save lectures, seminars, and research videos directly to your device.',
+              },
+            ].map(card => (
+              <div key={card.title} className="feature-card">
+                <div
+                  className="w-9 h-9 rounded-lg flex items-center justify-center mb-4"
+                  style={{ background: card.bgColor, border: `1px solid ${card.borderColor}` }}
+                >
+                  {card.icon}
+                </div>
+                <h3 className="text-white font-semibold text-[13px] mb-1.5">{card.title}</h3>
+                <p className="text-slate-500 text-[12px] leading-relaxed">{card.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="relative z-10 border-t border-white/5 px-4 sm:px-6 py-5">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-600">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 bg-brand-500/20 rounded flex items-center justify-center">
-              <Download className="w-3 h-3 text-brand-400" />
-            </div>
-            <span className="text-brand-600 font-semibold">UniStream Saver</span>
-            <span>— University Students Video Downloader</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span>For personal use only. Respect copyright laws.</span>
-            <a href="#" className="text-gray-500 hover:text-gray-400 transition-colors">Privacy</a>
-            <a href="#" className="text-gray-500 hover:text-gray-400 transition-colors">Terms</a>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }

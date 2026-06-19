@@ -70,6 +70,8 @@ export interface VideoFormat {
   ext: string
   filesize_bytes: number | null
   filesize_human: string
+  bitrate?: string
+  fps?: string
 }
 
 export interface VideoInfo {
@@ -79,4 +81,8 @@ export interface VideoInfo {
   uploader: string
   platform: string
   formats: VideoFormat[]
+  view_count?: number
+  like_count?: number
+  upload_date?: string
+  id?: string
 }

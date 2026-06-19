@@ -1,7 +1,10 @@
 services:
   - type: web
     name: unistream-api
-    env: python
+    runtime: python
+    region: singapore
+    plan: free
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -13,3 +16,5 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: MAX_CONCURRENT_DOWNLOADS
+        value: "5"

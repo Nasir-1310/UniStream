@@ -18,16 +18,16 @@ import {
 type DlStatus = 'idle' | 'starting' | 'downloading' | 'merging' | 'complete' | 'error'
 
 interface ProgressData {
-  status:         DlStatus
-  percent:        number
-  speed:          string
-  eta:            string
+  status: DlStatus
+  percent: number
+  speed: string
+  eta: string
   downloaded_fmt: string
-  total_fmt:      string
-  downloaded:     number
-  total:          number | null
-  token?:         string
-  error?:         string
+  total_fmt: string
+  downloaded: number
+  total: number | null
+  token?: string
+  error?: string
 }
 
 type FormatDlState =
@@ -53,16 +53,16 @@ function formatDuration(s: number): string {
 function formatViews(n: number): string {
   if (!n) return '—'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(n)
 }
 
 const FORMAT_TAG_COLORS: Record<string, string> = {
-  mp4:  'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
+  mp4: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
   webm: 'bg-teal-500/20 text-teal-300 border border-teal-500/30',
-  mkv:  'bg-amber-500/20 text-amber-300 border border-amber-500/30',
-  m4a:  'bg-purple-500/20 text-purple-300 border border-purple-500/30',
-  mp3:  'bg-pink-500/20 text-pink-300 border border-pink-500/30',
+  mkv: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+  m4a: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+  mp3: 'bg-pink-500/20 text-pink-300 border border-pink-500/30',
   opus: 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30',
 }
 
@@ -78,7 +78,7 @@ function ExtTag({ ext }: { ext: string }) {
 function QualityBadge({ label }: { label?: string }) {
   if (!label) return null
   const isBest = label === 'best'
-  const isRec  = label === 'recommended'
+  const isRec = label === 'recommended'
   if (isBest) return (
     <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/25 whitespace-nowrap">
       ★ Best
@@ -99,8 +99,8 @@ function QualityBadge({ label }: { label?: string }) {
 function InlineProgress({ progress }: { progress: ProgressData }) {
   const { status, percent, speed, eta, downloaded_fmt, total_fmt } = progress
   const isComplete = status === 'complete'
-  const isMerging  = status === 'merging'
-  const isError    = status === 'error'
+  const isMerging = status === 'merging'
+  const isError = status === 'error'
   const displayPct = isComplete ? 100 : percent
 
   return (
@@ -112,9 +112,8 @@ function InlineProgress({ progress }: { progress: ProgressData }) {
             <div className="absolute inset-y-0 w-1/2 rounded-full bg-gradient-to-r from-purple-500/0 via-purple-400 to-purple-500/0 animate-[slide_1.5s_ease-in-out_infinite]" />
           ) : (
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ease-out ${
-                isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-sky-400'
-              }`}
+              className={`h-full rounded-full transition-[width] duration-500 ease-out ${isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-sky-400'
+                }`}
               style={{ width: `${displayPct}%` }}
             />
           )}
@@ -154,17 +153,17 @@ function InlineProgress({ progress }: { progress: ProgressData }) {
 function FormatRow({
   fmt, dlState, onDownload, locked, qualityBadge,
 }: {
-  fmt:           VideoFormat
-  dlState:       FormatDlState
-  onDownload:    (f: VideoFormat) => void
-  locked:        boolean
+  fmt: VideoFormat
+  dlState: FormatDlState
+  onDownload: (f: VideoFormat) => void
+  locked: boolean
   qualityBadge?: string
 }) {
-  const isActive   = dlState.status === 'active'
+  const isActive = dlState.status === 'active'
   const isComplete = dlState.status === 'complete'
-  const isError    = dlState.status === 'error'
+  const isError = dlState.status === 'error'
   const isDisabled = isActive || (locked && !isComplete && !isError)
-  const progress   = isActive ? dlState.progress : null
+  const progress = isActive ? dlState.progress : null
 
   // Download button — shared between mobile card + desktop row
   const DownloadBtn = () => (
@@ -188,11 +187,10 @@ function FormatRow({
       <button
         onClick={() => !isDisabled && onDownload(fmt)}
         disabled={isDisabled}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap ${
-          locked
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap ${locked
             ? 'bg-white/5 text-gray-600 cursor-not-allowed'
             : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-900/30 cursor-pointer active:scale-95'
-        }`}
+          }`}
       >
         <Download className="w-3 h-3 flex-shrink-0" />
         Download
@@ -209,9 +207,8 @@ function FormatRow({
       <div className="sm:hidden flex items-center gap-3 px-3 py-3">
         <ExtTag ext={fmt.ext} />
         <div className="flex-1 min-w-0">
-          <p className={`text-[13px] font-semibold truncate leading-tight ${
-            isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
-          }`}>
+          <p className={`text-[13px] font-semibold truncate leading-tight ${isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
+            }`}>
             {fmt.label}
           </p>
           <p className="text-[11px] text-gray-600 mt-0.5">
@@ -228,9 +225,8 @@ function FormatRow({
       <div className="hidden sm:grid grid-cols-[72px_1fr_120px_90px_80px_52px_110px] items-center gap-2 px-4 py-3">
         <div><ExtTag ext={fmt.ext} /></div>
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-sm font-semibold truncate ${
-            isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
-          }`}>
+          <span className={`text-sm font-semibold truncate ${isComplete ? 'text-emerald-300' : isError ? 'text-red-300' : 'text-white'
+            }`}>
             {fmt.label}
           </span>
           <QualityBadge label={qualityBadge} />
@@ -259,12 +255,12 @@ function FormatRow({
 function FormatSection({
   ext, formats, dlStates, onDownload, anyActive, activeId,
 }: {
-  ext:        string
-  formats:    VideoFormat[]
-  dlStates:   Record<string, FormatDlState>
+  ext: string
+  formats: VideoFormat[]
+  dlStates: Record<string, FormatDlState>
   onDownload: (f: VideoFormat) => void
-  anyActive:  boolean
-  activeId:   string | null
+  anyActive: boolean
+  activeId: string | null
 }) {
   const tagCls = FORMAT_TAG_COLORS[ext.toLowerCase()] ?? 'bg-white/10 text-gray-300 border border-white/15'
 
@@ -320,24 +316,31 @@ function FormatSection({
 export default function DownloadPage() {
   const router = useRouter()
   const [identifier, setIdentifier] = useState('')
-  const [name,       setName]       = useState('')
-  const [url,        setUrl]        = useState('')
-  const [fetching,   setFetching]   = useState(false)
-  const [videoInfo,  setVideoInfo]  = useState<VideoInfo | null>(null)
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const [fetching, setFetching] = useState(false)
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null)
   const [fetchError, setFetchError] = useState('')
-  const [filter,     setFilter]     = useState<FormatFilter>('all')
+  const [filter, setFilter] = useState<FormatFilter>('all')
 
-  const [dlStates,       setDlStates]       = useState<Record<string, FormatDlState>>({})
-  const [activeId,       setActiveId]       = useState<string | null>(null)
+  const [dlStates, setDlStates] = useState<Record<string, FormatDlState>>({})
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [activeProgress, setActiveProgress] = useState<ProgressData | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [authorized, setAuthorized] = useState(false)
   const sseRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
     const id = sessionStorage.getItem('us_identifier')
-    const n  = sessionStorage.getItem('us_name')
-    if (!id) { router.push('/'); return }
+    const n = sessionStorage.getItem('us_name')
+    if (!id) {
+      router.replace('/')
+      return
+    }
     setIdentifier(id)
     setName(n || id)
+    setAuthorized(true)
+    setAuthChecked(true)
   }, [router])
 
   function setFmtState(fmtId: string, state: FormatDlState) {
@@ -380,8 +383,8 @@ export default function DownloadPage() {
 
   const handleDownload = useCallback((fmt: VideoFormat) => {
     if (activeId !== null) return
-    const fmtId  = fmt.format_id
-    const base   = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const fmtId = fmt.format_id
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
     const sseUrl = `${base}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${fmtId}&identifier=${encodeURIComponent(identifier)}&ext=${fmt.ext}`
 
     const initProgress: ProgressData = {
@@ -439,7 +442,7 @@ export default function DownloadPage() {
 
   // Group formats by extension
   const allFormats = videoInfo?.formats ?? []
-  const videoExts  = ['mp4', 'webm', 'mkv', 'mov', 'avi']
+  const videoExts = ['mp4', 'webm', 'mkv', 'mov', 'avi']
 
   const grouped = allFormats.reduce<Record<string, VideoFormat[]>>((acc, f) => {
     const key = f.ext.toLowerCase()
@@ -461,11 +464,14 @@ export default function DownloadPage() {
   const filteredExts = filter === 'all'
     ? sortedExts
     : filter === 'audio'
-    ? sortedExts.filter(e => !videoExts.includes(e))
-    : sortedExts.filter(e => e === filter)
+      ? sortedExts.filter(e => !videoExts.includes(e))
+      : sortedExts.filter(e => e === filter)
 
   const totalStreams = allFormats.length
-  const anyActive   = activeId !== null
+  const anyActive = activeId !== null
+
+  // Auth gate — render nothing until we know the user is allowed here.
+  if (!authChecked || !authorized) return null
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -544,7 +550,7 @@ export default function DownloadPage() {
             >
               {fetching
                 ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
-                : <Play   className="w-4 h-4 fill-current flex-shrink-0" />
+                : <Play className="w-4 h-4 fill-current flex-shrink-0" />
               }
               <span className="hidden sm:inline">{fetching ? 'Analyzing…' : 'Analyze'}</span>
             </button>
@@ -639,13 +645,13 @@ export default function DownloadPage() {
                 </div>
                 <div className="divide-y divide-white/4">
                   {([
-                    videoInfo.duration   && { icon: <Clock     className="w-3.5 h-3.5" />, label: 'Duration',  value: formatDuration(videoInfo.duration),   accent: 'text-sky-400'     },
-                    videoInfo.view_count && { icon: <Eye       className="w-3.5 h-3.5" />, label: 'Views',     value: formatViews(videoInfo.view_count),     accent: 'text-sky-400'     },
-                    videoInfo.like_count && { icon: <ThumbsUp  className="w-3.5 h-3.5" />, label: 'Likes',     value: formatViews(videoInfo.like_count),     accent: 'text-emerald-400' },
-                    videoInfo.upload_date && { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Uploaded',  value: videoInfo.upload_date,                 accent: 'text-gray-300'    },
-                    videoInfo.platform   && { icon: <Globe     className="w-3.5 h-3.5" />, label: 'Platform',  value: videoInfo.platform,                    accent: 'text-sky-400'     },
-                    videoInfo.id         && { icon: <Hash      className="w-3.5 h-3.5" />, label: 'Video ID',  value: videoInfo.id,                          accent: 'text-gray-500'    },
-                    { icon: <Layers      className="w-3.5 h-3.5" />, label: 'Formats',  value: `${totalStreams} available`,                  accent: 'text-indigo-400' },
+                    videoInfo.duration && { icon: <Clock className="w-3.5 h-3.5" />, label: 'Duration', value: formatDuration(videoInfo.duration), accent: 'text-sky-400' },
+                    videoInfo.view_count && { icon: <Eye className="w-3.5 h-3.5" />, label: 'Views', value: formatViews(videoInfo.view_count), accent: 'text-sky-400' },
+                    videoInfo.like_count && { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: 'Likes', value: formatViews(videoInfo.like_count), accent: 'text-emerald-400' },
+                    videoInfo.upload_date && { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Uploaded', value: videoInfo.upload_date, accent: 'text-gray-300' },
+                    videoInfo.platform && { icon: <Globe className="w-3.5 h-3.5" />, label: 'Platform', value: videoInfo.platform, accent: 'text-sky-400' },
+                    videoInfo.id && { icon: <Hash className="w-3.5 h-3.5" />, label: 'Video ID', value: videoInfo.id, accent: 'text-gray-500' },
+                    { icon: <Layers className="w-3.5 h-3.5" />, label: 'Formats', value: `${totalStreams} available`, accent: 'text-indigo-400' },
                   ] as const).filter(Boolean).map((row: any, i) => (
                     <div key={i} className="flex items-center justify-between gap-2 px-4 py-2.5">
                       <div className="flex items-center gap-2 text-gray-600">
@@ -682,18 +688,17 @@ export default function DownloadPage() {
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {[
-                    { key: 'all',   label: 'All' },
+                    { key: 'all', label: 'All' },
                     ...sortedExts.filter(e => videoExts.includes(e)).map(e => ({ key: e, label: e.toUpperCase() })),
                     ...(hasAudio ? [{ key: 'audio', label: 'Audio' }] : []),
                   ].map(({ key, label }) => (
                     <button
                       key={key}
                       onClick={() => setFilter(key as FormatFilter)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                        filter === key
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${filter === key
                           ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/40'
                           : 'bg-white/4 text-gray-500 hover:text-gray-300 hover:bg-white/7 border border-white/6'
-                      }`}
+                        }`}
                     >
                       {label}
                     </button>

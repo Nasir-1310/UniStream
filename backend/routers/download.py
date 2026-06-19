@@ -24,8 +24,8 @@ import yt_dlp
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
-from ..dependencies import require_approved_user
-from ..database import log_download
+from dependencies import require_approved_user
+from database import log_download
 
 router = APIRouter(tags=["download"])
 

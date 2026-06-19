@@ -109,7 +109,7 @@ function Pagination({
 }) {
   if (totalPages <= 1) return null
   const from = (page - 1) * pageSize + 1
-  const to   = Math.min(page * pageSize, total)
+  const to = Math.min(page * pageSize, total)
 
   const pages: (number | '...')[] = []
   if (totalPages <= 7) {
@@ -138,9 +138,8 @@ function Pagination({
             ? <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-gray-600">…</span>
             : (
               <button key={p} onClick={() => onPage(p as number)}
-                className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${
-                  page === p ? 'bg-violet-600 text-white shadow-sm shadow-violet-500/30' : 'text-gray-500 hover:text-gray-200 hover:bg-white/6'
-                }`}>
+                className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${page === p ? 'bg-violet-600 text-white shadow-sm shadow-violet-500/30' : 'text-gray-500 hover:text-gray-200 hover:bg-white/6'
+                  }`}>
                 {p}
               </button>
             )
@@ -177,32 +176,32 @@ function SkeletonRow({ height = 'h-14' }: { height?: string }) {
 ═══════════════════════════════════════════════════════════════════════════ */
 export default function AdminPage() {
   /* auth */
-  const [secret, setSecret]           = useState('')
+  const [secret, setSecret] = useState('')
   const [secretInput, setSecretInput] = useState('')
-  const [showSecret, setShowSecret]   = useState(false)
-  const [loggedIn, setLoggedIn]       = useState(false)
-  const [authError, setAuthError]     = useState('')
+  const [showSecret, setShowSecret] = useState(false)
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [authError, setAuthError] = useState('')
 
   /* data */
-  const [tab, setTab]     = useState<'users' | 'logs'>('users')
+  const [tab, setTab] = useState<'users' | 'logs'>('users')
   const [users, setUsers] = useState<User[]>([])
-  const [logs, setLogs]   = useState<Log[]>([])
+  const [logs, setLogs] = useState<Log[]>([])
   const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
+  const [error, setError] = useState('')
 
   /* add-user form */
-  const [newId, setNewId]         = useState('')
-  const [newNote, setNewNote]     = useState('')
-  const [adding, setAdding]       = useState(false)
+  const [newId, setNewId] = useState('')
+  const [newNote, setNewNote] = useState('')
+  const [adding, setAdding] = useState(false)
   const [addSuccess, setAddSuccess] = useState('')
 
   /* filters */
   const [statusFilter, setStatusFilter] = useState('')
-  const [search, setSearch]             = useState('')
+  const [search, setSearch] = useState('')
 
   /* pagination */
   const [userPage, setUserPage] = useState(1)
-  const [logPage, setLogPage]   = useState(1)
+  const [logPage, setLogPage] = useState(1)
 
   /* ── load ────────────────────────────────────────────────────────────── */
   const load = useCallback(async () => {
@@ -236,15 +235,32 @@ export default function AdminPage() {
   useEffect(() => { setUserPage(1) }, [search, statusFilter])
 
   /* ── handlers ────────────────────────────────────────────────────────── */
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     const key = secretInput.trim()
     if (!key) { setAuthError('Please enter your secret key.'); return }
-    setAuthError('')
-    setSecret(key)
-    setLoggedIn(true)
-  }
 
+    setAuthError('')
+    setLoading(true)
+
+    try {
+      // আগে verify করো — load() এর মতোই call করো
+      const data = await adminListUsers(key, undefined)
+      // সফল হলে তবেই login করাও
+      setUsers(data.users)
+      setUserPage(1)
+      setSecret(key)
+      setLoggedIn(true)
+    } catch (e: any) {
+      if (e?.response?.status === 401) {
+        setAuthError('Invalid secret key. Please try again.')
+      } else {
+        setAuthError('Connection error. Please try again.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
   async function handleAddUser(e: React.FormEvent) {
     e.preventDefault()
     if (!newId.trim()) return
@@ -278,15 +294,15 @@ export default function AdminPage() {
     ), [users, search])
 
   const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
-  const pagedUsers     = filteredUsers.slice((userPage - 1) * PAGE_SIZE, userPage * PAGE_SIZE)
-  const logTotalPages  = Math.max(1, Math.ceil(logs.length / PAGE_SIZE))
-  const pagedLogs      = logs.slice((logPage - 1) * PAGE_SIZE, logPage * PAGE_SIZE)
+  const pagedUsers = filteredUsers.slice((userPage - 1) * PAGE_SIZE, userPage * PAGE_SIZE)
+  const logTotalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE))
+  const pagedLogs = logs.slice((logPage - 1) * PAGE_SIZE, logPage * PAGE_SIZE)
 
   const stats = {
-    total:    users.length,
+    total: users.length,
     approved: users.filter(u => u.status === 'approved').length,
-    pending:  users.filter(u => u.status === 'pending').length,
-    blocked:  users.filter(u => u.status === 'blocked').length,
+    pending: users.filter(u => u.status === 'pending').length,
+    blocked: users.filter(u => u.status === 'blocked').length,
   }
 
   /* ════════════════════════════════════════════════════════════════════════
@@ -373,10 +389,14 @@ export default function AdminPage() {
 
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 active:scale-[0.98] text-white font-semibold text-sm py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/25 select-none"
+                  disabled={loading}  // ← এটা যোগ করুন
+                  className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-sm py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/25 select-none"
                 >
-                  <LogIn className="w-4 h-4" />
-                  Sign in to Dashboard
+                  {loading
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <LogIn className="w-4 h-4" />
+                  }
+                  {loading ? 'Verifying…' : 'Sign in to Dashboard'}
                 </button>
               </form>
             </div>
@@ -447,10 +467,10 @@ export default function AdminPage() {
 
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <StatCard value={stats.total}    label="Total Users"         icon={<Users className="w-5 h-5 text-blue-400" />}    glowClass="bg-blue-500" />
-              <StatCard value={stats.approved} label="Approved"            icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />} glowClass="bg-emerald-500" sublabel="Active access" />
-              <StatCard value={stats.pending}  label="Pending Approvals"   icon={<Clock className="w-5 h-5 text-amber-400" />}   glowClass="bg-amber-500"  sublabel={stats.pending > 0 ? 'Requires action' : 'All clear'} />
-              <StatCard value={logs.length}    label="Activity Logs"       icon={<Download className="w-5 h-5 text-violet-400" />} glowClass="bg-violet-500" />
+              <StatCard value={stats.total} label="Total Users" icon={<Users className="w-5 h-5 text-blue-400" />} glowClass="bg-blue-500" />
+              <StatCard value={stats.approved} label="Approved" icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />} glowClass="bg-emerald-500" sublabel="Active access" />
+              <StatCard value={stats.pending} label="Pending Approvals" icon={<Clock className="w-5 h-5 text-amber-400" />} glowClass="bg-amber-500" sublabel={stats.pending > 0 ? 'Requires action' : 'All clear'} />
+              <StatCard value={logs.length} label="Activity Logs" icon={<Download className="w-5 h-5 text-violet-400" />} glowClass="bg-violet-500" />
             </div>
 
             {/* Add user */}
@@ -513,23 +533,21 @@ export default function AdminPage() {
               <div className="flex border-b border-white/[0.07] overflow-x-auto">
                 {([
                   ['users', 'User Management', <Users className="w-4 h-4" />, users.length],
-                  ['logs',  'Live Logs',        <Activity className="w-4 h-4" />, logs.length],
+                  ['logs', 'Live Logs', <Activity className="w-4 h-4" />, logs.length],
                 ] as const).map(([t, label, icon, count]) => (
                   <button
                     key={t}
                     onClick={() => setTab(t)}
-                    className={`flex items-center gap-2 px-5 py-4 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-all ${
-                      tab === t
+                    className={`flex items-center gap-2 px-5 py-4 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-all ${tab === t
                         ? 'border-violet-500 text-violet-400 bg-violet-500/5'
                         : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/3'
-                    }`}
+                      }`}
                   >
                     {icon}
                     {label}
                     {count > 0 && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                        tab === t ? 'bg-violet-500/20 text-violet-300' : 'bg-white/6 text-gray-600'
-                      }`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === t ? 'bg-violet-500/20 text-violet-300' : 'bg-white/6 text-gray-600'
+                        }`}>
                         {count}
                       </span>
                     )}

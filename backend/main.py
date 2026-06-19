@@ -15,8 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 
-from .routers.download import router as download_router
-from .dependencies import get_user, normalize, supabase
+from routers.download import router as download_router
+from dependencies import get_user, normalize, supabase
 
 backend_dir = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=backend_dir / ".env")

@@ -188,8 +188,8 @@ function FormatRow({
         onClick={() => !isDisabled && onDownload(fmt)}
         disabled={isDisabled}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap ${locked
-            ? 'bg-white/5 text-gray-600 cursor-not-allowed'
-            : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-900/30 cursor-pointer active:scale-95'
+          ? 'bg-white/5 text-gray-600 cursor-not-allowed'
+          : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-900/30 cursor-pointer active:scale-95'
           }`}
       >
         <Download className="w-3 h-3 flex-shrink-0" />
@@ -384,7 +384,7 @@ export default function DownloadPage() {
   const handleDownload = useCallback((fmt: VideoFormat) => {
     if (activeId !== null) return
     const fmtId = fmt.format_id
-    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const base = '/api'
     const sseUrl = `${base}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${fmtId}&identifier=${encodeURIComponent(identifier)}&ext=${fmt.ext}`
 
     const initProgress: ProgressData = {
@@ -696,8 +696,8 @@ export default function DownloadPage() {
                       key={key}
                       onClick={() => setFilter(key as FormatFilter)}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${filter === key
-                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/40'
-                          : 'bg-white/4 text-gray-500 hover:text-gray-300 hover:bg-white/7 border border-white/6'
+                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/40'
+                        : 'bg-white/4 text-gray-500 hover:text-gray-300 hover:bg-white/7 border border-white/6'
                         }`}
                     >
                       {label}

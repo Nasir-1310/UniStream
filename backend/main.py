@@ -13,10 +13,18 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from supabase import create_client, Client
 
 from routers.download import router as download_router
-from dependencies import get_user, normalize, supabase
+from dependencies import get_user, normalize
+from storage import (
+    delete_user,
+    list_download_logs,
+    list_users,
+    log_download,
+    set_user_status,
+    upsert_pending_user,
+    upsert_user,
+)
 
 backend_dir = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=backend_dir / ".env")
@@ -186,10 +194,7 @@ def health():
 def check_access(body: AccessCheckRequest):
     user = get_user(body.identifier)
     if not user:
-        supabase.table("users").upsert({
-            "identifier": normalize(body.identifier),
-            "status":     "pending",
-        }).execute()
+        upsert_pending_user(body.identifier)
         return {"access": False, "message": "Access not granted. Please contact the admin."}
 
     if user["status"] == "approved":
@@ -199,7 +204,7 @@ def check_access(body: AccessCheckRequest):
 
 
 @app.post("/video-info")
-def video_info(body: VideoInfoRequest):
+async def video_info(body: VideoInfoRequest):
     import yt_dlp
 
     user = get_user(body.identifier)
@@ -216,15 +221,12 @@ def video_info(body: VideoInfoRequest):
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)
 
-    try:
-        supabase.table("download_logs").insert({
-            "identifier": normalize(body.identifier),
-            "url":        body.url,
-            "title":      info.get("title", ""),
-            "platform":   info.get("extractor_key", ""),
-        }).execute()
-    except Exception:
-        pass
+    await log_download(
+        identifier=body.identifier,
+        url=body.url,
+        title=info.get("title", ""),
+        platform=info.get("extractor_key", ""),
+    )
 
     return {
         "title":     info.get("title", ""),
@@ -242,28 +244,13 @@ def video_info(body: VideoInfoRequest):
 
 @app.get("/admin/users", dependencies=[Depends(require_admin)])
 def admin_list_users(status: Optional[str] = None):
-    query = supabase.table("users").select("*").order("created_at", desc=True)
-    if status:
-        query = query.eq("status", status)
-    resp = query.execute()
-    return {"users": resp.data, "total": len(resp.data)}
+    users = list_users(status)
+    return {"users": users, "total": len(users)}
 
 
 @app.post("/admin/users", dependencies=[Depends(require_admin)])
 def admin_add_user(body: AdminAddUserRequest):
-    existing = get_user(body.identifier)
-    if existing:
-        supabase.table("users").update({
-            "status": "approved",
-            "note":   body.note,
-        }).eq("identifier", normalize(body.identifier)).execute()
-        return {"message": "User approved successfully", "identifier": body.identifier}
-
-    supabase.table("users").insert({
-        "identifier": normalize(body.identifier),
-        "status":     "approved",
-        "note":       body.note,
-    }).execute()
+    upsert_user(body.identifier, "approved", note=body.note)
     return {"message": "New user added and approved", "identifier": body.identifier}
 
 
@@ -271,25 +258,16 @@ def admin_add_user(body: AdminAddUserRequest):
 def admin_update_status(body: AdminUpdateStatusRequest):
     if body.status not in ("approved", "pending", "blocked"):
         raise HTTPException(status_code=400, detail="Invalid status value")
-    supabase.table("users").update({"status": body.status}).eq(
-        "identifier", normalize(body.identifier)
-    ).execute()
+    set_user_status(body.identifier, body.status)
     return {"message": f"Status updated to '{body.status}'"}
 
 
 @app.delete("/admin/users/{identifier}", dependencies=[Depends(require_admin)])
 def admin_delete_user(identifier: str):
-    supabase.table("users").delete().eq("identifier", identifier).execute()
+    delete_user(identifier)
     return {"message": "User deleted successfully"}
 
 
 @app.get("/admin/logs", dependencies=[Depends(require_admin)])
 def admin_download_logs(limit: int = 50):
-    resp = (
-        supabase.table("download_logs")
-        .select("*")
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return {"logs": resp.data}
+    return {"logs": list_download_logs(limit)}

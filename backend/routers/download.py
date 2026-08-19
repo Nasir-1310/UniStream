@@ -106,6 +106,8 @@ def _build_ydl_opts_video(format_id: str, output_template: str) -> dict:
         "no_warnings": True,
         "format": f"{format_id}+bestaudio/best",
         "outtmpl": output_template,
+        "windowsfilenames": True,
+        "trim_file_name": 150,
         "merge_output_format": "mp4",
         "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
         "postprocessor_args": {
@@ -124,6 +126,8 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
         "no_warnings": True,
         "format": "bestaudio/best",
         "outtmpl": output_template,
+        "windowsfilenames": True,
+        "trim_file_name": 150,
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
@@ -214,7 +218,7 @@ async def download_with_progress(
     # ── Background download coroutine ─────────────────────────────────────────
     async def _run_download():
         loop = asyncio.get_event_loop()
-        output_template = str(Path(tmp_dir) / "%(title)s.%(ext)s")
+        output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
 
         if ext == "mp3":
             ydl_opts = _build_ydl_opts_audio(output_template)
@@ -384,7 +388,7 @@ def get_download(
         raise HTTPException(status_code=503, detail="Server busy. Try again shortly.")
 
     tmp_dir         = tempfile.mkdtemp()
-    output_template = os.path.join(tmp_dir, "%(title)s.%(ext)s")
+    output_template = os.path.join(tmp_dir, "%(title).150B.%(ext)s")
 
     if ext == "mp3":
         ydl_opts = _build_ydl_opts_audio(output_template)

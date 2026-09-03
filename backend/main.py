@@ -22,6 +22,7 @@ from storage import (
     list_users,
     log_download,
     set_user_status,
+    storage_diagnostics,
     upsert_pending_user,
     upsert_user,
 )
@@ -271,3 +272,20 @@ def admin_delete_user(identifier: str):
 @app.get("/admin/logs", dependencies=[Depends(require_admin)])
 def admin_download_logs(limit: int = 50):
     return {"logs": list_download_logs(limit)}
+
+
+@app.get("/admin/storage", dependencies=[Depends(require_admin)])
+def admin_storage_health():
+    """
+    Reports which store is live, where the SQLite file ended up, and the
+    versions of the two tools a download depends on.  Without it a deployment
+    that answers "/" fine but 500s on every database call can only be diagnosed
+    from the host's own logs.
+    """
+    import yt_dlp
+    from routers.download import FFMPEG_LOCATION
+
+    info = storage_diagnostics()
+    info["yt_dlp_version"] = yt_dlp.version.__version__
+    info["ffmpeg_location"] = FFMPEG_LOCATION
+    return info

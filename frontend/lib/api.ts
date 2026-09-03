@@ -1,10 +1,21 @@
 // frontend/lib/api.ts
 import axios from 'axios'
 
+// The API sleeps on Render's free tier and takes ~50-60s to answer the first
+// request after it spins down, so the timeout has to outlast a cold start —
+// at 30s the first login of the day always failed with a network error.
 const API = axios.create({
   baseURL: '/api',
-  timeout: 30000,
+  timeout: 120000,
 })
+
+/**
+ * Fire-and-forget ping that starts the backend spinning up while the user is
+ * still typing, so the request that matters isn't the one paying the cold start.
+ */
+export function warmBackend() {
+  API.get('/', { timeout: 120000 }).catch(() => { /* best effort */ })
+}
 
 export async function checkAccess(identifier: string) {
   const { data } = await API.post('/check-access', { identifier })

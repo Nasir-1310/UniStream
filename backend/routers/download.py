@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -37,6 +38,26 @@ _jobs: dict[str, dict] = {}
 # Semaphore shared with the legacy /download endpoint
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "5"))
 _semaphore = threading.Semaphore(MAX_CONCURRENT)
+
+
+# ── ffmpeg discovery ───────────────────────────────────────────────────────────
+# yt-dlp shells out to ffmpeg to merge the separate video and audio streams into
+# an MP4 and to transcode MP3.  Render's native Python runtime ships no ffmpeg
+# binary, so every merged download failed there.  Fall back to the static build
+# that comes with the imageio-ffmpeg wheel when the host has none of its own.
+
+def _resolve_ffmpeg() -> str | None:
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+FFMPEG_LOCATION = _resolve_ffmpeg()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,7 +122,7 @@ def _sse(data: dict) -> str:
 
 def _build_ydl_opts_video(format_id: str, output_template: str) -> dict:
     """yt-dlp options for a video+audio merged MP4 download."""
-    return {
+    opts = {
         "quiet": True,
         "no_warnings": True,
         "format": f"{format_id}+bestaudio/best",
@@ -117,11 +138,14 @@ def _build_ydl_opts_video(format_id: str, output_template: str) -> dict:
         "retries": 3,
         "fragment_retries": 3,
     }
+    if FFMPEG_LOCATION:
+        opts["ffmpeg_location"] = FFMPEG_LOCATION
+    return opts
 
 
 def _build_ydl_opts_audio(output_template: str) -> dict:
     """yt-dlp options for an audio-only MP3 download."""
-    return {
+    opts = {
         "quiet": True,
         "no_warnings": True,
         "format": "bestaudio/best",
@@ -137,6 +161,9 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
         "retries": 3,
         "fragment_retries": 3,
     }
+    if FFMPEG_LOCATION:
+        opts["ffmpeg_location"] = FFMPEG_LOCATION
+    return opts
 
 
 # ─────────────────────────────────────────────────────────────────────────────

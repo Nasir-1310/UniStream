@@ -2,7 +2,7 @@
 // frontend/app/download/page.tsx
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { getVideoInfo, VideoInfo, VideoFormat } from '@/lib/api'
+import { getVideoInfo, warmBackend, VideoInfo, VideoFormat } from '@/lib/api'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import {
@@ -331,6 +331,7 @@ export default function DownloadPage() {
   const sseRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
+    warmBackend()
     const id = sessionStorage.getItem('us_identifier')
     const n = sessionStorage.getItem('us_name')
     if (!id) {

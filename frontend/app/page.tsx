@@ -1,8 +1,8 @@
 'use client'
 // frontend/app/page.tsx
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { checkAccess } from '@/lib/api'
+import { checkAccess, warmBackend } from '@/lib/api'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import {
@@ -50,6 +50,10 @@ export default function HomePage() {
   const [touched, setTouched]       = useState(false)
   const [loading, setLoading]       = useState(false)
   const [serverError, setServerError] = useState('')
+
+  // Start waking the free-tier backend immediately, so the ~50s cold start
+  // overlaps with the user typing instead of stalling their first login.
+  useEffect(() => { warmBackend() }, [])
 
   const validation = useMemo(() => validate(identifier), [identifier])
   const showHint = touched && identifier.trim().length > 0 && !validation.valid && validation.hint

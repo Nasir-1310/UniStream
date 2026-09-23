@@ -1,4 +1,6 @@
 # backend/database.py
 """Thin async-friendly wrappers around storage operations used by routers."""
 
-from storage import log_download
+from storage import log_download, record_download
+
+__all__ = ["log_download", "record_download"]

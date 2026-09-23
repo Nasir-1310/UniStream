@@ -11,6 +11,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -26,10 +27,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
 from dependencies import require_approved_user
-from database import log_download
+from database import log_download, record_download
 from yt_dlp_config import youtube_error_message, youtube_ydl_options
 
 router = APIRouter(tags=["download"])
+logger = logging.getLogger(__name__)
 
 # ── In-memory job registry ─────────────────────────────────────────────────────
 # Maps job_id  → progress dict
@@ -208,7 +210,9 @@ async def download_with_progress(
 
     # ── yt-dlp progress hook (runs in worker thread) ──────────────────────────
     def _hook(d: dict):
-        job = _jobs[job_id]
+        job = _jobs.get(job_id)
+        if not job:
+            return
 
         if d["status"] == "downloading":
             downloaded = d.get("downloaded_bytes") or 0
@@ -245,10 +249,19 @@ async def download_with_progress(
 
     # ── Background download coroutine ─────────────────────────────────────────
     async def _run_download():
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
+        acquired = False
 
         try:
+            acquired = await asyncio.to_thread(
+                _semaphore.acquire,
+                blocking=True,
+                timeout=30,
+            )
+            if not acquired:
+                raise RuntimeError("Server is busy. Try again shortly.")
+
             if ext == "mp3":
                 ydl_opts = _build_ydl_opts_audio(output_template)
             else:
@@ -259,33 +272,67 @@ async def download_with_progress(
 
             def _blocking():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
+                    return ydl.extract_info(url, download=True)
 
-            await loop.run_in_executor(None, _blocking)
+            info = await loop.run_in_executor(None, _blocking)
 
             files = list(Path(tmp_dir).iterdir())
             if not files:
                 raise FileNotFoundError("yt-dlp produced no output file")
 
             out_file = max(files, key=lambda f: f.stat().st_size)
-            _jobs[job_id].update({
+            job = _jobs.get(job_id)
+            if not job:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return
+
+            try:
+                await log_download(
+                    identifier=identifier,
+                    url=url,
+                    title=info.get("title", ""),
+                    platform=info.get("extractor_key", ""),
+                )
+            except Exception:
+                # The media is already complete; do not take it away from the
+                # user, but keep an actionable server-side audit failure.
+                logger.exception("Completed download could not be written to the audit log")
+
+            token = str(uuid.uuid4())
+            _jobs[f"token:{token}"] = {
+                "filename": str(out_file),
+                "expires": time.time() + 300,
+            }
+            job.update({
                 "status":   "complete",
                 "percent":  100,
                 "filename": str(out_file),
+                "token":    token,
                 "done":     True,
             })
 
-            try:
-                await log_download(identifier=identifier, url=url)
-            except Exception:
-                pass
+            async def _expire_unclaimed_file():
+                await asyncio.sleep(300)
+                entry = _jobs.pop(f"token:{token}", None)
+                _jobs.pop(job_id, None)
+                if entry:
+                    shutil.rmtree(Path(entry["filename"]).parent, ignore_errors=True)
+
+            asyncio.create_task(_expire_unclaimed_file())
 
         except Exception as exc:
-            _jobs[job_id].update({
-                "status": "error",
-                "error":  youtube_error_message(url, exc),
-                "done":   True,
-            })
+            job = _jobs.get(job_id)
+            if job:
+                job.update({
+                    "status": "error",
+                    "error":  youtube_error_message(url, exc),
+                    "done":   True,
+                })
+            else:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+        finally:
+            if acquired:
+                _semaphore.release()
 
     asyncio.create_task(_run_download())
 
@@ -322,12 +369,7 @@ async def download_with_progress(
             }
 
             if status == "complete":
-                token = str(uuid.uuid4())
-                _jobs[f"token:{token}"] = {
-                    "filename": job["filename"],
-                    "expires":  time.time() + 300,  # 5-minute window
-                }
-                payload["token"] = token
+                payload["token"] = job["token"]
                 yield _sse(payload)
                 break
 
@@ -369,6 +411,7 @@ async def serve_download_file(token: str = Query(...)):
 
     if time.time() > entry["expires"]:
         _jobs.pop(f"token:{token}", None)
+        shutil.rmtree(Path(entry["filename"]).parent, ignore_errors=True)
         raise HTTPException(status_code=410, detail="Download token has expired.")
 
     filepath = Path(entry["filename"])
@@ -383,8 +426,7 @@ async def serve_download_file(token: str = Query(...)):
     async def _cleanup():
         await asyncio.sleep(30)
         try:
-            filepath.unlink(missing_ok=True)
-            filepath.parent.rmdir()
+            shutil.rmtree(filepath.parent, ignore_errors=True)
         except Exception:
             pass
 
@@ -434,26 +476,36 @@ def get_download(
             info      = ydl.extract_info(url, download=True)
             raw_title = info.get("title", "unistream_video")
 
-        output_file = next(
-            (os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir)), None
-        )
-        if not output_file or not os.path.exists(output_file):
+        output_candidates = [
+            Path(tmp_dir) / filename for filename in os.listdir(tmp_dir)
+        ]
+        if not output_candidates:
             raise HTTPException(status_code=500, detail="File could not be created.")
+        output_file = max(output_candidates, key=lambda path: path.stat().st_size)
 
-        file_size  = os.path.getsize(output_file)
+        file_size  = output_file.stat().st_size
         actual_ext = "mp3" if ext == "mp3" else "mp4"
         filename   = f"{_clean_filename(raw_title)}.{actual_ext}"
 
+        try:
+            record_download(
+                identifier=identifier,
+                url=url,
+                title=raw_title,
+                platform=info.get("extractor_key", ""),
+            )
+        except Exception:
+            logger.exception("Legacy completed download could not be written to the audit log")
+
         def _iter_and_cleanup():
             try:
-                with open(output_file, "rb") as f:
+                with output_file.open("rb") as f:
                     while chunk := f.read(1024 * 1024):
                         yield chunk
             finally:
                 _semaphore.release()
                 try:
-                    os.remove(output_file)
-                    os.rmdir(tmp_dir)
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
                 except Exception:
                     pass
 

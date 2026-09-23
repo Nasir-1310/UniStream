@@ -172,7 +172,7 @@ function FormatRow({
   const progress = isActive ? dlState.progress : null
 
   // Download button — shared between mobile card + desktop row
-  const DownloadBtn = () => (
+  const renderDownloadButton = () => (
     isActive ? (
       <div className="flex items-center gap-1.5 text-indigo-400 text-xs font-medium whitespace-nowrap">
         <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
@@ -223,7 +223,7 @@ function FormatRow({
         </div>
         {/* Download button always visible on mobile */}
         <div className="flex-shrink-0">
-          <DownloadBtn />
+          {renderDownloadButton()}
         </div>
       </div>
 
@@ -241,7 +241,7 @@ function FormatRow({
         <div className="text-xs text-gray-400">{fmt.filesize_human || '—'}</div>
         <div className="text-xs text-gray-500">{fmt.bitrate || '—'}</div>
         <div className="text-xs text-gray-500">{fmt.fps || '—'}</div>
-        <div className="flex justify-end"><DownloadBtn /></div>
+        <div className="flex justify-end">{renderDownloadButton()}</div>
       </div>
 
       {/* Progress bar — spans full width on both layouts */}
@@ -336,6 +336,9 @@ export default function DownloadPage() {
   const [authorized, setAuthorized] = useState(false)
   const sseRef = useRef<EventSource | null>(null)
 
+  /* Session storage is browser-only, so this hydration gate intentionally
+     synchronizes it after mount. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     warmBackend()
     const id = sessionStorage.getItem('us_identifier')
@@ -349,6 +352,7 @@ export default function DownloadPage() {
     setAuthorized(true)
     setAuthChecked(true)
   }, [router])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function setFmtState(fmtId: string, state: FormatDlState) {
     setDlStates(prev => ({ ...prev, [fmtId]: state }))
@@ -619,6 +623,8 @@ export default function DownloadPage() {
               {/* Thumbnail */}
               <div className="relative rounded-xl overflow-hidden bg-white/4 aspect-video">
                 {videoInfo.thumbnail ? (
+                  // Dynamic extractor thumbnails use many platform CDNs.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={videoInfo.thumbnail} alt={videoInfo.title}
                     className="w-full h-full object-cover"
                     onError={e => { e.currentTarget.style.display = 'none' }} />

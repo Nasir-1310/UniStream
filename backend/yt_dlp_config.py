@@ -106,6 +106,15 @@ def youtube_ydl_options(url: str) -> dict:
         profile = os.getenv("YOUTUBE_COOKIES_BROWSER_PROFILE", "").strip() or None
         options["cookiesfrombrowser"] = (browser, profile, None, None)
 
+    if cookiefile or browser:
+        # Logged-in extraction can otherwise settle on the downgraded TV
+        # client, which may expose only one low-resolution combined stream.
+        # web_embedded currently exposes the complete DASH ladder without a
+        # GVS PO token; default remains available for restricted videos.
+        options["extractor_args"] = {
+            "youtube": {"player_client": ["web_embedded", "default"]},
+        }
+
     user_agent = os.getenv("YOUTUBE_USER_AGENT", "").strip()
     if user_agent:
         options["http_headers"] = {"User-Agent": user_agent}

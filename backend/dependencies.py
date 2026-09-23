@@ -3,10 +3,10 @@
 
 from fastapi import HTTPException, Query
 
-from storage import get_user, normalize
+from storage import get_user
 
 
-def require_approved_user(identifier: str = Query(...)):
+def require_approved_user(identifier: str = Query(..., min_length=1, max_length=320)):
     """
     FastAPI dependency.  Reads `identifier` from the query string and raises
     403 if the user is not found or not approved.

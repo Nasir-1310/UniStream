@@ -30,10 +30,6 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BACKEND_ORIGIN: resolveBackendOrigin(),
   },
-  images: {
-    domains: ['i.ytimg.com', 'img.youtube.com', 'scontent.fdac', 'cdn.pixabay.com'],
-    remotePatterns: [{ protocol: 'https', hostname: '**' }],
-  },
   async rewrites() {
     const backendUrl = resolveBackendOrigin()
 

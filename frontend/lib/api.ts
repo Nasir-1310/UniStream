@@ -72,6 +72,25 @@ export async function adminGetLogs(secret: string, limit = 50) {
   return data
 }
 
+export interface StorageHealth {
+  active_backend: 'supabase' | 'sqlite'
+  persistent: boolean
+  reachable: boolean
+  user_count?: number | null
+  download_log_count?: number | null
+  youtube_auth?: string
+  configuration_warning?: string | null
+  error?: string | null
+  last_remote_error?: string | null
+}
+
+export async function adminGetStorage(secret: string) {
+  const { data } = await API.get('/admin/storage', {
+    headers: { 'x-admin-secret': secret },
+  })
+  return data as StorageHealth
+}
+
 export interface VideoFormat {
   type: 'video' | 'audio'
   format_id: string

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="UniStream Saver">
+  <defs>
+    <linearGradient id="background" x1="72" y1="48" x2="440" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0d0f1a"/>
+  <rect x="36" y="36" width="440" height="440" rx="94" fill="url(#background)"/>
+  <path d="M150 125v158c0 74 42 113 106 113s106-39 106-113V125h-64v154c0 39-13 58-42 58s-42-19-42-58V125z" fill="white"/>
+  <path d="m256 238 58 41-58 41z" fill="#a5f3fc"/>
+</svg>

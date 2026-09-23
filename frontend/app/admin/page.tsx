@@ -1,18 +1,18 @@
 'use client'
 // frontend/app/admin/page.tsx
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   adminListUsers, adminAddUser, adminUpdateStatus,
-  adminDeleteUser, adminGetLogs
+  adminDeleteUser, adminGetLogs, adminGetStorage, StorageHealth,
 } from '@/lib/api'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import {
-  Shield, Plus, Trash2, CheckCircle2, XCircle,
+  Shield, Plus, Trash2, CheckCircle2,
   Clock, Loader2, AlertCircle, Users, Activity,
   LogIn, Eye, EyeOff, RefreshCw, Search, ExternalLink,
   ChevronDown, UserCheck, Download,
-  ChevronLeft, ChevronRight, UserX,
+  ChevronLeft, ChevronRight, LogOut, Database,
 } from 'lucide-react'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -186,8 +186,11 @@ export default function AdminPage() {
   const [tab, setTab] = useState<'users' | 'logs'>('users')
   const [users, setUsers] = useState<User[]>([])
   const [logs, setLogs] = useState<Log[]>([])
+  const [storage, setStorage] = useState<StorageHealth | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [mutatingUser, setMutatingUser] = useState<string | null>(null)
 
   /* add-user form */
   const [newId, setNewId] = useState('')
@@ -209,30 +212,28 @@ export default function AdminPage() {
     setLoading(true)
     setError('')
     try {
-      if (tab === 'users') {
-        const data = await adminListUsers(secret, statusFilter || undefined)
-        setUsers(data.users)
-        setUserPage(1)
-      } else {
-        const data = await adminGetLogs(secret, 500)
-        setLogs(data.logs)
-        setLogPage(1)
-      }
+      const [userData, logData, storageData] = await Promise.all([
+        adminListUsers(secret),
+        adminGetLogs(secret, 500),
+        adminGetStorage(secret),
+      ])
+      setUsers(userData.users)
+      setLogs(logData.logs)
+      setStorage(storageData)
+      setUserPage(1)
+      setLogPage(1)
     } catch (e: any) {
       if (e?.response?.status === 401) {
         setLoggedIn(false)
         setSecret('')
         setError('Session expired — please sign in again.')
       } else {
-        setError('Failed to load data. Try again.')
+        setError(e?.response?.data?.detail || 'Failed to load data. Try again.')
       }
     } finally {
       setLoading(false)
     }
-  }, [secret, tab, statusFilter])
-
-  useEffect(() => { if (loggedIn) load() }, [loggedIn, load])
-  useEffect(() => { setUserPage(1) }, [search, statusFilter])
+  }, [secret])
 
   /* ── handlers ────────────────────────────────────────────────────────── */
   async function handleLogin(e: React.FormEvent) {
@@ -245,10 +246,17 @@ export default function AdminPage() {
 
     try {
       // আগে verify করো — load() এর মতোই call করো
-      const data = await adminListUsers(key, undefined)
+      const [userData, logData, storageData] = await Promise.all([
+        adminListUsers(key),
+        adminGetLogs(key, 500),
+        adminGetStorage(key),
+      ])
       // সফল হলে তবেই login করাও
-      setUsers(data.users)
+      setUsers(userData.users)
+      setLogs(logData.logs)
+      setStorage(storageData)
       setUserPage(1)
+      setLogPage(1)
       setSecret(key)
       setLoggedIn(true)
     } catch (e: any) {
@@ -269,29 +277,49 @@ export default function AdminPage() {
       await adminAddUser(secret, newId.trim(), newNote.trim() || undefined)
       setAddSuccess(`"${newId.trim()}" approved successfully.`)
       setNewId(''); setNewNote('')
-      load()
+      await load()
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Could not add user.')
     } finally { setAdding(false) }
   }
 
   async function handleStatus(identifier: string, status: string) {
-    try { await adminUpdateStatus(secret, identifier, status); load() }
-    catch { setError('Could not update status.') }
+    setMutatingUser(identifier); setError(''); setNotice('')
+    try {
+      await adminUpdateStatus(secret, identifier, status)
+      await load()
+      setNotice(`${identifier} is now ${status}.`)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Could not update status.')
+    } finally { setMutatingUser(null) }
   }
 
   async function handleDelete(identifier: string) {
     if (!confirm(`Permanently delete "${identifier}"? This cannot be undone.`)) return
-    try { await adminDeleteUser(secret, identifier); load() }
-    catch { setError('Could not delete user.') }
+    setMutatingUser(identifier); setError(''); setNotice('')
+    try {
+      await adminDeleteUser(secret, identifier)
+      await load()
+      setNotice(`${identifier} was deleted.`)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Could not delete user.')
+    } finally { setMutatingUser(null) }
+  }
+
+  function handleLogout() {
+    setSecret(''); setSecretInput(''); setLoggedIn(false)
+    setUsers([]); setLogs([]); setStorage(null); setNotice(''); setError('')
   }
 
   /* ── derived ─────────────────────────────────────────────────────────── */
   const filteredUsers = useMemo(() =>
-    users.filter(u =>
-      u.identifier.toLowerCase().includes(search.toLowerCase()) ||
-      (u.note || '').toLowerCase().includes(search.toLowerCase())
-    ), [users, search])
+    users.filter(u => {
+      const matchesStatus = !statusFilter || u.status === statusFilter
+      const term = search.toLowerCase()
+      const matchesSearch = u.identifier.toLowerCase().includes(term) ||
+        (u.note || '').toLowerCase().includes(term)
+      return matchesStatus && matchesSearch
+    }), [users, search, statusFilter])
 
   const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
   const pagedUsers = filteredUsers.slice((userPage - 1) * PAGE_SIZE, userPage * PAGE_SIZE)
@@ -358,7 +386,6 @@ export default function AdminPage() {
                       type={showSecret ? 'text' : 'password'}
                       value={secretInput}
                       onChange={e => { setSecretInput(e.target.value); setAuthError('') }}
-                      onKeyDown={e => e.key === 'Enter' && handleLogin(e as any)}
                       placeholder="Enter your secret key"
                       autoFocus
                       autoComplete="current-password"
@@ -389,7 +416,7 @@ export default function AdminPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}  // ← এটা যোগ করুন
+                  disabled={loading}
                   className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-sm py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/25 select-none"
                 >
                   {loading
@@ -458,6 +485,13 @@ export default function AdminPage() {
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">Refresh</span>
                 </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-300 px-3 py-2 rounded-xl border border-white/8 hover:border-red-500/20 hover:bg-red-500/5 transition-all"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sign out</span>
+                </button>
               </div>
             </div>
           </div>
@@ -470,8 +504,49 @@ export default function AdminPage() {
               <StatCard value={stats.total} label="Total Users" icon={<Users className="w-5 h-5 text-blue-400" />} glowClass="bg-blue-500" />
               <StatCard value={stats.approved} label="Approved" icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />} glowClass="bg-emerald-500" sublabel="Active access" />
               <StatCard value={stats.pending} label="Pending Approvals" icon={<Clock className="w-5 h-5 text-amber-400" />} glowClass="bg-amber-500" sublabel={stats.pending > 0 ? 'Requires action' : 'All clear'} />
-              <StatCard value={logs.length} label="Activity Logs" icon={<Download className="w-5 h-5 text-violet-400" />} glowClass="bg-violet-500" />
+              <StatCard value={logs.length} label="Recent Downloads" icon={<Download className="w-5 h-5 text-violet-400" />} glowClass="bg-violet-500" sublabel="Latest 500 retained in view" />
             </div>
+
+            {storage && (
+              <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border px-4 py-3.5 ${
+                storage.reachable && storage.persistent
+                  ? 'bg-emerald-500/[0.06] border-emerald-500/20'
+                  : storage.reachable
+                    ? 'bg-amber-500/[0.06] border-amber-500/20'
+                    : 'bg-red-500/[0.06] border-red-500/20'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+                    <Database className={`w-4 h-4 ${storage.reachable && storage.persistent ? 'text-emerald-400' : storage.reachable ? 'text-amber-400' : 'text-red-400'}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {storage.reachable && storage.persistent
+                        ? 'Persistent storage connected'
+                        : storage.reachable
+                          ? 'Local development storage'
+                          : 'Persistent storage unavailable'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {storage.reachable && storage.persistent
+                        ? 'Supabase is authoritative. Admin status changes survive deployments and restarts.'
+                        : storage.reachable
+                          ? 'SQLite is active. Configure Supabase before deploying so changes remain permanent.'
+                          : storage.error || storage.last_remote_error || 'The database could not be reached.'}
+                    </p>
+                  </div>
+                </div>
+                <span className="self-start sm:self-auto text-[10px] font-bold uppercase tracking-widest text-gray-500 bg-black/20 border border-white/5 rounded-full px-2.5 py-1">
+                  {storage.active_backend}
+                </span>
+              </div>
+            )}
+
+            {notice && (
+              <div className="flex items-center gap-2.5 bg-emerald-500/8 border border-emerald-500/18 text-emerald-400 text-xs rounded-xl px-3.5 py-3">
+                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> {notice}
+              </div>
+            )}
 
             {/* Add user */}
             <div className="bg-[#10141f] border border-white/[0.07] rounded-2xl p-5 sm:p-6">
@@ -532,8 +607,8 @@ export default function AdminPage() {
               {/* Tab bar */}
               <div className="flex border-b border-white/[0.07] overflow-x-auto">
                 {([
-                  ['users', 'User Management', <Users className="w-4 h-4" />, users.length],
-                  ['logs', 'Live Logs', <Activity className="w-4 h-4" />, logs.length],
+                  ['users', 'User Management', <Users key="users-icon" className="w-4 h-4" />, users.length],
+                  ['logs', 'Live Logs', <Activity key="logs-icon" className="w-4 h-4" />, logs.length],
                 ] as const).map(([t, label, icon, count]) => (
                   <button
                     key={t}
@@ -566,7 +641,7 @@ export default function AdminPage() {
                       <input
                         type="text"
                         value={search}
-                        onChange={e => setSearch(e.target.value)}
+                        onChange={e => { setSearch(e.target.value); setUserPage(1) }}
                         placeholder="Search by name, email…"
                         className="w-full bg-white/5 border border-white/10 hover:border-white/15 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:ring-2 focus:ring-violet-500/40 transition-all"
                       />
@@ -574,7 +649,7 @@ export default function AdminPage() {
                     <div className="relative xs:w-44">
                       <select
                         value={statusFilter}
-                        onChange={e => { setStatusFilter(e.target.value); load() }}
+                        onChange={e => { setStatusFilter(e.target.value); setUserPage(1) }}
                         className="w-full bg-white/5 border border-white/10 hover:border-white/15 rounded-xl px-3.5 py-2.5 text-sm text-gray-300 appearance-none cursor-pointer outline-none focus:ring-2 focus:ring-violet-500/40 transition-all pr-9"
                       >
                         <option value="">All</option>
@@ -646,7 +721,8 @@ export default function AdminPage() {
                               {user.status !== 'approved' && (
                                 <button
                                   onClick={() => handleStatus(user.identifier, 'approved')}
-                                  className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 px-2.5 py-1.5 rounded-lg transition-colors"
+                                  disabled={mutatingUser === user.identifier}
+                                  className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-wait px-2.5 py-1.5 rounded-lg transition-colors"
                                 >
                                   Approve
                                 </button>
@@ -654,17 +730,21 @@ export default function AdminPage() {
                               {user.status !== 'blocked' && (
                                 <button
                                   onClick={() => handleStatus(user.identifier, 'blocked')}
-                                  className="text-[11px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg transition-colors"
+                                  disabled={mutatingUser === user.identifier}
+                                  className="text-[11px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-wait px-2.5 py-1.5 rounded-lg transition-colors"
                                 >
                                   Revoke
                                 </button>
                               )}
                               <button
                                 onClick={() => handleDelete(user.identifier)}
+                                disabled={mutatingUser === user.identifier}
                                 title="Delete"
-                                className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors ml-0.5"
+                                className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-wait rounded-lg transition-colors ml-0.5"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                {mutatingUser === user.identifier
+                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  : <Trash2 className="w-3.5 h-3.5" />}
                               </button>
                             </div>
                           </div>

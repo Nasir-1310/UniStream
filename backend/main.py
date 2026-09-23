@@ -6,23 +6,25 @@
 # DB helpers live in       backend/database.py
 
 import os
+import hmac
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, StringConstraints
 
 from routers.download import router as download_router
-from dependencies import get_user, normalize
+from dependencies import get_user
 from yt_dlp_config import youtube_auth_mode, youtube_error_message, youtube_ydl_options
 from storage import (
     delete_user,
     list_download_logs,
     list_users,
-    log_download,
     set_user_status,
+    StorageUnavailableError,
     storage_diagnostics,
     upsert_pending_user,
     upsert_user,
@@ -32,6 +34,15 @@ backend_dir = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=backend_dir / ".env")
 
 app = FastAPI(title="UniStream Saver API", version="1.0.0")
+
+
+@app.exception_handler(StorageUnavailableError)
+async def storage_unavailable_handler(_request: Request, exc: StorageUnavailableError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc)},
+        headers={"Retry-After": "3"},
+    )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -47,30 +58,42 @@ app.add_middleware(
 app.include_router(download_router)
 
 # ── Admin secret ──────────────────────────────────────────────────────────────
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "changeme")
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
 
 
 def require_admin(x_admin_secret: str = Header(...)):
-    if x_admin_secret != ADMIN_SECRET:
+    if not ADMIN_SECRET:
+        raise HTTPException(status_code=503, detail="Admin access is not configured")
+    if not hmac.compare_digest(x_admin_secret, ADMIN_SECRET):
         raise HTTPException(status_code=401, detail="Invalid admin secret")
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+Identifier = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=320),
+]
+RequestedUrl = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=8, max_length=4096),
+]
+
+
 class AccessCheckRequest(BaseModel):
-    identifier: str
+    identifier: Identifier
 
 class VideoInfoRequest(BaseModel):
-    url: str
-    identifier: str
+    url: RequestedUrl
+    identifier: Identifier
 
 class AdminAddUserRequest(BaseModel):
-    identifier: str
-    note: Optional[str] = None
+    identifier: Identifier
+    note: Annotated[Optional[str], StringConstraints(strip_whitespace=True, max_length=500)] = None
 
 class AdminUpdateStatusRequest(BaseModel):
-    identifier: str
-    status: str
+    identifier: Identifier
+    status: Literal["approved", "pending", "blocked"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -155,30 +178,36 @@ def _parse_formats(formats: list, info: dict) -> list:
         key=lambda x: int(x["resolution"].replace("p", "")), reverse=True
     )
 
-    # Best audio-only → MP3
-    best_audio, best_abr = None, 0
+    # Best non-DRC audio-only stream → MP3. Some YouTube clients expose only a
+    # combined stream; MP3 must still be offered because yt-dlp's
+    # "bestaudio/best" selector can extract audio from that fallback.
+    best_audio, best_audio_score = None, (-1, -1)
     for f in formats:
         vcodec = f.get("vcodec", "")
         acodec = f.get("acodec", "none")
         if (not vcodec or vcodec == "none") and acodec != "none":
             abr = f.get("abr") or 0
-            if abr > best_abr:
-                best_abr  = abr
+            is_non_drc = 0 if "drc" in str(f.get("format_id", "")).lower() else 1
+            score = (is_non_drc, abr)
+            if score > best_audio_score:
+                best_audio_score = score
                 best_audio = f
 
+    best_abr = best_audio_score[1] if best_audio else 128
+    abr_val  = int(best_abr) if best_abr else 128
+    filesize = None
     if best_audio:
-        abr_val  = int(best_abr) if best_abr else 128
         filesize = best_audio.get("filesize") or best_audio.get("filesize_approx")
-        video_options.append({
-            "type":           "audio",
-            "format_id":      best_audio["format_id"],
-            "label":          f"MP3 Audio Only · {abr_val}kbps",
-            "icon":           "🎵",
-            "resolution":     f"{abr_val}kbps",
-            "ext":            "mp3",
-            "filesize_bytes": filesize,
-            "filesize_human": _human_size(filesize),
-        })
+    video_options.append({
+        "type":           "audio",
+        "format_id":      best_audio["format_id"] if best_audio else "bestaudio",
+        "label":          f"MP3 Audio Only · {abr_val}kbps",
+        "icon":           "🎵",
+        "resolution":     f"{abr_val}kbps",
+        "ext":            "mp3",
+        "filesize_bytes": filesize,
+        "filesize_human": _human_size(filesize),
+    })
 
     return video_options
 
@@ -225,13 +254,6 @@ async def video_info(body: VideoInfoRequest):
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)
 
-    await log_download(
-        identifier=body.identifier,
-        url=body.url,
-        title=info.get("title", ""),
-        platform=info.get("extractor_key", ""),
-    )
-
     return {
         "title":     info.get("title", ""),
         "thumbnail": info.get("thumbnail", ""),
@@ -254,16 +276,20 @@ def admin_list_users(status: Optional[str] = None):
 
 @app.post("/admin/users", dependencies=[Depends(require_admin)])
 def admin_add_user(body: AdminAddUserRequest):
-    upsert_user(body.identifier, "approved", note=body.note)
-    return {"message": "New user added and approved", "identifier": body.identifier}
+    user = upsert_user(body.identifier, "approved", note=body.note)
+    return {
+        "message": "User saved and approved",
+        "identifier": body.identifier,
+        "user": user,
+    }
 
 
 @app.patch("/admin/users/status", dependencies=[Depends(require_admin)])
 def admin_update_status(body: AdminUpdateStatusRequest):
-    if body.status not in ("approved", "pending", "blocked"):
-        raise HTTPException(status_code=400, detail="Invalid status value")
-    set_user_status(body.identifier, body.status)
-    return {"message": f"Status updated to '{body.status}'"}
+    user = set_user_status(body.identifier, body.status)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": f"Status updated to '{body.status}'", "user": user}
 
 
 @app.delete("/admin/users/{identifier}", dependencies=[Depends(require_admin)])

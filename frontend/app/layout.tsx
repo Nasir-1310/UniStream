@@ -11,8 +11,7 @@ export const metadata: Metadata = {
     'Download videos from YouTube, Facebook, Instagram, and TikTok in HD or data-saving quality. Exclusively for approved university students.',
   manifest: '/manifest.json',
   icons: {
-    icon: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
+    icon: '/unistream-icon.svg',
   },
   openGraph: {
     title: 'UniStream Saver',
@@ -47,6 +46,8 @@ export default function RootLayout({
           Space Grotesk — display / headings (geometric, personality)
           Inter — body / UI text (neutral, readable at all sizes)
         */}
+        {/* App Router root layout is the document-level font declaration. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
           rel="stylesheet"

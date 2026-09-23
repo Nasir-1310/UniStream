@@ -289,6 +289,9 @@ async def download_with_progress(
 
     # ── SSE generator ─────────────────────────────────────────────────────────
     async def _event_stream():
+        # A leading SSE comment makes even small-response-buffering proxies
+        # flush their headers immediately. EventSource ignores comment lines.
+        yield ":" + (" " * 2048) + "\n\n"
         yield _sse({"status": "starting", "percent": 0, "job_id": job_id,
                     "speed": "0 KB/s", "eta": "--:--",
                     "downloaded_fmt": "0 KB", "total_fmt": "?",
@@ -340,7 +343,8 @@ async def download_with_progress(
         _event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":     "no-cache",
+            "Cache-Control":     "no-cache, no-transform",
+            "Connection":        "keep-alive",
             "X-Accel-Buffering": "no",   # disable nginx buffering
         },
     )

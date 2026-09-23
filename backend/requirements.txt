@@ -1,6 +1,10 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
-yt-dlp==2026.8.19
+# Keep yt-dlp's YouTube challenge solver and recommended Deno runtime together
+# with yt-dlp. Avoid the "default" extra because its websockets>=13 requirement
+# conflicts with the websockets<13 constraint in this Supabase client version.
+yt-dlp[deno]==2026.8.19
+yt-dlp-ejs==0.8.0
 supabase==2.4.6
 python-dotenv==1.0.1
 httpx==0.27.0

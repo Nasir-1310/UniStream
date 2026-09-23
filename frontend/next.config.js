@@ -24,6 +24,12 @@ function resolveBackendOrigin() {
 }
 
 const nextConfig = {
+  // EventSource must connect straight to FastAPI. Next's rewrite proxy can
+  // buffer text/event-stream responses and deliver all progress events only
+  // after the download has completed.
+  env: {
+    NEXT_PUBLIC_BACKEND_ORIGIN: resolveBackendOrigin(),
+  },
   images: {
     domains: ['i.ytimg.com', 'img.youtube.com', 'scontent.fdac', 'cdn.pixabay.com'],
     remotePatterns: [{ protocol: 'https', hostname: '**' }],

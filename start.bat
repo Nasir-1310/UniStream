@@ -4,7 +4,7 @@ set "ROOT=%~dp0"
 
 echo Starting UniStream (backend + frontend)...
 
-start "UniStream Backend" cmd /k "cd /d "%ROOT%backend" && call venv\Scripts\activate.bat && uvicorn main:app --reload --host 127.0.0.1 --port 8000"
+start "UniStream Backend" cmd /k "cd /d "%ROOT%backend" && call venv\Scripts\activate.bat && python -m pip install -r requirements.txt && uvicorn main:app --reload --host 127.0.0.1 --port 8000"
 
 start "UniStream Frontend" cmd /k "cd /d "%ROOT%frontend" && npm run dev"
 

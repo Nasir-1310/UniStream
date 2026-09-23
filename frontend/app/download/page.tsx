@@ -38,6 +38,12 @@ type FormatDlState =
 
 type FormatFilter = 'all' | 'mp4' | 'webm' | 'mkv' | 'audio'
 
+// Keep ordinary API requests on the same-origin /api proxy, but connect SSE
+// directly to FastAPI so intermediary buffering cannot hide live progress.
+const BACKEND_ORIGIN = (
+  process.env.NEXT_PUBLIC_BACKEND_ORIGIN || 'http://localhost:8000'
+).replace(/\/+$/, '')
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,8 +391,7 @@ export default function DownloadPage() {
   const handleDownload = useCallback((fmt: VideoFormat) => {
     if (activeId !== null) return
     const fmtId = fmt.format_id
-    const base = '/api'
-    const sseUrl = `${base}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${fmtId}&identifier=${encodeURIComponent(identifier)}&ext=${fmt.ext}`
+    const sseUrl = `${BACKEND_ORIGIN}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${encodeURIComponent(fmtId)}&identifier=${encodeURIComponent(identifier)}&ext=${encodeURIComponent(fmt.ext)}`
 
     const initProgress: ProgressData = {
       status: 'starting', percent: 0, speed: '0 KB/s', eta: '--:--',
@@ -408,7 +413,7 @@ export default function DownloadPage() {
 
       if (data.status === 'complete' && data.token) {
         es.close(); sseRef.current = null
-        const fileUrl = `${base}/download/file?token=${data.token}`
+        const fileUrl = `/api/download/file?token=${encodeURIComponent(data.token)}`
         const a = document.createElement('a')
         a.href = fileUrl; a.download = ''
         document.body.appendChild(a); a.click(); document.body.removeChild(a)

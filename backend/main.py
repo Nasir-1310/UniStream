@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from routers.download import router as download_router
 from dependencies import get_user, normalize
+from yt_dlp_config import youtube_auth_mode, youtube_error_message, youtube_ydl_options
 from storage import (
     delete_user,
     list_download_logs,
@@ -214,10 +215,12 @@ async def video_info(body: VideoInfoRequest):
 
     ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": False}
     try:
+        ydl_opts.update(youtube_ydl_options(body.url))
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(body.url, download=False)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {e}")
+        detail = youtube_error_message(body.url, e)
+        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
 
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)
@@ -288,4 +291,5 @@ def admin_storage_health():
     info = storage_diagnostics()
     info["yt_dlp_version"] = yt_dlp.version.__version__
     info["ffmpeg_location"] = FFMPEG_LOCATION
+    info["youtube_auth"] = youtube_auth_mode()
     return info

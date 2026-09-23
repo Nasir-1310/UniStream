@@ -16,5 +16,12 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      # Base64-encoded Netscape cookies.txt export for youtube.com. Configure
+      # this as a secret in Render; never commit the cookie file itself.
+      - key: YOUTUBE_COOKIES_BASE64
+        sync: false
+      # Optional: the exact User-Agent from the browser that exported cookies.
+      - key: YOUTUBE_USER_AGENT
+        sync: false
       - key: MAX_CONCURRENT_DOWNLOADS
         value: "5"

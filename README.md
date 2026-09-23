@@ -66,6 +66,34 @@ unistream/
 
 ---
 
+#### YouTube authentication on Render
+
+YouTube may challenge Render's data-centre IP with "Sign in to confirm you're
+not a bot". Use a separate/throwaway YouTube account, export only its
+`youtube.com` cookies in Netscape `cookies.txt` format, and keep that file
+secret.
+
+1. Open a private/incognito browser window and sign in to YouTube.
+2. Export the `youtube.com` cookies as a Netscape-format `cookies.txt`, then
+   close that private window so YouTube does not rotate the exported session.
+3. On Windows PowerShell, copy the file as base64:
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt")) | Set-Clipboard
+   ```
+
+4. In the Render backend service, add secret environment variable
+   `YOUTUBE_COOKIES_BASE64` and paste the copied value.
+5. Optionally set `YOUTUBE_USER_AGENT` to the exact User-Agent of the browser
+   used for the export, then redeploy the backend.
+
+For local development, either set `YOUTUBE_COOKIES_FILE=cookies.txt` in
+`backend/.env`, or opt in to browser extraction with
+`YOUTUBE_COOKIES_BROWSER=chrome` (Firefox is also supported). Never commit the
+cookie file or its base64 value.
+
+---
+
 ### Step 3 — Frontend Deploy on Vercel (FREE)
 
 1. `frontend/` ফোল্ডার GitHub রেপোতে পুশ করুন

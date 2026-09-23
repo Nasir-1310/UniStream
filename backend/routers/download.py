@@ -27,6 +27,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from dependencies import require_approved_user
 from database import log_download
+from yt_dlp_config import youtube_error_message, youtube_ydl_options
 
 router = APIRouter(tags=["download"])
 
@@ -247,18 +248,19 @@ async def download_with_progress(
         loop = asyncio.get_event_loop()
         output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
 
-        if ext == "mp3":
-            ydl_opts = _build_ydl_opts_audio(output_template)
-        else:
-            ydl_opts = _build_ydl_opts_video(format_id, output_template)
-
-        ydl_opts["progress_hooks"] = [_hook]
-
-        def _blocking():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
         try:
+            if ext == "mp3":
+                ydl_opts = _build_ydl_opts_audio(output_template)
+            else:
+                ydl_opts = _build_ydl_opts_video(format_id, output_template)
+
+            ydl_opts.update(youtube_ydl_options(url))
+            ydl_opts["progress_hooks"] = [_hook]
+
+            def _blocking():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+
             await loop.run_in_executor(None, _blocking)
 
             files = list(Path(tmp_dir).iterdir())
@@ -281,7 +283,7 @@ async def download_with_progress(
         except Exception as exc:
             _jobs[job_id].update({
                 "status": "error",
-                "error":  str(exc),
+                "error":  youtube_error_message(url, exc),
                 "done":   True,
             })
 
@@ -421,12 +423,13 @@ def get_download(
     tmp_dir         = tempfile.mkdtemp()
     output_template = os.path.join(tmp_dir, "%(title).150B.%(ext)s")
 
-    if ext == "mp3":
-        ydl_opts = _build_ydl_opts_audio(output_template)
-    else:
-        ydl_opts = _build_ydl_opts_video(format_id, output_template)
-
     try:
+        if ext == "mp3":
+            ydl_opts = _build_ydl_opts_audio(output_template)
+        else:
+            ydl_opts = _build_ydl_opts_video(format_id, output_template)
+        ydl_opts.update(youtube_ydl_options(url))
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info      = ydl.extract_info(url, download=True)
             raw_title = info.get("title", "unistream_video")
@@ -471,4 +474,4 @@ def get_download(
         _semaphore.release()
         import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=youtube_error_message(url, exc))

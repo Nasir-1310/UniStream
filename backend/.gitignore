@@ -8,3 +8,7 @@ __pycache__/
 
 # env
 .env
+
+# Authentication exports must never be committed
+cookies*.txt
+youtube-cookies*.txt

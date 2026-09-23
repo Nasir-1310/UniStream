@@ -12,3 +12,4 @@ __pycache__/
 # Authentication exports must never be committed
 cookies*.txt
 youtube-cookies*.txt
+*_cookies.txt

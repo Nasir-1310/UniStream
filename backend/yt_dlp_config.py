@@ -79,7 +79,8 @@ def _configured_cookiefile() -> str | None:
 
     configured_path = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
     if not configured_path:
-        return None
+        local_cookie_path = _BACKEND_DIR / "youtube-cookies.txt"
+        return str(local_cookie_path) if local_cookie_path.is_file() else None
 
     cookie_path = Path(configured_path).expanduser()
     if not cookie_path.is_absolute():
@@ -120,6 +121,8 @@ def youtube_auth_mode() -> str:
         return "cookie_file"
     if os.getenv("YOUTUBE_COOKIES_BROWSER", "").strip():
         return "browser"
+    if (_BACKEND_DIR / "youtube-cookies.txt").is_file():
+        return "local_cookie_file"
     return "not_configured"
 
 

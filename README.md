@@ -87,8 +87,8 @@ secret.
 5. Optionally set `YOUTUBE_USER_AGENT` to the exact User-Agent of the browser
    used for the export, then redeploy the backend.
 
-For local development, either set `YOUTUBE_COOKIES_FILE=cookies.txt` in
-`backend/.env`, or opt in to browser extraction with
+For local development, save the export as `backend/youtube-cookies.txt`, set a
+different path with `YOUTUBE_COOKIES_FILE`, or opt in to browser extraction with
 `YOUTUBE_COOKIES_BROWSER=chrome` (Firefox is also supported). Never commit the
 cookie file or its base64 value.
 

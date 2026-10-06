@@ -23,11 +23,13 @@ from dependencies import get_user
 from yt_dlp_config import (
     format_ladder_score,
     is_youtube_url,
+    private_cookiefile,
+    YtDlpLog,
     youtube_auth_mode,
     youtube_client_report,
     youtube_error_message,
     youtube_ydl_attempts,
-    youtube_no_streams_message,
+    youtube_failure_message,
     youtube_proxy,
     youtube_quality_notice,
     js_runtime_options,
@@ -263,17 +265,18 @@ async def video_info(body: VideoInfoRequest):
 
     youtube = is_youtube_url(body.url)
 
-    def _extract(attempt_opts: dict) -> dict:
-        # A refused YouTube attempt can still return metadata with no streams;
-        # keep it as a result instead of an error so another attempt can win.
+    def _extract(attempt_opts: dict, log: YtDlpLog) -> dict:
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
-            "ignore_no_formats_error": youtube,
+            # Receives yt-dlp's warnings despite no_warnings: the only trace
+            # of HD streams dropped for an unsolved challenge or refused HLS.
+            "logger": log,
         }
         ydl_opts.update(attempt_opts)
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with private_cookiefile(ydl_opts) as private_opts, \
+                yt_dlp.YoutubeDL(private_opts) as ydl:
             return ydl.extract_info(body.url, download=False)
 
     # The attempts run side by side in worker threads: waiting for an
@@ -285,28 +288,32 @@ async def video_info(body: VideoInfoRequest):
     except Exception as e:
         detail = youtube_error_message(body.url, e)
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
+    logs = {label: YtDlpLog() for label, _opts in attempts}
     results = await asyncio.gather(
-        *(asyncio.to_thread(_extract, opts) for _label, opts in attempts),
+        *(asyncio.to_thread(_extract, opts, logs[label]) for label, opts in attempts),
         return_exceptions=True,
     )
 
-    info, info_score, info_label, last_error = None, None, None, None
+    info, info_score, info_label = None, None, None
     attempt_errors: dict[str, str] = {}
     for (label, _opts), candidate in zip(attempts, results):
         if isinstance(candidate, Exception):
             logger.warning("Video info %s attempt failed: %s", label, candidate)
-            last_error = candidate
             attempt_errors[label] = youtube_error_message(body.url, candidate)
             continue
+        if youtube and (candidate.get("_type") == "playlist" or "entries" in candidate):
+            raise HTTPException(
+                status_code=400,
+                detail="This link is a playlist or channel. Paste the link of a single video.",
+            )
         score = format_ladder_score(candidate)
         if info is None or score > info_score:
             info, info_score, info_label = candidate, score, label
 
-    if info is None:
-        detail = youtube_error_message(body.url, last_error)
-        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
-    if youtube and info_score[1] == 0:
-        detail = youtube_no_streams_message(body.url, attempt_errors)
+    if info is None or (youtube and info_score[1] == 0):
+        detail = youtube_failure_message(
+            body.url, attempt_errors, {label: log.warnings for label, log in logs.items()},
+        )
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
 
     if youtube and not info_score[0] and info_score[1] <= 360:
@@ -317,7 +324,10 @@ async def video_info(body: VideoInfoRequest):
 
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)
-    notice  = youtube_quality_notice(body.url, info_score, attempt_errors)
+    notice  = youtube_quality_notice(
+        body.url, info_score, attempt_errors,
+        {label: log.warnings for label, log in logs.items()},
+    )
 
     return {
         "title":     info.get("title", ""),

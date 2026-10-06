@@ -92,12 +92,25 @@ different path with `YOUTUBE_COOKIES_FILE`, or opt in to browser extraction with
 `YOUTUBE_COOKIES_BROWSER=chrome` (Firefox is also supported). Never commit the
 cookie file or its base64 value.
 
-The backend always tries YouTube without cookies first, because yt-dlp drops
-the clients that list every resolution as soon as cookies are supplied. The
-cookies are used only when that attempt is challenged or returns no HD
-streams. A `Video info anonymous attempt failed` warning in the Render logs
-means the fallback ran; `YouTube returned no separate video streams` means
-both attempts were limited to low resolution.
+The backend asks YouTube three ways at once and lists the best answer:
+without cookies (works on home connections), signed in through the Safari
+watch page (HLS up to 1080p, and the one route that avoids YouTube's player
+API), and signed in through the player API (full DASH ladder where YouTube
+allows it). The download page explains any 360p-only result, and the admin
+panel's **Run YouTube check** shows what each route returns from the server.
+
+#### When YouTube blocks the server's IP
+
+YouTube answers Render's data-centre IPs with `HTTP Error 403` on its player
+API, and may refuse them entirely. If the YouTube check lists no heights for
+`web_safari_watch_page`, either run the backend on your own computer
+(`start.bat`), or route YouTube through a residential proxy:
+
+- Set `YOUTUBE_PROXY` on Render, e.g. `http://user:pass@host:port`.
+- Use a **sticky session** (one exit IP for minutes, usually a session id in
+  the proxy username). YouTube's stream links are bound to the IP that
+  requested them, and yt-dlp opens a new connection per request, so a proxy
+  that rotates its IP per request makes every stream fail with HTTP 403.
 
 ---
 

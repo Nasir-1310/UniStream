@@ -99,6 +99,20 @@ API), and signed in through the player API (full DASH ladder where YouTube
 allows it). The download page explains any 360p-only result, and the admin
 panel's **Run YouTube check** shows what each route returns from the server.
 
+#### Keeping analysis fast
+
+Render's free plan puts the API to sleep after 15 idle minutes; the next
+request then waits about a minute for it to start, and the start also empties
+yt-dlp's caches. Keep it awake with a free uptime monitor (e.g. UptimeRobot or
+cron-job.org) that requests the API's `/` URL every 10 minutes; one service
+running all month stays within the free plan's 750 hours.
+
+Within a running server, analysing a video again (including another share
+link of it) is answered from a 20-minute cache, later videos try only the
+route that last worked, and a download reuses its analysis instead of
+extracting the video a second time. Each analysis logs its timings
+(`Video info in ...s`) and sends them in a `Server-Timing` header.
+
 #### When YouTube blocks the server's IP
 
 YouTube answers Render's data-centre IPs with `HTTP Error 403` on its player

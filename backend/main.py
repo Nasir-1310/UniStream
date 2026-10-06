@@ -7,6 +7,7 @@
 
 import asyncio
 import os
+import time
 import hmac
 import logging
 from pathlib import Path
@@ -15,14 +16,19 @@ from typing import Annotated, Literal, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, StringConstraints
 
+import extraction_cache
 from routers.download import router as download_router
 from dependencies import get_user
 from yt_dlp_config import (
     format_ladder_score,
+    is_complete_listing,
     is_youtube_url,
+    remember_attempt,
+    remembered_attempt,
+    video_cache_key,
     private_cookiefile,
     YtDlpLog,
     youtube_auth_mode,
@@ -272,12 +278,20 @@ def check_access(body: AccessCheckRequest):
 
 
 @app.post("/video-info")
-async def video_info(body: VideoInfoRequest):
+async def video_info(body: VideoInfoRequest, response: Response):
     import yt_dlp
 
-    user = get_user(body.identifier)
+    started = time.monotonic()
+    # get_user may query Supabase; keep that network call off the event loop.
+    user = await asyncio.to_thread(get_user, body.identifier)
     if not user or user["status"] != "approved":
         raise HTTPException(status_code=403, detail="Access denied")
+
+    cache_key = video_cache_key(body.url)
+    cached = extraction_cache.payload(cache_key)
+    if cached is not None:
+        response.headers["Server-Timing"] = "cache;desc=hit"
+        return cached
 
     youtube = is_youtube_url(body.url)
 
@@ -295,24 +309,49 @@ async def video_info(body: VideoInfoRequest):
                 yt_dlp.YoutubeDL(private_opts) as ydl:
             return ydl.extract_info(body.url, download=False)
 
-    # The attempts run side by side in worker threads: waiting for an
-    # anonymous 360p-only answer before starting the signed-in one doubled the
-    # wait, and running yt-dlp on the event loop stalled every other request.
-    # The best listing wins; on a tie the earlier (anonymous) attempt is kept.
     try:
         attempts = youtube_ydl_attempts(body.url)
     except Exception as e:
         detail = youtube_error_message(body.url, e)
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
-    logs = {label: YtDlpLog() for label, _opts in attempts}
-    results = await asyncio.gather(
-        *(asyncio.to_thread(_extract, opts, logs[label]) for label, opts in attempts),
-        return_exceptions=True,
-    )
+    labels = [label for label, _opts in attempts]
+    logs = {label: YtDlpLog() for label in labels}
+    outcomes: dict = {}
+    timings: dict[str, float] = {}
+
+    async def _run(selected: list):
+        # Attempts in one stage run side by side in worker threads, so a slow
+        # one never queues behind another and the event loop stays free.
+        async def _timed(label, opts):
+            attempt_started = time.monotonic()
+            try:
+                return await asyncio.to_thread(_extract, opts, logs[label])
+            finally:
+                timings[label] = time.monotonic() - attempt_started
+
+        results = await asyncio.gather(
+            *(_timed(label, opts) for label, opts in selected), return_exceptions=True,
+        )
+        outcomes.update(zip((label for label, _opts in selected), results))
+
+    # Each attempt costs a watch-page download and a deno run. Try the attempt
+    # that last gave a complete listing on its own first; only when it fails,
+    # or lists too little, do the others run.
+    remembered = remembered_attempt(labels) if len(attempts) > 1 else None
+    if remembered:
+        await _run([attempt for attempt in attempts if attempt[0] == remembered])
+        first = outcomes[remembered]
+        if isinstance(first, Exception) or not is_complete_listing(format_ladder_score(first)):
+            await _run([attempt for attempt in attempts if attempt[0] not in outcomes])
+    else:
+        await _run(attempts)
 
     info, info_score, info_label = None, None, None
     attempt_errors: dict[str, str] = {}
-    for (label, _opts), candidate in zip(attempts, results):
+    for label in labels:
+        if label not in outcomes:
+            continue
+        candidate = outcomes[label]
         if isinstance(candidate, Exception):
             logger.warning("Video info %s attempt failed: %s", label, candidate)
             attempt_errors[label] = youtube_error_message(body.url, candidate)
@@ -325,6 +364,20 @@ async def video_info(body: VideoInfoRequest):
         score = format_ladder_score(candidate)
         if info is None or score > info_score:
             info, info_score, info_label = candidate, score, label
+
+    if len(attempts) > 1 and len(outcomes) == len(attempts):
+        # A full run decides which attempt later requests try first.
+        remember_attempt(info_label, info_score)
+
+    total = time.monotonic() - started
+    response.headers["Server-Timing"] = ", ".join(
+        [f"total;dur={total * 1000:.0f}"]
+        + [f"{label};dur={seconds * 1000:.0f}" for label, seconds in timings.items()]
+    )
+    logger.info(
+        "Video info in %.1fs (%s)", total,
+        ", ".join(f"{label} {seconds:.1f}s" for label, seconds in timings.items()),
+    )
 
     if info is None or (youtube and info_score[1] == 0):
         detail = youtube_failure_message(
@@ -345,7 +398,7 @@ async def video_info(body: VideoInfoRequest):
         {label: log.warnings for label, log in logs.items()},
     ) or youtube_resolution_cap_notice(info_label, info_score)
 
-    return {
+    payload = {
         "title":     info.get("title", ""),
         "thumbnail": info.get("thumbnail", ""),
         "duration":  info.get("duration", 0),
@@ -356,6 +409,15 @@ async def video_info(body: VideoInfoRequest):
         # Downloads start with the attempt that listed these formats.
         "source":    info_label,
     }
+    # Only full-quality listings are cached; a 360p-only one may be a passing
+    # refusal, and the next request should try again. The info is kept in
+    # the form yt-dlp's --load-info-json uses, so the download can reuse it.
+    if not youtube or is_complete_listing(info_score):
+        extraction_cache.store(
+            cache_key, payload, info_label,
+            yt_dlp.YoutubeDL.sanitize_info(info, remove_private_keys=True) if youtube else None,
+        )
+    return payload
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

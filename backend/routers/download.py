@@ -28,10 +28,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from dependencies import require_approved_user
 from database import log_download, record_download
+import extraction_cache
 from yt_dlp_config import (
+    is_youtube_url,
     prefer_attempt,
     private_cookiefile,
     youtube_error_message,
+    video_cache_key,
     youtube_ydl_attempts,
 )
 
@@ -211,6 +214,15 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
     return opts
 
 
+def _clear_dir(tmp_dir: str):
+    """Remove what a failed attempt left; the caller serves the largest file."""
+    for leftover in Path(tmp_dir).iterdir():
+        if leftover.is_dir():
+            shutil.rmtree(leftover, ignore_errors=True)
+        else:
+            leftover.unlink(missing_ok=True)
+
+
 def _download_with_fallback(
     url: str,
     format_id: str,
@@ -226,33 +238,46 @@ def _download_with_fallback(
     the requested format is matched exactly on every attempt but the last.
     Any failure moves on to the next attempt: with skip_unavailable_fragments
     off, a lost HLS segment can surface as an error other than DownloadError.
+
+    When /video-info just analysed this video, its info is reused first, the
+    way yt-dlp's --load-info-json does, so the download starts without a
+    second watch-page fetch and deno run.
     """
     output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
     attempts = prefer_attempt(youtube_ydl_attempts(url), source)
     last_error = None
 
-    for index, (label, attempt_opts) in enumerate(attempts):
+    def _options(attempt_opts: dict, allow_fallback: bool) -> dict:
         if ext == "mp3":
             ydl_opts = _build_ydl_opts_audio(output_template)
         else:
-            is_last = index == len(attempts) - 1
             ydl_opts = _build_ydl_opts_video(
-                format_id, output_template, is_last, height
+                format_id, output_template, allow_fallback, height
             )
         ydl_opts.update(attempt_opts)
         if progress_hooks:
             ydl_opts["progress_hooks"] = progress_hooks
+        return ydl_opts
 
-        # A failed attempt may leave partial files; the caller serves the
-        # largest file in tmp_dir.
-        for leftover in Path(tmp_dir).iterdir():
-            if leftover.is_dir():
-                shutil.rmtree(leftover, ignore_errors=True)
-            else:
-                leftover.unlink(missing_ok=True)
-
+    cached_info = (
+        extraction_cache.info(video_cache_key(url), source)
+        if source and is_youtube_url(url) else None
+    )
+    source_opts = dict(attempts).get(source)
+    if cached_info is not None and source_opts is not None:
+        _clear_dir(tmp_dir)
         try:
-            with private_cookiefile(ydl_opts) as private_opts, \
+            with private_cookiefile(_options(source_opts, False)) as private_opts, \
+                    yt_dlp.YoutubeDL(private_opts) as ydl:
+                return ydl.process_ie_result(cached_info, download=True)
+        except Exception as exc:
+            logger.warning("Download from the analysed info failed, extracting again: %s", exc)
+
+    for index, (label, attempt_opts) in enumerate(attempts):
+        _clear_dir(tmp_dir)
+        try:
+            is_last = index == len(attempts) - 1
+            with private_cookiefile(_options(attempt_opts, is_last)) as private_opts, \
                     yt_dlp.YoutubeDL(private_opts) as ydl:
                 return ydl.extract_info(url, download=True)
         except Exception as exc:

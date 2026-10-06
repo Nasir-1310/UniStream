@@ -10,11 +10,13 @@ import binascii
 import contextlib
 import hashlib
 import os
+import re
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import logging
 
@@ -44,6 +46,32 @@ def _is_youtube_url(url: str) -> bool:
 
 def is_youtube_url(url: str) -> bool:
     return _is_youtube_url(url)
+
+
+_YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def video_cache_key(url: str) -> str:
+    """Identify the video a URL points at, for caching its extraction.
+
+    Share links of one YouTube video differ (youtu.be/ID?si=..., watch?v=ID,
+    shorts/ID), so they map to the video ID; any other URL is its own key.
+    """
+    url = url.strip()
+    if not _is_youtube_url(url):
+        return url
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.split("/") if part]
+    if host == "youtu.be" or host.endswith(".youtu.be"):
+        candidate = parts[0] if parts else None
+    else:
+        candidate = (parse_qs(parsed.query).get("v") or [None])[0]
+        if not candidate and len(parts) >= 2 and parts[0] in ("shorts", "live", "embed", "v"):
+            candidate = parts[1]
+    if candidate and _YOUTUBE_ID_RE.match(candidate):
+        return f"youtube:{candidate}"
+    return url
 
 
 def _materialize_base64_cookies(encoded: str) -> str:
@@ -182,9 +210,20 @@ def youtube_proxy() -> str | None:
     return os.getenv("YOUTUBE_PROXY", "").strip() or None
 
 
+# yt-dlp keeps YouTube's player script, preprocessed for the JS challenge
+# solver, in its cache directory; without a writable one every extraction
+# downloads and preprocesses the multi-megabyte script again. The default
+# (~/.cache) is not guaranteed to be writable on a host.
+_YT_DLP_CACHE_DIR = str(Path(tempfile.gettempdir()) / "unistream-yt-dlp-cache")
+
+
 def _youtube_network_options() -> dict:
     # A link copied from a playlist (watch?v=ID&list=...) means that one video.
-    options = {**js_runtime_options(), "noplaylist": True}
+    options = {
+        **js_runtime_options(),
+        "noplaylist": True,
+        "cachedir": _YT_DLP_CACHE_DIR,
+    }
     proxy = youtube_proxy()
     if proxy:
         options["proxy"] = proxy
@@ -283,6 +322,41 @@ def private_cookiefile(options: dict):
         yield {**options, "cookiefile": private}
     finally:
         _write_back_cookies(private, shared)
+
+
+def is_complete_listing(score: tuple[bool, int]) -> bool:
+    """A listing no other attempt can beat on this server: a DASH ladder, or
+    the Safari HLS ladder (720p/1080p) where the player API is refused."""
+    return score[0] or score[1] >= 720
+
+
+# The attempt that last produced a complete listing. Each attempt costs a
+# watch-page download and a deno run, which on a tenth of a CPU dominate the
+# wait, so later requests try the remembered attempt alone first. A full DASH
+# ladder cannot be beaten and is kept; the HLS ladder (1080p) is re-checked
+# against the other attempts now and then, in case the server's IP is
+# served better again.
+_ROUTE_LOCK = threading.Lock()
+_ROUTE: dict = {}
+_CAPPED_ROUTE_SECONDS = 2 * 60 * 60
+
+
+def remembered_attempt(labels: list[str]) -> str | None:
+    with _ROUTE_LOCK:
+        label = _ROUTE.get("label")
+        if not label or label not in labels:
+            return None
+        if _ROUTE["full_ladder"] or time.monotonic() - _ROUTE["at"] < _CAPPED_ROUTE_SECONDS:
+            return label
+        return None
+
+
+def remember_attempt(label: str | None, score: tuple[bool, int] | None):
+    """Record the winner of a full run, or forget it when nothing was complete."""
+    with _ROUTE_LOCK:
+        _ROUTE.clear()
+        if label and score and is_complete_listing(score):
+            _ROUTE.update(label=label, full_ladder=score[0], at=time.monotonic())
 
 
 def prefer_attempt(

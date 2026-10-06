@@ -74,13 +74,29 @@ class YoutubeAttemptTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(seen, [None, "cookies.txt"])
+        self.assertEqual(sorted(seen, key=str), sorted([None, "cookies.txt"], key=str))
         self.assertEqual(
             [item["resolution"] for item in response.json()["formats"]],
             ["1080p", "360p", "129kbps"],
         )
 
-    def test_video_info_skips_cookies_when_anonymous_lists_every_resolution(self):
+    def test_video_info_explains_a_360p_only_listing(self):
+        def extract(options, _url, _download):
+            if options.get("cookiefile"):
+                raise yt_dlp.utils.DownloadError("Sign in to confirm you're not a bot")
+            return {"title": "Lecture", "extractor_key": "Youtube", "formats": COMBINED_ONLY}
+
+        with patch.object(main, "get_user", return_value={"status": "approved"}), \
+                patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(extract)):
+            response = TestClient(main.app).post(
+                "/video-info",
+                json={"url": "https://youtu.be/example", "identifier": "student@example.com"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("cookies", response.json()["notice"])
+
+    def test_video_info_prefers_anonymous_when_both_list_every_resolution(self):
         seen = []
 
         def extract(options, _url, _download):
@@ -95,7 +111,8 @@ class YoutubeAttemptTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(seen, [None])
+        self.assertEqual(sorted(seen, key=str), sorted([None, "cookies.txt"], key=str))
+        self.assertIsNone(response.json()["notice"])
 
     def test_download_retries_with_cookies_instead_of_downgrading(self):
         calls = []

@@ -5,6 +5,7 @@
 # Auth dependency lives in backend/dependencies.py
 # DB helpers live in       backend/database.py
 
+import asyncio
 import os
 import hmac
 import logging
@@ -25,6 +26,7 @@ from yt_dlp_config import (
     youtube_client_report,
     youtube_error_message,
     youtube_ydl_attempts,
+    youtube_quality_notice,
     js_runtime_options,
 )
 from storage import (
@@ -256,32 +258,40 @@ async def video_info(body: VideoInfoRequest):
     if not user or user["status"] != "approved":
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Keep the first attempt that lists separate video streams; otherwise the
-    # best one seen, so a 360p-only response is never preferred over HD.
-    info, info_score, info_label, last_error = None, None, None, None
-    try:
-        for label, attempt_opts in youtube_ydl_attempts(body.url):
-            ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": False}
-            ydl_opts.update(attempt_opts)
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    candidate = ydl.extract_info(body.url, download=False)
-            except yt_dlp.utils.DownloadError as e:
-                logger.warning("Video info %s attempt failed: %s", label, e)
-                last_error = e
-                continue
+    def _extract(attempt_opts: dict) -> dict:
+        ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": False}
+        ydl_opts.update(attempt_opts)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(body.url, download=False)
 
-            score = format_ladder_score(candidate)
-            if info is None or score > info_score:
-                info, info_score, info_label = candidate, score, label
-            # Stop once HD is listed; a low top height may be a degraded
-            # response, so the logged-in attempt still gets its chance.
-            if score[0] and score[1] >= 720:
-                break
-        if info is None:
-            raise last_error
+    # The attempts run side by side in worker threads: waiting for an
+    # anonymous 360p-only answer before starting the signed-in one doubled the
+    # wait, and running yt-dlp on the event loop stalled every other request.
+    # The best listing wins; on a tie the earlier (anonymous) attempt is kept.
+    try:
+        attempts = youtube_ydl_attempts(body.url)
     except Exception as e:
         detail = youtube_error_message(body.url, e)
+        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
+    results = await asyncio.gather(
+        *(asyncio.to_thread(_extract, opts) for _label, opts in attempts),
+        return_exceptions=True,
+    )
+
+    info, info_score, info_label, last_error = None, None, None, None
+    attempt_errors: dict[str, str] = {}
+    for (label, _opts), candidate in zip(attempts, results):
+        if isinstance(candidate, Exception):
+            logger.warning("Video info %s attempt failed: %s", label, candidate)
+            last_error = candidate
+            attempt_errors[label] = youtube_error_message(body.url, candidate)
+            continue
+        score = format_ladder_score(candidate)
+        if info is None or score > info_score:
+            info, info_score, info_label = candidate, score, label
+
+    if info is None:
+        detail = youtube_error_message(body.url, last_error)
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
 
     if not info_score[0] and info_label != "default":
@@ -292,6 +302,7 @@ async def video_info(body: VideoInfoRequest):
 
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)
+    notice  = youtube_quality_notice(body.url, info_score, attempt_errors)
 
     return {
         "title":     info.get("title", ""),
@@ -300,6 +311,7 @@ async def video_info(body: VideoInfoRequest):
         "uploader":  info.get("uploader", ""),
         "platform":  info.get("extractor_key", ""),
         "formats":   result,
+        "notice":    notice,
     }
 
 

@@ -95,16 +95,18 @@ def _configured_cookiefile() -> str | None:
 # yt-dlp silently drops every client that cannot carry cookies (visionos,
 # android_vr, ...) as soon as a cookie file is supplied. visionos is the client
 # that still returns every resolution (as HLS) without a PO token or a JS
-# runtime, so it has to run in a separate, cookie-less attempt. "default"
-# follows yt-dlp's own anonymous choice (visionos, plus web with a JS runtime).
-_ANONYMOUS_PLAYER_CLIENTS = ["default", "web_embedded"]
+# runtime, so it has to run in a separate, cookie-less attempt. web is left
+# out: without a PO token it adds only the 360p stream, at the cost of an
+# extra request and a JS challenge.
+_ANONYMOUS_PLAYER_CLIENTS = ["visionos", "web_embedded"]
 
 # Logged-in extraction otherwise settles on tv_downgraded and web, which on a
 # data-centre IP expose only one 360p combined stream. tv needs no PO token
 # once signed in and returns the complete DASH ladder (up to 4K); web_embedded
 # does the same for embeddable videos; web_safari adds an HLS ladder (up to
-# 1080p); default remains available for restricted videos.
-_AUTHENTICATED_PLAYER_CLIENTS = ["tv", "web_embedded", "default", "web_safari"]
+# 1080p). "default" (tv_downgraded, web) is left out: both return only the
+# 360p stream here and each costs a request and a JS challenge.
+_AUTHENTICATED_PLAYER_CLIENTS = ["tv", "web_embedded", "web_safari"]
 
 
 def _find_deno() -> str | None:
@@ -194,6 +196,38 @@ def format_ladder_score(info: dict) -> tuple[bool, int]:
         if f.get("acodec") == "none":
             has_video_only = True
     return has_video_only, top_height
+
+
+def youtube_quality_notice(
+    url: str, score: tuple[bool, int], attempt_errors: dict[str, str]
+) -> str | None:
+    """Explain a YouTube listing that holds only combined (360p) streams.
+
+    Returns None when separate video streams were listed, i.e. every
+    resolution the video has is available.
+    """
+    if not _is_youtube_url(url) or score[0]:
+        return None
+
+    if not _find_deno():
+        return (
+            "Only low resolutions are available because the server has no "
+            "JavaScript runtime (deno). Redeploy with the packages in "
+            "requirements.txt installed."
+        )
+    if youtube_auth_mode() == "not_configured":
+        return (
+            "YouTube gives this server only a 360p stream unless it is signed "
+            "in. Set YOUTUBE_COOKIES_BASE64 on the backend (Render > "
+            "Environment) to a base64 YouTube cookies.txt export, then redeploy."
+        )
+    if "cookies" in attempt_errors:
+        return "The signed-in YouTube attempt failed: " + attempt_errors["cookies"][:300]
+    return (
+        "YouTube returned only a 360p stream even with the configured cookies. "
+        "Export fresh cookies and update YOUTUBE_COOKIES_BASE64, or run the "
+        "YouTube check in the admin panel."
+    )
 
 
 # Clients probed one at a time by youtube_client_report().

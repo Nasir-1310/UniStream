@@ -25,6 +25,7 @@ from yt_dlp_config import (
     youtube_client_report,
     youtube_error_message,
     youtube_ydl_attempts,
+    js_runtime_options,
 )
 from storage import (
     delete_user,
@@ -273,7 +274,9 @@ async def video_info(body: VideoInfoRequest):
             score = format_ladder_score(candidate)
             if info is None or score > info_score:
                 info, info_score, info_label = candidate, score, label
-            if score[0]:
+            # Stop once HD is listed; a low top height may be a degraded
+            # response, so the logged-in attempt still gets its chance.
+            if score[0] and score[1] >= 720:
                 break
         if info is None:
             raise last_error
@@ -354,6 +357,7 @@ def admin_storage_health():
     info["yt_dlp_version"] = yt_dlp.version.__version__
     info["ffmpeg_location"] = FFMPEG_LOCATION
     info["youtube_auth"] = youtube_auth_mode()
+    info["js_runtime"] = js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path")
     return info
 
 
@@ -371,5 +375,6 @@ def admin_youtube_check(url: str = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
         "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
         "yt_dlp_version": yt_dlp.version.__version__,
         "youtube_auth": youtube_auth_mode(),
+        "js_runtime": js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path"),
         "clients": youtube_client_report(url),
     }

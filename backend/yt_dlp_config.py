@@ -37,6 +37,10 @@ def _is_youtube_url(url: str) -> bool:
     )
 
 
+def is_youtube_url(url: str) -> bool:
+    return _is_youtube_url(url)
+
+
 def _materialize_base64_cookies(encoded: str) -> str:
     """Decode a Netscape cookies file into a private process-temp file."""
     global _COOKIE_CACHE
@@ -95,18 +99,26 @@ def _configured_cookiefile() -> str | None:
 # yt-dlp silently drops every client that cannot carry cookies (visionos,
 # android_vr, ...) as soon as a cookie file is supplied. visionos is the client
 # that still returns every resolution (as HLS) without a PO token or a JS
-# runtime, so it has to run in a separate, cookie-less attempt. web is left
-# out: without a PO token it adds only the 360p stream, at the cost of an
-# extra request and a JS challenge.
-_ANONYMOUS_PLAYER_CLIENTS = ["visionos", "web_embedded"]
+# runtime, so it has to run in a separate, cookie-less attempt. "default"
+# follows yt-dlp's own anonymous choice (visionos, plus web with a JS runtime).
+_ANONYMOUS_PLAYER_CLIENTS = ["default", "web_embedded"]
 
-# Logged-in extraction otherwise settles on tv_downgraded and web, which on a
-# data-centre IP expose only one 360p combined stream. tv needs no PO token
-# once signed in and returns the complete DASH ladder (up to 4K); web_embedded
-# does the same for embeddable videos; web_safari adds an HLS ladder (up to
-# 1080p). "default" (tv_downgraded, web) is left out: both return only the
-# 360p stream here and each costs a request and a JS challenge.
-_AUTHENTICATED_PLAYER_CLIENTS = ["tv", "web_embedded", "web_safari"]
+# tv needs no PO token once signed in and returns the complete DASH ladder (up
+# to 4K); web_embedded does the same for embeddable videos. Both use YouTube's
+# player API, which answers data-centre IPs such as Render's with HTTP 403.
+# web is kept because its player response comes from the watch page instead,
+# so it still yields the 360p stream when the API is refused.
+_AUTHENTICATED_PLAYER_CLIENTS = ["tv", "web_embedded", "web"]
+
+# The watch page fetched with Safari's User-Agent embeds a player response
+# whose HLS manifest lists every resolution up to 1080p. Read from the page,
+# it needs no player API request, so it is the one route to HD that survives
+# a player API that refuses this server's IP. It replaces web as the client
+# read from the page, hence its own attempt.
+_SAFARI_PAGE_EXTRACTOR_ARGS = {
+    "player_client": ["web_safari"],
+    "webpage_client": ["web_safari"],
+}
 
 
 def _find_deno() -> str | None:
@@ -143,10 +155,6 @@ def _youtube_cookie_options() -> dict:
     else:
         return {}
 
-    options["extractor_args"] = {
-        "youtube": {"player_client": list(_AUTHENTICATED_PLAYER_CLIENTS)},
-    }
-
     # The User-Agent belongs to the browser that exported the cookies, so it is
     # sent only with them; overriding it would break the app clients above.
     user_agent = os.getenv("YOUTUBE_USER_AGENT", "").strip()
@@ -156,29 +164,81 @@ def _youtube_cookie_options() -> dict:
     return options
 
 
+def youtube_proxy() -> str | None:
+    """Proxy URL for YouTube traffic, from YOUTUBE_PROXY, or None.
+
+    YouTube refuses the player API to many data-centre IPs outright. Routing
+    YouTube through a residential or ISP proxy is the dependable way past
+    that; downloads must use it too, because stream URLs are bound to the IP
+    that requested them.
+    """
+    return os.getenv("YOUTUBE_PROXY", "").strip() or None
+
+
+def _youtube_network_options() -> dict:
+    options = js_runtime_options()
+    proxy = youtube_proxy()
+    if proxy:
+        options["proxy"] = proxy
+    return options
+
+
 def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
     """Return (label, yt-dlp options) pairs to try in order for one URL.
 
     Other extractors get a single empty attempt and never see the YouTube
     cookies. YouTube is tried anonymously first, which yields every resolution
     whenever YouTube serves this IP, and then with the configured session for
-    bot-challenged IPs and restricted videos.
+    bot-challenged IPs and restricted videos: once through the Safari watch
+    page and once through the player API.
     """
     if not _is_youtube_url(url):
         return [("default", {})]
 
-    js_options = js_runtime_options()
+    network_options = _youtube_network_options()
     attempts = [(
         "anonymous",
         {
-            **js_options,
+            **network_options,
             "extractor_args": {"youtube": {"player_client": list(_ANONYMOUS_PLAYER_CLIENTS)}},
         },
     )]
     cookie_options = _youtube_cookie_options()
     if cookie_options:
-        attempts.append(("cookies", {**js_options, **cookie_options}))
+        attempts.append((
+            "cookies_safari",
+            {
+                **network_options,
+                **cookie_options,
+                "extractor_args": {"youtube": {
+                    key: list(value) for key, value in _SAFARI_PAGE_EXTRACTOR_ARGS.items()
+                }},
+            },
+        ))
+        attempts.append((
+            "cookies",
+            {
+                **network_options,
+                **cookie_options,
+                "extractor_args": {
+                    "youtube": {"player_client": list(_AUTHENTICATED_PLAYER_CLIENTS)},
+                },
+            },
+        ))
     return attempts
+
+
+def prefer_attempt(
+    attempts: list[tuple[str, dict]], label: str | None
+) -> list[tuple[str, dict]]:
+    """Move the attempt that produced the listed formats to the front.
+
+    Downloads then start with the extraction that is known to offer the
+    chosen format instead of first waiting for attempts that cannot.
+    """
+    if not label:
+        return attempts
+    return sorted(attempts, key=lambda attempt: attempt[0] != label)
 
 
 def format_ladder_score(info: dict) -> tuple[bool, int]:
@@ -198,15 +258,37 @@ def format_ladder_score(info: dict) -> tuple[bool, int]:
     return has_video_only, top_height
 
 
+_IP_BLOCKED_MESSAGE = (
+    "YouTube is refusing this server's IP address (data-centre IPs such as "
+    "Render's are blocked), so it offers no HD streams here. Set YOUTUBE_PROXY "
+    "on the backend to a residential proxy, or run the backend on your own "
+    "computer, which YouTube serves normally."
+)
+_PROXY_BLOCKED_MESSAGE = (
+    "YouTube is refusing the IP address of the configured YOUTUBE_PROXY too, "
+    "so it offers no HD streams. Use a residential proxy instead."
+)
+_IP_BLOCK_MARKERS = (
+    "http error 403",
+    "requested format is not available",
+    "only images are available",
+    "no video formats found",
+)
+
+
+def _ip_blocked_message() -> str:
+    return _PROXY_BLOCKED_MESSAGE if youtube_proxy() else _IP_BLOCKED_MESSAGE
+
+
 def youtube_quality_notice(
     url: str, score: tuple[bool, int], attempt_errors: dict[str, str]
 ) -> str | None:
-    """Explain a YouTube listing that holds only combined (360p) streams.
+    """Explain a YouTube listing that tops out at a 360p combined stream.
 
-    Returns None when separate video streams were listed, i.e. every
-    resolution the video has is available.
+    Returns None when separate video streams or any resolution above 360p
+    were listed, i.e. YouTube served this server normally.
     """
-    if not _is_youtube_url(url) or score[0]:
+    if not _is_youtube_url(url) or score[0] or score[1] > 360:
         return None
 
     if not _find_deno():
@@ -221,19 +303,42 @@ def youtube_quality_notice(
             "in. Set YOUTUBE_COOKIES_BASE64 on the backend (Render > "
             "Environment) to a base64 YouTube cookies.txt export, then redeploy."
         )
-    if "cookies" in attempt_errors:
-        return "The signed-in YouTube attempt failed: " + attempt_errors["cookies"][:300]
-    return (
-        "YouTube returned only a 360p stream even with the configured cookies. "
-        "Export fresh cookies and update YOUTUBE_COOKIES_BASE64, or run the "
-        "YouTube check in the admin panel."
-    )
+    cookie_errors = [
+        message for label, message in attempt_errors.items()
+        if label.startswith("cookies") and "cookies" in message.lower()
+    ]
+    if cookie_errors:
+        return cookie_errors[0]
+    return _ip_blocked_message()
 
 
-# Clients probed one at a time by youtube_client_report().
-_DIAGNOSTIC_CLIENTS = {
-    "anonymous": ["visionos", "web_embedded", "web_safari", "android_vr"],
-    "cookies": ["tv", "web_embedded", "web_safari", "web", "mweb", "tv_downgraded"],
+def youtube_no_streams_message(url: str, attempt_errors: dict[str, str]) -> str:
+    """Explain an extraction that produced no video streams at all."""
+    if not _is_youtube_url(url):
+        return next(iter(attempt_errors.values()), "No downloadable video streams were found.")
+    # Only a signed-in attempt can show that the cookies were rejected; the
+    # anonymous one is bot-challenged on data-centre IPs whatever the cookies.
+    for label, message in attempt_errors.items():
+        if label.startswith("cookies") and "cookies" in message.lower():
+            return message
+    if youtube_auth_mode() == "not_configured" and "anonymous" in attempt_errors:
+        return attempt_errors["anonymous"]
+    return _ip_blocked_message()
+
+
+# Extractor arguments probed one at a time by youtube_client_report().
+_DIAGNOSTIC_PROBES = {
+    "anonymous": {
+        client: {"player_client": [client]}
+        for client in ("visionos", "web_embedded", "web_safari", "android_vr")
+    },
+    "cookies": {
+        "web_safari_watch_page": _SAFARI_PAGE_EXTRACTOR_ARGS,
+        **{
+            client: {"player_client": [client]}
+            for client in ("tv", "web_embedded", "web_safari", "web", "mweb", "tv_downgraded")
+        },
+    },
 }
 _DIAGNOSTIC_DEBUG_MARKERS = (
     "JS runtimes:", "account cookies", "playability status", "skipped", "SABR",
@@ -275,24 +380,26 @@ def youtube_client_report(url: str) -> dict:
     import yt_dlp
 
     cookie_options = _youtube_cookie_options()
-    js_options = js_runtime_options()
+    network_options = _youtube_network_options()
     report: dict = {}
-    for mode, clients in _DIAGNOSTIC_CLIENTS.items():
+    for mode, probes in _DIAGNOSTIC_PROBES.items():
         if mode == "cookies" and not cookie_options:
             report[mode] = "not configured"
             continue
 
         report[mode] = {}
-        for client in clients:
+        for client, extractor_args in probes.items():
             log = _DiagnosticLog()
             opts = {
                 "quiet": True,
                 "verbose": True,
                 "logger": log,
                 "ignore_no_formats_error": True,
-                **js_options,
+                **network_options,
                 **(cookie_options if mode == "cookies" else {}),
-                "extractor_args": {"youtube": {"player_client": [client]}},
+                "extractor_args": {
+                    "youtube": {key: list(value) for key, value in extractor_args.items()},
+                },
             }
             result: dict = {}
             try:
@@ -328,7 +435,11 @@ def youtube_auth_mode() -> str:
 def youtube_error_message(url: str, error: Exception) -> str:
     """Make YouTube authentication failures actionable without exposing secrets."""
     message = str(error)
-    if not _is_youtube_url(url) or "sign in to confirm" not in message.lower():
+    if not _is_youtube_url(url):
+        return message
+    if "sign in to confirm" not in message.lower():
+        if any(marker in message.lower() for marker in _IP_BLOCK_MARKERS):
+            return _ip_blocked_message()
         return message
 
     if youtube_auth_mode() != "not_configured":

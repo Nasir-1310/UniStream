@@ -79,6 +79,7 @@ export interface StorageHealth {
   user_count?: number | null
   download_log_count?: number | null
   youtube_auth?: string
+  youtube_proxy?: string
   js_runtime?: string | null
   yt_dlp_version?: string
   configuration_warning?: string | null
@@ -126,6 +127,7 @@ export interface VideoInfo {
   platform: string
   formats: VideoFormat[]
   notice?: string | null
+  source?: string | null
   view_count?: number
   like_count?: number
   upload_date?: string

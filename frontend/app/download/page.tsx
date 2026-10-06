@@ -615,6 +615,13 @@ export default function DownloadPage() {
           </div>
         )}
 
+        {videoInfo?.notice && !fetching && (
+          <div className="flex items-start gap-2.5 bg-amber-500/[0.07] border border-amber-500/20 text-amber-300 text-xs rounded-xl px-3.5 py-3 mb-5">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+            <span>{videoInfo.notice}</span>
+          </div>
+        )}
+
         {/* ── Main content ── */}
         {videoInfo && !fetching && (
           <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">

@@ -79,6 +79,8 @@ export interface StorageHealth {
   user_count?: number | null
   download_log_count?: number | null
   youtube_auth?: string
+  js_runtime?: string | null
+  yt_dlp_version?: string
   configuration_warning?: string | null
   error?: string | null
   last_remote_error?: string | null
@@ -89,6 +91,18 @@ export async function adminGetStorage(secret: string) {
     headers: { 'x-admin-secret': secret },
   })
   return data as StorageHealth
+}
+
+// Probes every YouTube client from the server and can take a few minutes, so
+// it goes straight to the API rather than through the /api rewrite proxy.
+export async function adminYoutubeCheck(secret: string, url?: string) {
+  const origin = process.env.NEXT_PUBLIC_BACKEND_ORIGIN || ''
+  const { data } = await axios.get(`${origin}/admin/youtube-check`, {
+    headers: { 'x-admin-secret': secret },
+    params: url ? { url } : undefined,
+    timeout: 300000,
+  })
+  return data as Record<string, unknown>
 }
 
 export interface VideoFormat {
@@ -111,6 +125,7 @@ export interface VideoInfo {
   uploader: string
   platform: string
   formats: VideoFormat[]
+  notice?: string | null
   view_count?: number
   like_count?: number
   upload_date?: string

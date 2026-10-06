@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import {
   adminListUsers, adminAddUser, adminUpdateStatus,
-  adminDeleteUser, adminGetLogs, adminGetStorage, StorageHealth,
+  adminDeleteUser, adminGetLogs, adminGetStorage, adminYoutubeCheck, StorageHealth,
 } from '@/lib/api'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
@@ -191,6 +191,21 @@ export default function AdminPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [mutatingUser, setMutatingUser] = useState<string | null>(null)
+  const [ytCheck, setYtCheck] = useState<Record<string, unknown> | null>(null)
+  const [ytChecking, setYtChecking] = useState(false)
+  const [ytCheckError, setYtCheckError] = useState('')
+
+  const runYoutubeCheck = async () => {
+    setYtChecking(true); setYtCheckError(''); setYtCheck(null)
+    try {
+      setYtCheck(await adminYoutubeCheck(secret))
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string }
+      setYtCheckError(e.response?.data?.detail || e.message || 'YouTube check failed')
+    } finally {
+      setYtChecking(false)
+    }
+  }
 
   /* add-user form */
   const [newId, setNewId] = useState('')
@@ -541,6 +556,31 @@ export default function AdminPage() {
                 </span>
               </div>
             )}
+
+            {/* YouTube diagnostics */}
+            <div className="rounded-2xl border border-white/[0.07] bg-[#10141f] px-4 py-3.5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">YouTube resolutions</p>
+                  <p className="text-xs text-gray-500 mt-0.5 break-all">
+                    Sign-in: <span className={storage?.youtube_auth === 'not_configured' ? 'text-red-400' : 'text-emerald-400'}>{storage?.youtube_auth ?? '?'}</span>
+                    {' · '}JS runtime: <span className={storage?.js_runtime ? 'text-emerald-400' : 'text-red-400'}>{storage ? (storage.js_runtime || 'missing') : '?'}</span>
+                    {' · '}yt-dlp {storage?.yt_dlp_version ?? '?'}
+                  </p>
+                </div>
+                <button onClick={runYoutubeCheck} disabled={ytChecking}
+                  className="self-start sm:self-auto flex items-center gap-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg px-3 py-2">
+                  {ytChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+                  {ytChecking ? 'Checking (1–3 min)…' : 'Run YouTube check'}
+                </button>
+              </div>
+              {ytCheckError && <p className="text-xs text-red-400">{ytCheckError}</p>}
+              {ytCheck && (
+                <pre className="text-[11px] leading-relaxed text-gray-300 bg-black/30 border border-white/5 rounded-xl p-3 max-h-96 overflow-auto whitespace-pre-wrap break-all">
+                  {JSON.stringify(ytCheck, null, 2)}
+                </pre>
+              )}
+            </div>
 
             {notice && (
               <div className="flex items-center gap-2.5 bg-emerald-500/8 border border-emerald-500/18 text-emerald-400 text-xs rounded-xl px-3.5 py-3">

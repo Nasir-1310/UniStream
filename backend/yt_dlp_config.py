@@ -7,6 +7,7 @@ other extractors continue to run without access to them.
 
 import base64
 import binascii
+import contextlib
 import hashlib
 import os
 import shutil
@@ -14,6 +15,10 @@ import tempfile
 import threading
 from pathlib import Path
 from urllib.parse import urlparse
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -170,13 +175,16 @@ def youtube_proxy() -> str | None:
     YouTube refuses the player API to many data-centre IPs outright. Routing
     YouTube through a residential or ISP proxy is the dependable way past
     that; downloads must use it too, because stream URLs are bound to the IP
-    that requested them.
+    that requested them. For the same reason the proxy needs a sticky session:
+    yt-dlp opens a new connection per request, and a proxy that rotates its
+    exit IP per connection makes every stream URL fail with HTTP 403.
     """
     return os.getenv("YOUTUBE_PROXY", "").strip() or None
 
 
 def _youtube_network_options() -> dict:
-    options = js_runtime_options()
+    # A link copied from a playlist (watch?v=ID&list=...) means that one video.
+    options = {**js_runtime_options(), "noplaylist": True}
     proxy = youtube_proxy()
     if proxy:
         options["proxy"] = proxy
@@ -228,6 +236,55 @@ def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
     return attempts
 
 
+def _private_cookie_copy(cookiefile: str) -> str | None:
+    """Copy the shared cookie file for one YoutubeDL instance.
+
+    yt-dlp rewrites its cookie file in place when it closes, so instances
+    sharing one file can read it half-written ("does not look like a Netscape
+    format cookies file"). Each attempt works on its own copy instead.
+    """
+    try:
+        data = Path(cookiefile).read_bytes()
+    except OSError:
+        return None
+    fd, path = tempfile.mkstemp(prefix="unistream_cookies_", suffix=".txt")
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    return path
+
+
+def _write_back_cookies(private_path: str, cookiefile: str):
+    """Keep cookies YouTube rotated during an attempt, replacing atomically."""
+    try:
+        data = Path(private_path).read_bytes()
+        if not data.strip():
+            return
+        fd, staged = tempfile.mkstemp(
+            prefix=".unistream_cookies_", suffix=".txt", dir=str(Path(cookiefile).parent)
+        )
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(staged, cookiefile)
+    except OSError:
+        logger.debug("Could not write rotated YouTube cookies back", exc_info=True)
+    finally:
+        Path(private_path).unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def private_cookiefile(options: dict):
+    """Give one set of yt-dlp options its own copy of the cookie file."""
+    shared = options.get("cookiefile")
+    private = _private_cookie_copy(shared) if shared else None
+    if not private:
+        yield options
+        return
+    try:
+        yield {**options, "cookiefile": private}
+    finally:
+        _write_back_cookies(private, shared)
+
+
 def prefer_attempt(
     attempts: list[tuple[str, dict]], label: str | None
 ) -> list[tuple[str, dict]]:
@@ -261,12 +318,19 @@ def format_ladder_score(info: dict) -> tuple[bool, int]:
 _IP_BLOCKED_MESSAGE = (
     "YouTube is refusing this server's IP address (data-centre IPs such as "
     "Render's are blocked), so it offers no HD streams here. Set YOUTUBE_PROXY "
-    "on the backend to a residential proxy, or run the backend on your own "
-    "computer, which YouTube serves normally."
+    "on the backend to a residential proxy with a sticky session (one exit "
+    "IP), or run the backend on your own computer, which YouTube serves "
+    "normally."
 )
 _PROXY_BLOCKED_MESSAGE = (
-    "YouTube is refusing the IP address of the configured YOUTUBE_PROXY too, "
-    "so it offers no HD streams. Use a residential proxy instead."
+    "YouTube is refusing the configured YOUTUBE_PROXY too, or the proxy "
+    "changes its exit IP between requests, which breaks YouTube's IP-bound "
+    "stream links. Use a residential proxy with a sticky session."
+)
+_CHALLENGE_FAILED_MESSAGE = (
+    "YouTube's stream-link challenge could not be solved, so its HD streams "
+    "were skipped. Update yt-dlp and yt-dlp-ejs in requirements.txt and "
+    "redeploy."
 )
 _IP_BLOCK_MARKERS = (
     "http error 403",
@@ -274,6 +338,7 @@ _IP_BLOCK_MARKERS = (
     "only images are available",
     "no video formats found",
 )
+_CHALLENGE_MARKERS = ("n challenge solving failed", "signature solving failed")
 
 
 def _ip_blocked_message() -> str:
@@ -281,12 +346,17 @@ def _ip_blocked_message() -> str:
 
 
 def youtube_quality_notice(
-    url: str, score: tuple[bool, int], attempt_errors: dict[str, str]
+    url: str,
+    score: tuple[bool, int],
+    attempt_errors: dict[str, str],
+    attempt_warnings: dict[str, list[str]] | None = None,
 ) -> str | None:
     """Explain a YouTube listing that tops out at a 360p combined stream.
 
     Returns None when separate video streams or any resolution above 360p
-    were listed, i.e. YouTube served this server normally.
+    were listed, i.e. YouTube served this server normally. attempt_warnings
+    are the yt-dlp warnings per attempt; yt-dlp only warns when it drops HD
+    streams for an unsolved challenge or a refused HLS manifest.
     """
     if not _is_youtube_url(url) or score[0] or score[1] > 360:
         return None
@@ -309,21 +379,51 @@ def youtube_quality_notice(
     ]
     if cookie_errors:
         return cookie_errors[0]
+
+    warnings = " ".join(
+        message for messages in (attempt_warnings or {}).values() for message in messages
+    ).lower()
+    if any(marker in warnings for marker in _CHALLENGE_MARKERS):
+        return _CHALLENGE_FAILED_MESSAGE
+    if "failed to download m3u8" in warnings:
+        return (
+            "YouTube listed HD streams but refused to send their playlist to "
+            "this server. " + _ip_blocked_message()
+        )
     return _ip_blocked_message()
 
 
-def youtube_no_streams_message(url: str, attempt_errors: dict[str, str]) -> str:
-    """Explain an extraction that produced no video streams at all."""
-    if not _is_youtube_url(url):
-        return next(iter(attempt_errors.values()), "No downloadable video streams were found.")
-    # Only a signed-in attempt can show that the cookies were rejected; the
-    # anonymous one is bot-challenged on data-centre IPs whatever the cookies.
-    for label, message in attempt_errors.items():
-        if label.startswith("cookies") and "cookies" in message.lower():
+def youtube_failure_message(
+    url: str,
+    attempt_errors: dict[str, str],
+    attempt_warnings: dict[str, list[str]] | None = None,
+) -> str:
+    """Pick the most useful explanation when no attempt produced a video.
+
+    attempt_errors maps attempt labels to youtube_error_message() texts. With
+    cookies configured only the signed-in attempts count: the anonymous one
+    is bot-challenged on data-centre IPs whatever the cookies. A specific
+    reason (private, unavailable, rejected cookies) beats the generic block.
+    """
+    signed_in = {
+        label: message for label, message in attempt_errors.items()
+        if label.startswith("cookies")
+    }
+    messages = list((signed_in or attempt_errors).values())
+    warnings = " ".join(
+        message for messages_ in (attempt_warnings or {}).values() for message in messages_
+    ).lower()
+    if _is_youtube_url(url) and any(marker in warnings for marker in _CHALLENGE_MARKERS):
+        if all(message == _ip_blocked_message() for message in messages):
+            return _CHALLENGE_FAILED_MESSAGE
+    if not messages:
+        if _is_youtube_url(url):
+            return _ip_blocked_message()
+        return "No downloadable video streams were found."
+    for message in messages:
+        if message != _ip_blocked_message():
             return message
-    if youtube_auth_mode() == "not_configured" and "anonymous" in attempt_errors:
-        return attempt_errors["anonymous"]
-    return _ip_blocked_message()
+    return messages[0]
 
 
 # Extractor arguments probed one at a time by youtube_client_report().
@@ -345,8 +445,12 @@ _DIAGNOSTIC_DEBUG_MARKERS = (
 )
 
 
-class _DiagnosticLog:
-    """Collects the yt-dlp messages that explain a missing format ladder."""
+class YtDlpLog:
+    """Collects the yt-dlp messages that explain a missing format ladder.
+
+    A logger receives yt-dlp's warnings even with no_warnings set, so it also
+    captures why streams were dropped in otherwise quiet runs.
+    """
 
     def __init__(self):
         self.notes: list[str] = []
@@ -355,6 +459,10 @@ class _DiagnosticLog:
         message = " ".join(str(message).split())[:240]
         if message not in self.notes:
             self.notes.append(message)
+
+    @property
+    def warnings(self) -> list[str]:
+        return list(self.notes)
 
     def debug(self, message):
         if any(marker in message for marker in _DIAGNOSTIC_DEBUG_MARKERS):
@@ -389,7 +497,7 @@ def youtube_client_report(url: str) -> dict:
 
         report[mode] = {}
         for client, extractor_args in probes.items():
-            log = _DiagnosticLog()
+            log = YtDlpLog()
             opts = {
                 "quiet": True,
                 "verbose": True,
@@ -403,7 +511,8 @@ def youtube_client_report(url: str) -> dict:
             }
             result: dict = {}
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
+                with private_cookiefile(opts) as probe_opts, \
+                        yt_dlp.YoutubeDL(probe_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                 video = [
                     f for f in info.get("formats") or []

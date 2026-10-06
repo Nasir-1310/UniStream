@@ -23,5 +23,10 @@ services:
       # Optional: the exact User-Agent from the browser that exported cookies.
       - key: YOUTUBE_USER_AGENT
         sync: false
+      # Optional: residential proxy for YouTube when it refuses Render's IP,
+      # e.g. http://user:pass@host:port. Must keep one exit IP (sticky
+      # session): YouTube stream links are bound to the requesting IP.
+      - key: YOUTUBE_PROXY
+        sync: false
       - key: MAX_CONCURRENT_DOWNLOADS
         value: "5"

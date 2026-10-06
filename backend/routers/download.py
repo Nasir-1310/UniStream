@@ -28,7 +28,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from dependencies import require_approved_user
 from database import log_download, record_download
-from yt_dlp_config import prefer_attempt, youtube_error_message, youtube_ydl_attempts
+from yt_dlp_config import (
+    prefer_attempt,
+    private_cookiefile,
+    youtube_error_message,
+    youtube_ydl_attempts,
+)
 
 router = APIRouter(tags=["download"])
 logger = logging.getLogger(__name__)
@@ -129,18 +134,24 @@ def _video_format_selector(
     """Build the yt-dlp selector for one listed resolution.
 
     Format ids differ between YouTube clients (DASH itags vs. HLS ids), so the
-    chosen height is matched as well. The final fallback is the best separate
-    video stream, never "best", which is a single combined file and therefore
-    a 360p stream on YouTube.
+    chosen height is matched as well. A chosen height is never downgraded:
+    the fallback that once turned a refused 1080p stream into a silent 360p
+    download is kept only for callers that send no height.
     """
     selectors = [f"{format_id}+bestaudio"]
     if height:
         selectors += [f"bv*[height={height}]+bestaudio", f"b[height={height}]"]
-    if allow_fallback:
-        if height:
-            selectors.append(f"bv*[height<={height}]+bestaudio")
+    elif allow_fallback:
         selectors += ["bv*+bestaudio", "best"]
     return "/".join(selectors)
+
+
+# yt-dlp skips an HLS segment that keeps failing and still reports success,
+# which served lectures with gaps. Fail instead, after more retries.
+_FRAGMENT_OPTIONS = {
+    "fragment_retries": 10,
+    "skip_unavailable_fragments": False,
+}
 
 
 def _build_ydl_opts_video(
@@ -168,7 +179,7 @@ def _build_ydl_opts_video(
         },
         "concurrent_fragment_downloads": 4,
         "retries": 3,
-        "fragment_retries": 3,
+        **_FRAGMENT_OPTIONS,
     }
     if FFMPEG_LOCATION:
         opts["ffmpeg_location"] = FFMPEG_LOCATION
@@ -180,7 +191,9 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
     opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": "bestaudio/best",
+        # Without an audio-only stream (YouTube's Safari HLS streams all carry
+        # video), take a small combined stream rather than the 1080p one.
+        "format": "bestaudio/best[height<=480]/best",
         "outtmpl": output_template,
         "windowsfilenames": True,
         "trim_file_name": 150,
@@ -191,7 +204,7 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
         }],
         "concurrent_fragment_downloads": 4,
         "retries": 3,
-        "fragment_retries": 3,
+        **_FRAGMENT_OPTIONS,
     }
     if FFMPEG_LOCATION:
         opts["ffmpeg_location"] = FFMPEG_LOCATION
@@ -211,6 +224,8 @@ def _download_with_fallback(
 
     The listed formats may come from any attempt in youtube_ydl_attempts(), so
     the requested format is matched exactly on every attempt but the last.
+    Any failure moves on to the next attempt: with skip_unavailable_fragments
+    off, a lost HLS segment can surface as an error other than DownloadError.
     """
     output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
     attempts = prefer_attempt(youtube_ydl_attempts(url), source)
@@ -237,12 +252,24 @@ def _download_with_fallback(
                 leftover.unlink(missing_ok=True)
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with private_cookiefile(ydl_opts) as private_opts, \
+                    yt_dlp.YoutubeDL(private_opts) as ydl:
                 return ydl.extract_info(url, download=True)
-        except yt_dlp.utils.DownloadError as exc:
+        except Exception as exc:
             logger.warning("Download %s attempt failed: %s", label, exc)
             last_error = exc
 
+    message = str(last_error).lower()
+    if height and "requested format is not available" in message:
+        raise RuntimeError(
+            f"YouTube did not provide the {height}p stream for this download. "
+            "Try again, or choose another resolution."
+        ) from last_error
+    if not isinstance(last_error, yt_dlp.utils.DownloadError):
+        raise RuntimeError(
+            "The download stopped because part of the stream could not be "
+            "fetched. Please try again."
+        ) from last_error
     raise last_error
 
 

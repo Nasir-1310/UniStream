@@ -183,7 +183,7 @@ class YoutubeAttemptTests(unittest.TestCase):
 
     def test_other_sites_keep_formats_without_a_known_height(self):
         def extract(options, _url, _download):
-            self.assertFalse(options["ignore_no_formats_error"])
+            self.assertNotIn("ignore_no_formats_error", options)
             return {
                 "title": "Clip", "extractor_key": "Facebook",
                 "formats": [{"format_id": "hd", "url": "https://example.com/v.mp4"}],
@@ -263,8 +263,12 @@ class YoutubeAttemptTests(unittest.TestCase):
             selector, "137+bestaudio/bv*[height=1080]+bestaudio/b[height=1080]"
         )
 
-        fallback = download_router._video_format_selector("137", 1080, True)
-        self.assertTrue(fallback.endswith("/bv*[height<=1080]+bestaudio/bv*+bestaudio/best"))
+        # A chosen height is never silently downgraded, even on the last attempt.
+        self.assertEqual(download_router._video_format_selector("137", 1080, True), selector)
+        self.assertEqual(
+            download_router._video_format_selector("137", None, True),
+            "137+bestaudio/bv*+bestaudio/best",
+        )
 
     def test_cookie_attempt_uses_the_tv_client_for_the_full_ladder(self):
         attempts = dict(yt_dlp_config.youtube_ydl_attempts("https://youtu.be/example"))
@@ -278,6 +282,129 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         for _label, options in attempts:
             self.assertEqual(options["js_runtimes"], {"deno": {"path": "/venv/bin/deno"}})
+
+
+    def test_youtube_attempts_extract_one_video_from_a_playlist_link(self):
+        for _label, options in yt_dlp_config.youtube_ydl_attempts("https://youtu.be/example"):
+            self.assertTrue(options["noplaylist"])
+
+    def test_video_info_rejects_a_youtube_playlist(self):
+        def extract(_options, _url, _download):
+            return {"_type": "playlist", "title": "Course", "entries": []}
+
+        response = self.post_video_info(extract, url="https://www.youtube.com/playlist?list=PL1")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("playlist", response.json()["detail"])
+
+    def test_video_info_reports_the_real_reason_for_a_private_video(self):
+        def extract(_options, _url, _download):
+            raise yt_dlp.utils.DownloadError(
+                "ERROR: [youtube] example: Private video. Sign in if you've been granted access"
+            )
+
+        response = self.post_video_info(extract)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Private video", response.json()["detail"])
+        self.assertNotIn("YOUTUBE_PROXY", response.json()["detail"])
+
+    def test_anonymous_bot_check_is_not_blamed_on_the_cookies(self):
+        def extract(options, _url, _download):
+            if options.get("cookiefile"):
+                raise yt_dlp.utils.DownloadError("Requested format is not available")
+            raise yt_dlp.utils.DownloadError("Sign in to confirm you're not a bot")
+
+        response = self.post_video_info(extract)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("refusing this server's IP address", response.json()["detail"])
+
+    def test_video_info_names_an_unsolved_stream_challenge(self):
+        def extract(options, _url, _download):
+            options["logger"].warning(
+                "[youtube] example: n challenge solving failed: Some formats may be missing."
+            )
+            return {"title": "Lecture", "extractor_key": "Youtube", "formats": COMBINED_ONLY}
+
+        response = self.post_video_info(extract)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("challenge could not be solved", response.json()["notice"])
+
+    def test_failed_listing_names_an_unsolved_stream_challenge(self):
+        def extract(options, _url, _download):
+            options["logger"].warning(
+                "[youtube] example: n challenge solving failed: Some formats may be missing."
+            )
+            raise yt_dlp.utils.DownloadError("Requested format is not available")
+
+        response = self.post_video_info(extract)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("challenge could not be solved", response.json()["detail"])
+
+    def test_download_fails_instead_of_downgrading_a_chosen_height(self):
+        tmp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp_dir, ignore_errors=True)
+
+        def extract(options, _url, _download):
+            self.assertNotIn("best", options["format"].split("/"))
+            raise yt_dlp.utils.DownloadError("Requested format is not available")
+
+        with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(extract)), \
+                self.assertRaisesRegex(RuntimeError, "did not provide the 1080p stream"):
+            download_router._download_with_fallback(
+                "https://youtu.be/example", "96", "mp4", tmp_dir, height=1080,
+            )
+
+    def test_download_moves_on_after_a_failure_mid_stream(self):
+        calls = []
+        tmp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp_dir, ignore_errors=True)
+
+        def extract(options, _url, _download):
+            calls.append(options.get("cookiefile"))
+            if len(calls) == 1:
+                raise ValueError("write to closed file")
+            (Path(options["outtmpl"]).parent / "Lecture.mp4").write_bytes(b"media")
+            return {"title": "Lecture", "extractor_key": "Youtube"}
+
+        with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(extract)):
+            download_router._download_with_fallback(
+                "https://youtu.be/example", "96", "mp4", tmp_dir, height=1080,
+            )
+
+        self.assertEqual(len(calls), 2)
+
+    def test_downloads_fail_on_a_lost_hls_segment_and_mp3_avoids_hd_video(self):
+        video = download_router._build_ydl_opts_video("96", "out", True, 1080)
+        audio = download_router._build_ydl_opts_audio("out")
+
+        for options in (video, audio):
+            self.assertFalse(options["skip_unavailable_fragments"])
+        self.assertEqual(audio["format"], "bestaudio/best[height<=480]/best")
+
+
+class PrivateCookieFileTests(unittest.TestCase):
+    def test_each_instance_gets_a_copy_and_rotated_cookies_are_kept(self):
+        tmp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp_dir, ignore_errors=True)
+        shared = Path(tmp_dir) / "cookies.txt"
+        shared.write_text("# Netscape HTTP Cookie File\noriginal\n")
+
+        with yt_dlp_config.private_cookiefile({"cookiefile": str(shared)}) as options:
+            private = Path(options["cookiefile"])
+            self.assertNotEqual(private, shared)
+            self.assertEqual(private.read_text(), shared.read_text())
+            private.write_text("# Netscape HTTP Cookie File\nrotated\n")
+
+        self.assertIn("rotated", shared.read_text())
+        self.assertFalse(private.exists())
+
+    def test_options_without_a_cookie_file_pass_through(self):
+        with yt_dlp_config.private_cookiefile({"proxy": "x"}) as options:
+            self.assertEqual(options, {"proxy": "x"})
 
 
 if __name__ == "__main__":

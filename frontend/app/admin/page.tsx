@@ -564,6 +564,7 @@ export default function AdminPage() {
                   <p className="text-sm font-semibold text-white">YouTube resolutions</p>
                   <p className="text-xs text-gray-500 mt-0.5 break-all">
                     Sign-in: <span className={storage?.youtube_auth === 'not_configured' ? 'text-red-400' : 'text-emerald-400'}>{storage?.youtube_auth ?? '?'}</span>
+                    {' · '}Proxy: <span className="text-gray-300">{storage?.youtube_proxy ?? '?'}</span>
                     {' · '}JS runtime: <span className={storage?.js_runtime ? 'text-emerald-400' : 'text-red-400'}>{storage ? (storage.js_runtime || 'missing') : '?'}</span>
                     {' · '}yt-dlp {storage?.yt_dlp_version ?? '?'}
                   </p>

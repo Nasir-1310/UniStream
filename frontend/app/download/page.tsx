@@ -397,6 +397,7 @@ export default function DownloadPage() {
     const fmtId = fmt.format_id
     const sseUrl = `${BACKEND_ORIGIN}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${encodeURIComponent(fmtId)}&identifier=${encodeURIComponent(identifier)}&ext=${encodeURIComponent(fmt.ext)}`
       + (fmt.type === 'video' && parseInt(fmt.resolution, 10) > 0 ? `&height=${parseInt(fmt.resolution, 10)}` : '')
+      + (videoInfo?.source ? `&source=${encodeURIComponent(videoInfo.source)}` : '')
 
     const initProgress: ProgressData = {
       status: 'starting', percent: 0, speed: '0 KB/s', eta: '--:--',
@@ -442,7 +443,7 @@ export default function DownloadPage() {
       setActiveProgress(prev => prev ? { ...prev, status: 'error', error: msg } : null)
       setActiveId(null)
     }
-  }, [activeId, url, identifier])
+  }, [activeId, url, identifier, videoInfo?.source])
 
   function handleReset() {
     sseRef.current?.close()

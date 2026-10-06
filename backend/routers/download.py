@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from dependencies import require_approved_user
 from database import log_download, record_download
-from yt_dlp_config import youtube_error_message, youtube_ydl_attempts
+from yt_dlp_config import prefer_attempt, youtube_error_message, youtube_ydl_attempts
 
 router = APIRouter(tags=["download"])
 logger = logging.getLogger(__name__)
@@ -205,6 +205,7 @@ def _download_with_fallback(
     tmp_dir: str,
     progress_hooks=None,
     height: int | None = None,
+    source: str | None = None,
 ) -> dict:
     """Download through each extraction attempt until one yields the format.
 
@@ -212,7 +213,7 @@ def _download_with_fallback(
     the requested format is matched exactly on every attempt but the last.
     """
     output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
-    attempts = youtube_ydl_attempts(url)
+    attempts = prefer_attempt(youtube_ydl_attempts(url), source)
     last_error = None
 
     for index, (label, attempt_opts) in enumerate(attempts):
@@ -256,6 +257,7 @@ async def download_with_progress(
     ext:        str = Query(...),
     identifier: str = Query(...),
     height:     int | None = Query(None, ge=1, le=10000),
+    source:     str | None = Query(None, max_length=32),
     _user           = Depends(require_approved_user),
 ):
     """
@@ -340,7 +342,7 @@ async def download_with_progress(
 
             def _blocking():
                 return _download_with_fallback(
-                    url, format_id, ext, tmp_dir, [_hook], height
+                    url, format_id, ext, tmp_dir, [_hook], height, source
                 )
 
             info = await loop.run_in_executor(None, _blocking)
@@ -522,6 +524,7 @@ def get_download(
     identifier: str = Query(...),
     ext:        str = Query("mp4"),
     height:     int | None = Query(None, ge=1, le=10000),
+    source:     str | None = Query(None, max_length=32),
     _user           = Depends(require_approved_user),
 ):
     """
@@ -536,7 +539,7 @@ def get_download(
 
     try:
         info      = _download_with_fallback(
-            url, format_id, ext, tmp_dir, height=height
+            url, format_id, ext, tmp_dir, height=height, source=source
         )
         raw_title = info.get("title", "unistream_video")
 

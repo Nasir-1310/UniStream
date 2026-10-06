@@ -22,10 +22,13 @@ from routers.download import router as download_router
 from dependencies import get_user
 from yt_dlp_config import (
     format_ladder_score,
+    is_youtube_url,
     youtube_auth_mode,
     youtube_client_report,
     youtube_error_message,
     youtube_ydl_attempts,
+    youtube_no_streams_message,
+    youtube_proxy,
     youtube_quality_notice,
     js_runtime_options,
 )
@@ -258,8 +261,17 @@ async def video_info(body: VideoInfoRequest):
     if not user or user["status"] != "approved":
         raise HTTPException(status_code=403, detail="Access denied")
 
+    youtube = is_youtube_url(body.url)
+
     def _extract(attempt_opts: dict) -> dict:
-        ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": False}
+        # A refused YouTube attempt can still return metadata with no streams;
+        # keep it as a result instead of an error so another attempt can win.
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": False,
+            "ignore_no_formats_error": youtube,
+        }
         ydl_opts.update(attempt_opts)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(body.url, download=False)
@@ -293,11 +305,14 @@ async def video_info(body: VideoInfoRequest):
     if info is None:
         detail = youtube_error_message(body.url, last_error)
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
+    if youtube and info_score[1] == 0:
+        detail = youtube_no_streams_message(body.url, attempt_errors)
+        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
 
-    if not info_score[0] and info_label != "default":
+    if youtube and not info_score[0] and info_score[1] <= 360:
         logger.warning(
-            "YouTube returned no separate video streams (%s attempt, top %sp)",
-            info_label, info_score[1],
+            "YouTube listed only combined streams up to %sp (%s attempt)",
+            info_score[1], info_label,
         )
 
     formats = info.get("formats", [])
@@ -312,6 +327,8 @@ async def video_info(body: VideoInfoRequest):
         "platform":  info.get("extractor_key", ""),
         "formats":   result,
         "notice":    notice,
+        # Downloads start with the attempt that listed these formats.
+        "source":    info_label,
     }
 
 
@@ -369,6 +386,7 @@ def admin_storage_health():
     info["yt_dlp_version"] = yt_dlp.version.__version__
     info["ffmpeg_location"] = FFMPEG_LOCATION
     info["youtube_auth"] = youtube_auth_mode()
+    info["youtube_proxy"] = "configured" if youtube_proxy() else "not configured"
     info["js_runtime"] = js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path")
     return info
 
@@ -387,6 +405,7 @@ def admin_youtube_check(url: str = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
         "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
         "yt_dlp_version": yt_dlp.version.__version__,
         "youtube_auth": youtube_auth_mode(),
+        "youtube_proxy": "configured" if youtube_proxy() else "not configured",
         "js_runtime": js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path"),
         "clients": youtube_client_report(url),
     }

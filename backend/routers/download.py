@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from dependencies import require_approved_user
 from database import log_download, record_download
-from yt_dlp_config import youtube_error_message, youtube_ydl_options
+from yt_dlp_config import youtube_error_message, youtube_ydl_attempts
 
 router = APIRouter(tags=["download"])
 logger = logging.getLogger(__name__)
@@ -123,12 +123,18 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-def _build_ydl_opts_video(format_id: str, output_template: str) -> dict:
-    """yt-dlp options for a video+audio merged MP4 download."""
+def _build_ydl_opts_video(
+    format_id: str, output_template: str, allow_fallback: bool = True
+) -> dict:
+    """yt-dlp options for a video+audio merged MP4 download.
+
+    Without allow_fallback a missing format fails instead of silently becoming
+    "best", which for a degraded YouTube response is a 360p combined stream.
+    """
     opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": f"{format_id}+bestaudio/best",
+        "format": f"{format_id}+bestaudio" + ("/best" if allow_fallback else ""),
         "outtmpl": output_template,
         "windowsfilenames": True,
         "trim_file_name": 150,
@@ -167,6 +173,46 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
     if FFMPEG_LOCATION:
         opts["ffmpeg_location"] = FFMPEG_LOCATION
     return opts
+
+
+def _download_with_fallback(
+    url: str, format_id: str, ext: str, tmp_dir: str, progress_hooks=None
+) -> dict:
+    """Download through each extraction attempt until one yields the format.
+
+    The listed formats may come from any attempt in youtube_ydl_attempts(), so
+    the requested format is matched exactly on every attempt but the last.
+    """
+    output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
+    attempts = youtube_ydl_attempts(url)
+    last_error = None
+
+    for index, (label, attempt_opts) in enumerate(attempts):
+        if ext == "mp3":
+            ydl_opts = _build_ydl_opts_audio(output_template)
+        else:
+            is_last = index == len(attempts) - 1
+            ydl_opts = _build_ydl_opts_video(format_id, output_template, is_last)
+        ydl_opts.update(attempt_opts)
+        if progress_hooks:
+            ydl_opts["progress_hooks"] = progress_hooks
+
+        # A failed attempt may leave partial files; the caller serves the
+        # largest file in tmp_dir.
+        for leftover in Path(tmp_dir).iterdir():
+            if leftover.is_dir():
+                shutil.rmtree(leftover, ignore_errors=True)
+            else:
+                leftover.unlink(missing_ok=True)
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as exc:
+            logger.warning("Download %s attempt failed: %s", label, exc)
+            last_error = exc
+
+    raise last_error
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -250,7 +296,6 @@ async def download_with_progress(
     # ── Background download coroutine ─────────────────────────────────────────
     async def _run_download():
         loop = asyncio.get_running_loop()
-        output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
         acquired = False
 
         try:
@@ -262,17 +307,8 @@ async def download_with_progress(
             if not acquired:
                 raise RuntimeError("Server is busy. Try again shortly.")
 
-            if ext == "mp3":
-                ydl_opts = _build_ydl_opts_audio(output_template)
-            else:
-                ydl_opts = _build_ydl_opts_video(format_id, output_template)
-
-            ydl_opts.update(youtube_ydl_options(url))
-            ydl_opts["progress_hooks"] = [_hook]
-
             def _blocking():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    return ydl.extract_info(url, download=True)
+                return _download_with_fallback(url, format_id, ext, tmp_dir, [_hook])
 
             info = await loop.run_in_executor(None, _blocking)
 
@@ -462,19 +498,11 @@ def get_download(
     if not acquired:
         raise HTTPException(status_code=503, detail="Server busy. Try again shortly.")
 
-    tmp_dir         = tempfile.mkdtemp()
-    output_template = os.path.join(tmp_dir, "%(title).150B.%(ext)s")
+    tmp_dir = tempfile.mkdtemp()
 
     try:
-        if ext == "mp3":
-            ydl_opts = _build_ydl_opts_audio(output_template)
-        else:
-            ydl_opts = _build_ydl_opts_video(format_id, output_template)
-        ydl_opts.update(youtube_ydl_options(url))
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info      = ydl.extract_info(url, download=True)
-            raw_title = info.get("title", "unistream_video")
+        info      = _download_with_fallback(url, format_id, ext, tmp_dir)
+        raw_title = info.get("title", "unistream_video")
 
         output_candidates = [
             Path(tmp_dir) / filename for filename in os.listdir(tmp_dir)

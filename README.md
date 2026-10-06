@@ -92,6 +92,13 @@ different path with `YOUTUBE_COOKIES_FILE`, or opt in to browser extraction with
 `YOUTUBE_COOKIES_BROWSER=chrome` (Firefox is also supported). Never commit the
 cookie file or its base64 value.
 
+The backend always tries YouTube without cookies first, because yt-dlp drops
+the clients that list every resolution as soon as cookies are supplied. The
+cookies are used only when that attempt is challenged or returns no HD
+streams. A `Video info anonymous attempt failed` warning in the Render logs
+means the fallback ran; `YouTube returned no separate video streams` means
+both attempts were limited to low resolution.
+
 ---
 
 ### Step 3 — Frontend Deploy on Vercel (FREE)

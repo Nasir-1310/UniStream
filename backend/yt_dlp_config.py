@@ -91,11 +91,22 @@ def _configured_cookiefile() -> str | None:
     return str(cookie_path)
 
 
-def youtube_ydl_options(url: str) -> dict:
-    """Return authentication options only when the target is YouTube."""
-    if not _is_youtube_url(url):
-        return {}
+# yt-dlp silently drops every client that cannot carry cookies (visionos,
+# android_vr, ...) as soon as a cookie file is supplied. visionos is the client
+# that still returns every resolution (as HLS) without a PO token or a JS
+# runtime, so it has to run in a separate, cookie-less attempt. "default"
+# follows yt-dlp's own anonymous choice (visionos, plus web with a JS runtime).
+_ANONYMOUS_PLAYER_CLIENTS = ["default", "web_embedded"]
 
+# Logged-in extraction otherwise settles on tv_downgraded and web, which on a
+# data-centre IP expose only one 360p combined stream. web_embedded exposes the
+# complete DASH ladder; web_safari adds an HLS ladder (up to 1080p) for when
+# web_embedded is refused; default remains available for restricted videos.
+_AUTHENTICATED_PLAYER_CLIENTS = ["web_embedded", "default", "web_safari"]
+
+
+def _youtube_cookie_options() -> dict:
+    """Options for a logged-in YouTube attempt, or {} when none is configured."""
     options: dict = {}
     cookiefile = _configured_cookiefile()
     browser = os.getenv("YOUTUBE_COOKIES_BROWSER", "").strip().lower()
@@ -105,21 +116,58 @@ def youtube_ydl_options(url: str) -> dict:
     elif browser:
         profile = os.getenv("YOUTUBE_COOKIES_BROWSER_PROFILE", "").strip() or None
         options["cookiesfrombrowser"] = (browser, profile, None, None)
+    else:
+        return {}
 
-    if cookiefile or browser:
-        # Logged-in extraction can otherwise settle on the downgraded TV
-        # client, which may expose only one low-resolution combined stream.
-        # web_embedded currently exposes the complete DASH ladder without a
-        # GVS PO token; default remains available for restricted videos.
-        options["extractor_args"] = {
-            "youtube": {"player_client": ["web_embedded", "default"]},
-        }
+    options["extractor_args"] = {
+        "youtube": {"player_client": list(_AUTHENTICATED_PLAYER_CLIENTS)},
+    }
 
+    # The User-Agent belongs to the browser that exported the cookies, so it is
+    # sent only with them; overriding it would break the app clients above.
     user_agent = os.getenv("YOUTUBE_USER_AGENT", "").strip()
     if user_agent:
         options["http_headers"] = {"User-Agent": user_agent}
 
     return options
+
+
+def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
+    """Return (label, yt-dlp options) pairs to try in order for one URL.
+
+    Other extractors get a single empty attempt and never see the YouTube
+    cookies. YouTube is tried anonymously first, which yields every resolution
+    whenever YouTube serves this IP, and then with the configured session for
+    bot-challenged IPs and restricted videos.
+    """
+    if not _is_youtube_url(url):
+        return [("default", {})]
+
+    attempts = [(
+        "anonymous",
+        {"extractor_args": {"youtube": {"player_client": list(_ANONYMOUS_PLAYER_CLIENTS)}}},
+    )]
+    cookie_options = _youtube_cookie_options()
+    if cookie_options:
+        attempts.append(("cookies", cookie_options))
+    return attempts
+
+
+def format_ladder_score(info: dict) -> tuple[bool, int]:
+    """Rank an extraction: separate video streams first, then the top height.
+
+    A degraded YouTube response holds only a 360p combined stream, while a
+    healthy one lists video-only DASH/HLS streams for every resolution.
+    """
+    has_video_only, top_height = False, 0
+    for f in info.get("formats") or []:
+        vcodec = f.get("vcodec")
+        if not vcodec or vcodec == "none":
+            continue
+        top_height = max(top_height, f.get("height") or 0)
+        if f.get("acodec") == "none":
+            has_video_only = True
+    return has_video_only, top_height
 
 
 def youtube_auth_mode() -> str:

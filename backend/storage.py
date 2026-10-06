@@ -26,7 +26,12 @@ load_dotenv(dotenv_path=backend_dir / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
-SUPABASE_CONFIGURED = bool(SUPABASE_URL and SUPABASE_KEY)
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "auto").strip().lower()
+if STORAGE_BACKEND not in {"auto", "supabase", "sqlite"}:
+    raise RuntimeError("STORAGE_BACKEND must be 'auto', 'supabase', or 'sqlite'.")
+SUPABASE_CONFIGURED = (
+    STORAGE_BACKEND != "sqlite" and bool(SUPABASE_URL and SUPABASE_KEY)
+)
 VALID_STATUSES = {"approved", "pending", "blocked"}
 
 # The committed database is used only when Supabase is not configured. On a
@@ -465,6 +470,7 @@ def storage_diagnostics() -> dict:
     info = {
         "active_backend": "supabase" if SUPABASE_CONFIGURED else "sqlite",
         "persistent": SUPABASE_CONFIGURED,
+        "storage_backend_setting": STORAGE_BACKEND,
         "supabase_url_configured": bool(SUPABASE_URL),
         "supabase_key_configured": bool(SUPABASE_KEY),
         "last_remote_success": _last_remote_success,

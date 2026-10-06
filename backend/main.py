@@ -7,6 +7,7 @@
 
 import os
 import hmac
+import logging
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
@@ -18,7 +19,12 @@ from pydantic import BaseModel, StringConstraints
 
 from routers.download import router as download_router
 from dependencies import get_user
-from yt_dlp_config import youtube_auth_mode, youtube_error_message, youtube_ydl_options
+from yt_dlp_config import (
+    format_ladder_score,
+    youtube_auth_mode,
+    youtube_error_message,
+    youtube_ydl_attempts,
+)
 from storage import (
     delete_user,
     list_download_logs,
@@ -34,6 +40,7 @@ backend_dir = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=backend_dir / ".env")
 
 app = FastAPI(title="UniStream Saver API", version="1.0.0")
+logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(StorageUnavailableError)
@@ -242,14 +249,37 @@ async def video_info(body: VideoInfoRequest):
     if not user or user["status"] != "approved":
         raise HTTPException(status_code=403, detail="Access denied")
 
-    ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": False}
+    # Keep the first attempt that lists separate video streams; otherwise the
+    # best one seen, so a 360p-only response is never preferred over HD.
+    info, info_score, info_label, last_error = None, None, None, None
     try:
-        ydl_opts.update(youtube_ydl_options(body.url))
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(body.url, download=False)
+        for label, attempt_opts in youtube_ydl_attempts(body.url):
+            ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": False}
+            ydl_opts.update(attempt_opts)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    candidate = ydl.extract_info(body.url, download=False)
+            except yt_dlp.utils.DownloadError as e:
+                logger.warning("Video info %s attempt failed: %s", label, e)
+                last_error = e
+                continue
+
+            score = format_ladder_score(candidate)
+            if info is None or score > info_score:
+                info, info_score, info_label = candidate, score, label
+            if score[0]:
+                break
+        if info is None:
+            raise last_error
     except Exception as e:
         detail = youtube_error_message(body.url, e)
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
+
+    if not info_score[0] and info_label != "default":
+        logger.warning(
+            "YouTube returned no separate video streams (%s attempt, top %sp)",
+            info_label, info_score[1],
+        )
 
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)

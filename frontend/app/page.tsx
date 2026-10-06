@@ -73,8 +73,13 @@ export default function HomePage() {
       } else {
         setServerError(res.message)
       }
-    } catch {
-      setServerError('Unable to reach the server. Please try again.')
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail
+      if (error?.response?.status === 503) {
+        setServerError('The access database is temporarily unavailable. Please contact the administrator.')
+      } else {
+        setServerError(detail || 'Unable to reach the server. Please try again.')
+      }
     } finally {
       setLoading(false)
     }

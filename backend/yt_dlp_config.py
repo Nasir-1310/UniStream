@@ -55,7 +55,10 @@ def video_cache_key(url: str) -> str:
     """Identify the video a URL points at, for caching its extraction.
 
     Share links of one YouTube video differ (youtu.be/ID?si=..., watch?v=ID,
-    shorts/ID), so they map to the video ID; any other URL is its own key.
+    shorts/ID), so they map to the video ID; any other URL is its own key. A
+    path ID (shorts/, embed/, live/, v/, e/) wins over a v= parameter, as it
+    does for yt-dlp. Entries are stored under the ID yt-dlp extracted, so an
+    unusual URL can only miss the cache, never hit another video's entry.
     """
     url = url.strip()
     if not _is_youtube_url(url):
@@ -65,13 +68,18 @@ def video_cache_key(url: str) -> str:
     parts = [part for part in parsed.path.split("/") if part]
     if host == "youtu.be" or host.endswith(".youtu.be"):
         candidate = parts[0] if parts else None
+    elif len(parts) >= 2 and parts[0] in ("shorts", "live", "embed", "v", "e"):
+        candidate = parts[1]
     else:
         candidate = (parse_qs(parsed.query).get("v") or [None])[0]
-        if not candidate and len(parts) >= 2 and parts[0] in ("shorts", "live", "embed", "v"):
-            candidate = parts[1]
     if candidate and _YOUTUBE_ID_RE.match(candidate):
         return f"youtube:{candidate}"
     return url
+
+
+def youtube_video_key(video_id: str | None) -> str | None:
+    """Cache key for a video ID that yt-dlp extracted."""
+    return f"youtube:{video_id}" if video_id and _YOUTUBE_ID_RE.match(video_id) else None
 
 
 def _materialize_base64_cookies(encoded: str) -> str:
@@ -210,10 +218,10 @@ def youtube_proxy() -> str | None:
     return os.getenv("YOUTUBE_PROXY", "").strip() or None
 
 
-# yt-dlp keeps YouTube's player script, preprocessed for the JS challenge
-# solver, in its cache directory; without a writable one every extraction
-# downloads and preprocesses the multi-megabyte script again. The default
-# (~/.cache) is not guaranteed to be writable on a host.
+# yt-dlp stores the signature-function data it derives from YouTube's player
+# script in its cache directory, so formats with a signatureCipher do not need
+# it worked out again. The default (~/.cache) is not guaranteed to be
+# writable on a host. (yt-dlp does not cache the preprocessed player itself.)
 _YT_DLP_CACHE_DIR = str(Path(tempfile.gettempdir()) / "unistream-yt-dlp-cache")
 
 
@@ -324,18 +332,18 @@ def private_cookiefile(options: dict):
         _write_back_cookies(private, shared)
 
 
-def is_complete_listing(score: tuple[bool, int]) -> bool:
-    """A listing no other attempt can beat on this server: a DASH ladder, or
-    the Safari HLS ladder (720p/1080p) where the player API is refused."""
-    return score[0] or score[1] >= 720
+def is_healthy_listing(score: tuple[bool, int]) -> bool:
+    """Anything better than the degraded answer: a DASH ladder, or streams
+    above 360p (the Safari HLS ladder where the player API is refused)."""
+    return score[0] or score[1] > 360
 
 
-# The attempt that last produced a complete listing. Each attempt costs a
+# The attempt that last produced a healthy listing. Each attempt costs a
 # watch-page download and a deno run, which on a tenth of a CPU dominate the
 # wait, so later requests try the remembered attempt alone first. A full DASH
-# ladder cannot be beaten and is kept; the HLS ladder (1080p) is re-checked
-# against the other attempts now and then, in case the server's IP is
-# served better again.
+# ladder cannot be beaten and is kept; an HLS-only route (up to 1080p) is
+# re-checked against the other attempts every couple of hours, in case the
+# server's IP is served better again.
 _ROUTE_LOCK = threading.Lock()
 _ROUTE: dict = {}
 _CAPPED_ROUTE_SECONDS = 2 * 60 * 60
@@ -352,11 +360,21 @@ def remembered_attempt(labels: list[str]) -> str | None:
 
 
 def remember_attempt(label: str | None, score: tuple[bool, int] | None):
-    """Record the winner of a full run, or forget it when nothing was complete."""
+    """Record the winner of a full run that produced a healthy listing.
+
+    A run where nothing was healthy (a private, removed or genuinely 360p
+    video) says nothing about the routes, so the remembered one is kept.
+    """
+    if not label or not score or not is_healthy_listing(score):
+        return
     with _ROUTE_LOCK:
         _ROUTE.clear()
-        if label and score and is_complete_listing(score):
-            _ROUTE.update(label=label, full_ladder=score[0], at=time.monotonic())
+        _ROUTE.update(label=label, full_ladder=score[0], at=time.monotonic())
+
+
+def forget_attempt():
+    with _ROUTE_LOCK:
+        _ROUTE.clear()
 
 
 def prefer_attempt(

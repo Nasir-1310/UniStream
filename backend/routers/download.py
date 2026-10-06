@@ -259,8 +259,9 @@ def _download_with_fallback(
             ydl_opts["progress_hooks"] = progress_hooks
         return ydl_opts
 
+    cache_key = video_cache_key(url)
     cached_info = (
-        extraction_cache.info(video_cache_key(url), source)
+        extraction_cache.info(cache_key, source)
         if source and is_youtube_url(url) else None
     )
     source_opts = dict(attempts).get(source)
@@ -272,6 +273,7 @@ def _download_with_fallback(
                 return ydl.process_ie_result(cached_info, download=True)
         except Exception as exc:
             logger.warning("Download from the analysed info failed, extracting again: %s", exc)
+            extraction_cache.discard_info(cache_key)
 
     for index, (label, attempt_opts) in enumerate(attempts):
         _clear_dir(tmp_dir)

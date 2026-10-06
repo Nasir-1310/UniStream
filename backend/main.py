@@ -24,11 +24,12 @@ from routers.download import router as download_router
 from dependencies import get_user
 from yt_dlp_config import (
     format_ladder_score,
-    is_complete_listing,
+    is_healthy_listing,
     is_youtube_url,
     remember_attempt,
     remembered_attempt,
     video_cache_key,
+    youtube_video_key,
     private_cookiefile,
     YtDlpLog,
     youtube_auth_mode,
@@ -57,6 +58,10 @@ load_dotenv(dotenv_path=backend_dir / ".env")
 
 app = FastAPI(title="UniStream Saver API", version="1.0.0")
 logger = logging.getLogger(__name__)
+# uvicorn configures only its own loggers; without this the app's INFO lines
+# (analysis timings) never reach the host's logs.
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+logger.setLevel(logging.INFO)
 
 
 @app.exception_handler(StorageUnavailableError)
@@ -335,13 +340,13 @@ async def video_info(body: VideoInfoRequest, response: Response):
         outcomes.update(zip((label for label, _opts in selected), results))
 
     # Each attempt costs a watch-page download and a deno run. Try the attempt
-    # that last gave a complete listing on its own first; only when it fails,
-    # or lists too little, do the others run.
+    # that last gave a healthy listing on its own first; only when it fails,
+    # or gives the degraded 360p-only answer, do the others run.
     remembered = remembered_attempt(labels) if len(attempts) > 1 else None
     if remembered:
         await _run([attempt for attempt in attempts if attempt[0] == remembered])
         first = outcomes[remembered]
-        if isinstance(first, Exception) or not is_complete_listing(format_ladder_score(first)):
+        if isinstance(first, Exception) or not is_healthy_listing(format_ladder_score(first)):
             await _run([attempt for attempt in attempts if attempt[0] not in outcomes])
     else:
         await _run(attempts)
@@ -366,7 +371,8 @@ async def video_info(body: VideoInfoRequest, response: Response):
             info, info_score, info_label = candidate, score, label
 
     if len(attempts) > 1 and len(outcomes) == len(attempts):
-        # A full run decides which attempt later requests try first.
+        # A full run that found a healthy listing decides which attempt later
+        # requests try first.
         remember_attempt(info_label, info_score)
 
     total = time.monotonic() - started
@@ -409,13 +415,17 @@ async def video_info(body: VideoInfoRequest, response: Response):
         # Downloads start with the attempt that listed these formats.
         "source":    info_label,
     }
-    # Only full-quality listings are cached; a 360p-only one may be a passing
-    # refusal, and the next request should try again. The info is kept in
-    # the form yt-dlp's --load-info-json uses, so the download can reuse it.
-    if not youtube or is_complete_listing(info_score):
+    # A degraded 360p-only listing is not cached: it may be a passing
+    # refusal, and the next request should try again. The info is kept in the
+    # form yt-dlp's --load-info-json uses, so the download can reuse it. A
+    # YouTube entry is stored under the ID yt-dlp extracted, never under one
+    # read from the URL, so a cache hit always describes the right video.
+    if not youtube:
+        extraction_cache.store(cache_key, payload, info_label, None)
+    elif is_healthy_listing(info_score) and youtube_video_key(info.get("id")):
         extraction_cache.store(
-            cache_key, payload, info_label,
-            yt_dlp.YoutubeDL.sanitize_info(info, remove_private_keys=True) if youtube else None,
+            youtube_video_key(info.get("id")), payload, info_label,
+            yt_dlp.YoutubeDL.sanitize_info(info, remove_private_keys=True),
         )
     return payload
 

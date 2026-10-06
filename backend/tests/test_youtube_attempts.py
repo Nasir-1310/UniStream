@@ -66,7 +66,7 @@ class YoutubeAttemptTests(unittest.TestCase):
         proxy_patch = patch.dict("os.environ", {"YOUTUBE_PROXY": ""})
         proxy_patch.start()
         self.addCleanup(proxy_patch.stop)
-        for reset in (extraction_cache.clear, lambda: yt_dlp_config.remember_attempt(None, None)):
+        for reset in (extraction_cache.clear, yt_dlp_config.forget_attempt):
             reset()
             self.addCleanup(reset)
 
@@ -428,7 +428,10 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         def extract(options, _url, _download):
             seen.append(options["extractor_args"]["youtube"].get("webpage_client"))
-            return {"title": "Lecture", "extractor_key": "Youtube", "formats": SAFARI_HLS}
+            return {
+                "id": "dECxLXuEafE", "title": "Lecture", "extractor_key": "Youtube",
+                "formats": SAFARI_HLS,
+            }
 
         first = self.post_video_info(extract, url="https://youtu.be/dECxLXuEafE?si=one")
         calls_after_first = len(seen)
@@ -503,8 +506,8 @@ class YoutubeAttemptTests(unittest.TestCase):
             if options["extractor_args"]["youtube"].get("webpage_client") != ["web_safari"]:
                 raise yt_dlp.utils.DownloadError("HTTP Error 403: Forbidden")
             return {
-                "title": "Lecture", "extractor_key": "Youtube", "formats": SAFARI_HLS,
-                "automatic_captions": {"en": [{"url": "x"}]},
+                "id": "dECxLXuEafE", "title": "Lecture", "extractor_key": "Youtube",
+                "formats": SAFARI_HLS, "automatic_captions": {"en": [{"url": "x"}]},
             }
 
         self.post_video_info(analyse, url=url)
@@ -536,7 +539,10 @@ class YoutubeAttemptTests(unittest.TestCase):
         def analyse(options, _url, _download):
             if options["extractor_args"]["youtube"].get("webpage_client") != ["web_safari"]:
                 raise yt_dlp.utils.DownloadError("HTTP Error 403: Forbidden")
-            return {"title": "Lecture", "extractor_key": "Youtube", "formats": SAFARI_HLS}
+            return {
+                "id": "dECxLXuEafE", "title": "Lecture", "extractor_key": "Youtube",
+                "formats": SAFARI_HLS,
+            }
 
         self.assertEqual(self.post_video_info(analyse, url=url).json()["source"], "cookies_safari")
         extracted = []
@@ -555,6 +561,68 @@ class YoutubeAttemptTests(unittest.TestCase):
             )
 
         self.assertEqual(extracted, [["web_safari"]])
+
+        # The failed info is dropped, so the next download extracts at once.
+        extracted.clear()
+        with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(extract, process)):
+            download_router._download_with_fallback(
+                url, "96", "mp4", tmp_dir, height=1080, source="cookies_safari",
+            )
+        self.assertEqual(extracted, [["web_safari"]])
+        self.assertIsNone(extraction_cache.info("youtube:dECxLXuEafE", "cookies_safari"))
+
+    def test_path_ids_win_over_v_parameters_like_in_yt_dlp(self):
+        self.assertEqual(
+            yt_dlp_config.video_cache_key("https://www.youtube.com/shorts/AAAAAAAAAAA?v=BBBBBBBBBBB"),
+            "youtube:AAAAAAAAAAA",
+        )
+
+    def test_a_cache_entry_is_stored_under_the_video_yt_dlp_extracted(self):
+        calls = []
+
+        def extract(_options, url, _download):
+            calls.append(url)
+            return {
+                "id": "AAAAAAAAAAA", "title": "Video A", "extractor_key": "Youtube",
+                "formats": SAFARI_HLS,
+            }
+
+        self.post_video_info(extract, url="https://www.youtube.com/watch?v=BBBBBBBBBBB")
+        first_run = len(calls)
+        response = self.post_video_info(extract, url="https://youtu.be/BBBBBBBBBBB")
+
+        # Video B was never cached, so it is extracted rather than served A's entry.
+        self.assertGreater(len(calls), first_run)
+        self.assertNotEqual(response.headers["Server-Timing"], "cache;desc=hit")
+
+    def test_an_unavailable_video_keeps_the_remembered_route(self):
+        yt_dlp_config.remember_attempt("cookies_safari", (False, 1080))
+
+        def extract(_options, _url, _download):
+            raise yt_dlp.utils.DownloadError("ERROR: [youtube] x: Private video")
+
+        self.post_video_info(extract)
+
+        self.assertEqual(
+            yt_dlp_config.remembered_attempt(["anonymous", "cookies_safari", "cookies"]),
+            "cookies_safari",
+        )
+
+    def test_a_480p_video_needs_only_the_remembered_attempt(self):
+        yt_dlp_config.remember_attempt("cookies_safari", (False, 1080))
+        seen = []
+        low_res = COMBINED_ONLY + [
+            {"format_id": "94", "height": 480, "vcodec": "avc1", "acodec": "mp4a"},
+        ]
+
+        def extract(options, _url, _download):
+            seen.append(options["extractor_args"]["youtube"].get("webpage_client"))
+            return {"id": "ccccccccccc", "title": "Old", "extractor_key": "Youtube", "formats": low_res}
+
+        response = self.post_video_info(extract)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(seen, [["web_safari"]])
 
 
 class PrivateCookieFileTests(unittest.TestCase):

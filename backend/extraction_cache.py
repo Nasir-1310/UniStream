@@ -72,6 +72,14 @@ def info(key: str, source: str | None) -> dict | None:
         return copy.deepcopy(entry["info"])
 
 
+def discard_info(key: str):
+    """Stop offering an info whose stream URLs just failed to download."""
+    with _lock:
+        entry = _entries.get(key)
+        if entry is not None:
+            entry["info"] = None
+
+
 def clear():
     with _lock:
         _entries.clear()

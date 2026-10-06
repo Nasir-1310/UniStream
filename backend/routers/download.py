@@ -123,18 +123,41 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
+def _video_format_selector(
+    format_id: str, height: int | None, allow_fallback: bool
+) -> str:
+    """Build the yt-dlp selector for one listed resolution.
+
+    Format ids differ between YouTube clients (DASH itags vs. HLS ids), so the
+    chosen height is matched as well. The final fallback is the best separate
+    video stream, never "best", which is a single combined file and therefore
+    a 360p stream on YouTube.
+    """
+    selectors = [f"{format_id}+bestaudio"]
+    if height:
+        selectors += [f"bv*[height={height}]+bestaudio", f"b[height={height}]"]
+    if allow_fallback:
+        if height:
+            selectors.append(f"bv*[height<={height}]+bestaudio")
+        selectors += ["bv*+bestaudio", "best"]
+    return "/".join(selectors)
+
+
 def _build_ydl_opts_video(
-    format_id: str, output_template: str, allow_fallback: bool = True
+    format_id: str,
+    output_template: str,
+    allow_fallback: bool = True,
+    height: int | None = None,
 ) -> dict:
     """yt-dlp options for a video+audio merged MP4 download.
 
-    Without allow_fallback a missing format fails instead of silently becoming
-    "best", which for a degraded YouTube response is a 360p combined stream.
+    Without allow_fallback a missing resolution fails instead of silently
+    downgrading, so the next extraction attempt can still provide it.
     """
     opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": f"{format_id}+bestaudio" + ("/best" if allow_fallback else ""),
+        "format": _video_format_selector(format_id, height, allow_fallback),
         "outtmpl": output_template,
         "windowsfilenames": True,
         "trim_file_name": 150,
@@ -176,7 +199,12 @@ def _build_ydl_opts_audio(output_template: str) -> dict:
 
 
 def _download_with_fallback(
-    url: str, format_id: str, ext: str, tmp_dir: str, progress_hooks=None
+    url: str,
+    format_id: str,
+    ext: str,
+    tmp_dir: str,
+    progress_hooks=None,
+    height: int | None = None,
 ) -> dict:
     """Download through each extraction attempt until one yields the format.
 
@@ -192,7 +220,9 @@ def _download_with_fallback(
             ydl_opts = _build_ydl_opts_audio(output_template)
         else:
             is_last = index == len(attempts) - 1
-            ydl_opts = _build_ydl_opts_video(format_id, output_template, is_last)
+            ydl_opts = _build_ydl_opts_video(
+                format_id, output_template, is_last, height
+            )
         ydl_opts.update(attempt_opts)
         if progress_hooks:
             ydl_opts["progress_hooks"] = progress_hooks
@@ -225,6 +255,7 @@ async def download_with_progress(
     format_id:  str = Query(...),
     ext:        str = Query(...),
     identifier: str = Query(...),
+    height:     int | None = Query(None, ge=1, le=10000),
     _user           = Depends(require_approved_user),
 ):
     """
@@ -308,7 +339,9 @@ async def download_with_progress(
                 raise RuntimeError("Server is busy. Try again shortly.")
 
             def _blocking():
-                return _download_with_fallback(url, format_id, ext, tmp_dir, [_hook])
+                return _download_with_fallback(
+                    url, format_id, ext, tmp_dir, [_hook], height
+                )
 
             info = await loop.run_in_executor(None, _blocking)
 
@@ -488,6 +521,7 @@ def get_download(
     format_id:  str = Query(...),
     identifier: str = Query(...),
     ext:        str = Query("mp4"),
+    height:     int | None = Query(None, ge=1, le=10000),
     _user           = Depends(require_approved_user),
 ):
     """
@@ -501,7 +535,9 @@ def get_download(
     tmp_dir = tempfile.mkdtemp()
 
     try:
-        info      = _download_with_fallback(url, format_id, ext, tmp_dir)
+        info      = _download_with_fallback(
+            url, format_id, ext, tmp_dir, height=height
+        )
         raw_title = info.get("title", "unistream_video")
 
         output_candidates = [

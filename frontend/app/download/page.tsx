@@ -396,6 +396,7 @@ export default function DownloadPage() {
     if (activeId !== null) return
     const fmtId = fmt.format_id
     const sseUrl = `${BACKEND_ORIGIN}/download/progress?url=${encodeURIComponent(url.trim())}&format_id=${encodeURIComponent(fmtId)}&identifier=${encodeURIComponent(identifier)}&ext=${encodeURIComponent(fmt.ext)}`
+      + (fmt.type === 'video' && parseInt(fmt.resolution, 10) > 0 ? `&height=${parseInt(fmt.resolution, 10)}` : '')
 
     const initProgress: ProgressData = {
       status: 'starting', percent: 0, speed: '0 KB/s', eta: '--:--',

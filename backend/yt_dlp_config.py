@@ -9,6 +9,7 @@ import base64
 import binascii
 import hashlib
 import os
+import shutil
 import tempfile
 import threading
 from pathlib import Path
@@ -99,10 +100,31 @@ def _configured_cookiefile() -> str | None:
 _ANONYMOUS_PLAYER_CLIENTS = ["default", "web_embedded"]
 
 # Logged-in extraction otherwise settles on tv_downgraded and web, which on a
-# data-centre IP expose only one 360p combined stream. web_embedded exposes the
-# complete DASH ladder; web_safari adds an HLS ladder (up to 1080p) for when
-# web_embedded is refused; default remains available for restricted videos.
-_AUTHENTICATED_PLAYER_CLIENTS = ["web_embedded", "default", "web_safari"]
+# data-centre IP expose only one 360p combined stream. tv needs no PO token
+# once signed in and returns the complete DASH ladder (up to 4K); web_embedded
+# does the same for embeddable videos; web_safari adds an HLS ladder (up to
+# 1080p); default remains available for restricted videos.
+_AUTHENTICATED_PLAYER_CLIENTS = ["tv", "web_embedded", "default", "web_safari"]
+
+
+def _find_deno() -> str | None:
+    """Locate the deno binary installed by the yt-dlp[deno] extra.
+
+    yt-dlp only searches PATH, and a host that starts uvicorn without the
+    virtualenv's bin directory on PATH leaves it without a JS runtime. YouTube
+    then cannot decipher stream URLs and lists only a 360p combined stream.
+    """
+    try:
+        from deno import find_deno_bin
+        return find_deno_bin()
+    except Exception:
+        return shutil.which("deno")
+
+
+def js_runtime_options() -> dict:
+    """yt-dlp options that point it at deno explicitly, or {} without one."""
+    path = _find_deno()
+    return {"js_runtimes": {"deno": {"path": path}}} if path else {}
 
 
 def _youtube_cookie_options() -> dict:
@@ -143,13 +165,17 @@ def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
     if not _is_youtube_url(url):
         return [("default", {})]
 
+    js_options = js_runtime_options()
     attempts = [(
         "anonymous",
-        {"extractor_args": {"youtube": {"player_client": list(_ANONYMOUS_PLAYER_CLIENTS)}}},
+        {
+            **js_options,
+            "extractor_args": {"youtube": {"player_client": list(_ANONYMOUS_PLAYER_CLIENTS)}},
+        },
     )]
     cookie_options = _youtube_cookie_options()
     if cookie_options:
-        attempts.append(("cookies", cookie_options))
+        attempts.append(("cookies", {**js_options, **cookie_options}))
     return attempts
 
 
@@ -173,7 +199,7 @@ def format_ladder_score(info: dict) -> tuple[bool, int]:
 # Clients probed one at a time by youtube_client_report().
 _DIAGNOSTIC_CLIENTS = {
     "anonymous": ["visionos", "web_embedded", "web_safari", "android_vr"],
-    "cookies": ["web_embedded", "web_safari", "web", "mweb", "tv_downgraded"],
+    "cookies": ["tv", "web_embedded", "web_safari", "web", "mweb", "tv_downgraded"],
 }
 _DIAGNOSTIC_DEBUG_MARKERS = (
     "JS runtimes:", "account cookies", "playability status", "skipped", "SABR",
@@ -215,6 +241,7 @@ def youtube_client_report(url: str) -> dict:
     import yt_dlp
 
     cookie_options = _youtube_cookie_options()
+    js_options = js_runtime_options()
     report: dict = {}
     for mode, clients in _DIAGNOSTIC_CLIENTS.items():
         if mode == "cookies" and not cookie_options:
@@ -229,6 +256,7 @@ def youtube_client_report(url: str) -> dict:
                 "verbose": True,
                 "logger": log,
                 "ignore_no_formats_error": True,
+                **js_options,
                 **(cookie_options if mode == "cookies" else {}),
                 "extractor_args": {"youtube": {"player_client": [client]}},
             }

@@ -118,9 +118,31 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         self.assertEqual(calls, [
             (None, "137+bestaudio"),
-            ("cookies.txt", "137+bestaudio/best"),
+            ("cookies.txt", "137+bestaudio/bv*+bestaudio/best"),
         ])
         self.assertEqual([p.name for p in Path(tmp_dir).iterdir()], ["Lecture.mp4"])
+
+    def test_download_matches_the_chosen_height_across_clients(self):
+        selector = download_router._video_format_selector("137", 1080, False)
+        self.assertEqual(
+            selector, "137+bestaudio/bv*[height=1080]+bestaudio/b[height=1080]"
+        )
+
+        fallback = download_router._video_format_selector("137", 1080, True)
+        self.assertTrue(fallback.endswith("/bv*[height<=1080]+bestaudio/bv*+bestaudio/best"))
+
+    def test_cookie_attempt_uses_the_tv_client_for_the_full_ladder(self):
+        attempts = dict(yt_dlp_config.youtube_ydl_attempts("https://youtu.be/example"))
+
+        clients = attempts["cookies"]["extractor_args"]["youtube"]["player_client"]
+        self.assertEqual(clients[0], "tv")
+
+    def test_youtube_attempts_point_yt_dlp_at_deno(self):
+        with patch.object(yt_dlp_config, "_find_deno", return_value="/venv/bin/deno"):
+            attempts = yt_dlp_config.youtube_ydl_attempts("https://youtu.be/example")
+
+        for _label, options in attempts:
+            self.assertEqual(options["js_runtimes"], {"deno": {"path": "/venv/bin/deno"}})
 
 
 if __name__ == "__main__":

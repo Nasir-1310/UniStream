@@ -161,7 +161,16 @@ class YoutubeAttemptTests(unittest.TestCase):
             [item["resolution"] for item in body["formats"]], ["1080p", "720p", "360p", "128kbps"]
         )
         self.assertEqual(body["source"], "cookies_safari")
-        self.assertIsNone(body["notice"])
+        self.assertIn("up to 1080p", body["notice"])
+
+    def test_hls_formats_get_a_size_estimated_from_their_bitrate(self):
+        formats = main._parse_formats(
+            [{"format_id": "96", "height": 1080, "vcodec": "avc1", "acodec": "mp4a", "tbr": 4000}],
+            {"duration": 600},
+        )
+
+        self.assertEqual(formats[0]["filesize_bytes"], 300_000_000)
+        self.assertTrue(formats[0]["filesize_human"].startswith("~"))
 
     def test_video_info_explains_a_server_ip_that_youtube_refuses(self):
         def extract(_options, _url, _download):

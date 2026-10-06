@@ -32,6 +32,7 @@ from yt_dlp_config import (
     youtube_failure_message,
     youtube_proxy,
     youtube_quality_notice,
+    youtube_resolution_cap_notice,
     js_runtime_options,
 )
 from storage import (
@@ -124,6 +125,21 @@ def _human_size(size_bytes) -> str:
     return f"{size_bytes:.1f} TB"
 
 
+def _format_size(f: dict, duration) -> tuple:
+    """Exact or yt-dlp-approximated size, else an estimate from the bitrate.
+
+    yt-dlp leaves HLS formats (YouTube's Safari streams) without a size,
+    because a manifest's bitrate is a peak, so the estimate is marked "~".
+    """
+    filesize = f.get("filesize") or f.get("filesize_approx")
+    if filesize:
+        return filesize, _human_size(filesize)
+    if f.get("tbr") and duration:
+        estimate = int(f["tbr"] * 1000 / 8 * duration)
+        return estimate, f"~{_human_size(estimate)}"
+    return None, _human_size(None)
+
+
 def _parse_formats(formats: list, info: dict) -> list:
     RESOLUTION_LABELS = {
         "2160": ("4K / Original", "🎬"),
@@ -178,7 +194,7 @@ def _parse_formats(formats: list, info: dict) -> list:
     for h, (f, _) in height_map.items():
         label, icon = RESOLUTION_LABELS.get(h, (f"{h}p", "📹"))
         tag         = codec_label(f.get("vcodec", ""))
-        filesize    = f.get("filesize") or f.get("filesize_approx")
+        filesize, filesize_human = _format_size(f, info.get("duration"))
         video_options.append({
             "type":           "video",
             "format_id":      f["format_id"],
@@ -187,7 +203,7 @@ def _parse_formats(formats: list, info: dict) -> list:
             "resolution":     f"{h}p",
             "ext":            "mp4",
             "filesize_bytes": filesize,
-            "filesize_human": _human_size(filesize),
+            "filesize_human": filesize_human,
         })
 
     video_options.sort(
@@ -327,7 +343,7 @@ async def video_info(body: VideoInfoRequest):
     notice  = youtube_quality_notice(
         body.url, info_score, attempt_errors,
         {label: log.warnings for label, log in logs.items()},
-    )
+    ) or youtube_resolution_cap_notice(info_label, info_score)
 
     return {
         "title":     info.get("title", ""),

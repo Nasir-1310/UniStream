@@ -393,6 +393,23 @@ def youtube_quality_notice(
     return _ip_blocked_message()
 
 
+def youtube_resolution_cap_notice(source: str | None, score: tuple[bool, int]) -> str | None:
+    """Say that a listing from the Safari watch page stops at 1080p.
+
+    The Safari HLS ladder ends at 1080p. 1440p and 4K exist only as separate
+    VP9/AV1 streams, which YouTube serves through its player API (refused to
+    data-centre IPs) or SABR streaming (not supported by yt-dlp).
+    """
+    if source != "cookies_safari" or score[0]:
+        return None
+    return (
+        "This server can get up to 1080p from YouTube. If the video has 1440p "
+        "or 4K, YouTube serves those only to IPs it trusts: set YOUTUBE_PROXY "
+        "to a residential proxy with a sticky session, or run the backend on "
+        "your own computer."
+    )
+
+
 def youtube_failure_message(
     url: str,
     attempt_errors: dict[str, str],

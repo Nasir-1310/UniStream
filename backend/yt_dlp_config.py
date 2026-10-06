@@ -170,6 +170,86 @@ def format_ladder_score(info: dict) -> tuple[bool, int]:
     return has_video_only, top_height
 
 
+# Clients probed one at a time by youtube_client_report().
+_DIAGNOSTIC_CLIENTS = {
+    "anonymous": ["visionos", "web_embedded", "web_safari", "android_vr"],
+    "cookies": ["web_embedded", "web_safari", "web", "mweb", "tv_downgraded"],
+}
+_DIAGNOSTIC_DEBUG_MARKERS = (
+    "JS runtimes:", "account cookies", "playability status", "skipped", "SABR",
+)
+
+
+class _DiagnosticLog:
+    """Collects the yt-dlp messages that explain a missing format ladder."""
+
+    def __init__(self):
+        self.notes: list[str] = []
+
+    def _add(self, message: str):
+        message = " ".join(str(message).split())[:240]
+        if message not in self.notes:
+            self.notes.append(message)
+
+    def debug(self, message):
+        if any(marker in message for marker in _DIAGNOSTIC_DEBUG_MARKERS):
+            self._add(message)
+
+    def info(self, _message):
+        pass
+
+    def warning(self, message):
+        self._add(message)
+
+    def error(self, message):
+        self._add(message)
+
+
+def youtube_client_report(url: str) -> dict:
+    """Probe each YouTube client separately from this server's IP address.
+
+    Reports heights, protocols and yt-dlp's own explanations so a deployment
+    that lists only 360p can be diagnosed without reading host logs. Cookie
+    values never leave the server.
+    """
+    import yt_dlp
+
+    cookie_options = _youtube_cookie_options()
+    report: dict = {}
+    for mode, clients in _DIAGNOSTIC_CLIENTS.items():
+        if mode == "cookies" and not cookie_options:
+            report[mode] = "not configured"
+            continue
+
+        report[mode] = {}
+        for client in clients:
+            log = _DiagnosticLog()
+            opts = {
+                "quiet": True,
+                "verbose": True,
+                "logger": log,
+                "ignore_no_formats_error": True,
+                **(cookie_options if mode == "cookies" else {}),
+                "extractor_args": {"youtube": {"player_client": [client]}},
+            }
+            result: dict = {}
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                video = [
+                    f for f in info.get("formats") or []
+                    if f.get("vcodec") not in (None, "none") and f.get("height")
+                ]
+                result["heights"] = sorted({f["height"] for f in video})
+                result["protocols"] = sorted({str(f.get("protocol")) for f in video})
+                result["video_only_streams"] = format_ladder_score(info)[0]
+            except Exception as exc:
+                result["error"] = " ".join(str(exc).split())[:300]
+            result["notes"] = log.notes[:8]
+            report[mode][client] = result
+    return report
+
+
 def youtube_auth_mode() -> str:
     """Report configuration presence without exposing credential material."""
     if os.getenv("YOUTUBE_COOKIES_BASE64", "").strip():

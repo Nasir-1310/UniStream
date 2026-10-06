@@ -22,6 +22,7 @@ from dependencies import get_user
 from yt_dlp_config import (
     format_ladder_score,
     youtube_auth_mode,
+    youtube_client_report,
     youtube_error_message,
     youtube_ydl_attempts,
 )
@@ -225,7 +226,12 @@ def _parse_formats(formats: list, info: dict) -> list:
 
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "UniStream Saver API v1"}
+    # Render sets RENDER_GIT_COMMIT, which shows whether a push is live yet.
+    return {
+        "status": "ok",
+        "service": "UniStream Saver API v1",
+        "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
+    }
 
 
 @app.post("/check-access")
@@ -349,3 +355,21 @@ def admin_storage_health():
     info["ffmpeg_location"] = FFMPEG_LOCATION
     info["youtube_auth"] = youtube_auth_mode()
     return info
+
+
+@app.get("/admin/youtube-check", dependencies=[Depends(require_admin)])
+def admin_youtube_check(url: str = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"):
+    """
+    Lists which YouTube clients return which resolutions from this server's IP.
+    YouTube treats data-centre IPs differently, so a video that lists every
+    resolution locally can list only 360p here; this shows which client to use.
+    Takes a minute or two: each client is probed separately.
+    """
+    import yt_dlp
+
+    return {
+        "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
+        "yt_dlp_version": yt_dlp.version.__version__,
+        "youtube_auth": youtube_auth_mode(),
+        "clients": youtube_client_report(url),
+    }

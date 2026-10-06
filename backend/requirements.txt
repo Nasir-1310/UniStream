@@ -12,3 +12,6 @@ pydantic==2.7.1
 # Render's native Python runtime has no ffmpeg binary, and yt-dlp needs one to
 # merge video+audio into MP4 and to extract MP3. Ships a static build as a wheel.
 imageio-ffmpeg==0.6.0
+# IANA time zones for zoneinfo (daily limits reset at Asia/Dhaka midnight);
+# Windows and slim containers ship no system tz database.
+tzdata==2026.5

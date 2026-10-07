@@ -286,7 +286,15 @@ def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
     """
     if not _is_youtube_url(url):
         options = {"allowed_extractors": list(ALLOWED_EXTRACTORS)}
+        import link_resolver  # local: link_resolver imports security only
         from security import detect_platform  # local: security imports nothing from here
+
+        if link_resolver.needs_resolution(url):
+            # A Facebook/Instagram share link that link_resolver could not
+            # turn into a video link: let yt-dlp's generic extractor follow it,
+            # as it always did. Only these share-link shapes get it (all other
+            # links keep the SSRF protection above).
+            options["allowed_extractors"].append("generic")
 
         cookiefile = social_cookiefile(detect_platform(url))
         if cookiefile:

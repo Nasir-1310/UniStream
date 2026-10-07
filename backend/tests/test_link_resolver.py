@@ -69,7 +69,8 @@ class LinkResolverTests(unittest.TestCase):
         share = "https://fb.watch/abc123/"
         resolved, seen = self.resolve(share, {share: (302, "http://127.0.0.1:9/internal")})
         self.assertEqual(resolved, share)
-        self.assertEqual(seen, [share])
+        # Browser pass, then crawler pass: neither ever requests the off-site target.
+        self.assertEqual(seen, [share, share])
 
     def test_unresolvable_link_is_returned_unchanged(self):
         share = "https://www.facebook.com/share/v/nothing/"
@@ -82,6 +83,39 @@ class LinkResolverTests(unittest.TestCase):
         with patch.object(link_resolver.httpx, "Client", broken):
             url = "https://fb.watch/abc123/"
             self.assertEqual(link_resolver.resolve_share_url(url), url)
+
+    def page_resolve(self, url, pages):
+        """GETs answer 200 with pages[(url, is_crawler)] as the body."""
+        seen = []
+
+        def handler(request: httpx.Request):
+            crawler = "facebookexternalhit" in request.headers.get("user-agent", "")
+            seen.append((str(request.url), crawler))
+            return httpx.Response(200, text=pages.get((str(request.url), crawler), "<html></html>"))
+
+        real_client = httpx.Client
+        transport = httpx.MockTransport(handler)
+        with patch.object(link_resolver.httpx, "Client", lambda **kw: real_client(transport=transport, **kw)):
+            return link_resolver.resolve_share_url(url), seen
+
+    def test_video_link_is_read_from_the_page_metadata(self):
+        share = "https://www.facebook.com/share/v/1E34kKxDkN/"
+        page = '<meta property="og:url" content="https://www.facebook.com/watch/?v=111&amp;x=1" />'
+        resolved, _seen = self.page_resolve(share, {(share, False): page})
+        self.assertEqual(resolved, "https://www.facebook.com/watch/?v=111&x=1")
+
+    def test_crawler_pass_is_used_after_a_login_wall(self):
+        share = "https://www.facebook.com/share/r/1AbCdEf/"
+        page = '<link rel="canonical" href="https://www.facebook.com/reel/777/">'
+        resolved, seen = self.page_resolve(share, {(share, True): page})
+        self.assertEqual(resolved, "https://www.facebook.com/reel/777/")
+        self.assertEqual(seen, [(share, False), (share, True)])
+
+    def test_page_links_off_site_are_ignored(self):
+        share = "https://www.facebook.com/share/v/evil/"
+        page = '<meta property="og:url" content="http://127.0.0.1:9/x">'
+        resolved, _seen = self.page_resolve(share, {(share, False): page, (share, True): page})
+        self.assertEqual(resolved, share)
 
     def test_results_are_cached(self):
         share = "https://www.facebook.com/share/v/cached/"

@@ -72,6 +72,12 @@ services:
       # this as a secret in Render; never commit the cookie file itself.
       - key: YOUTUBE_COOKIES_BASE64
         sync: false
+      # Same format, for instagram.com / facebook.com: they answer data-centre
+      # IPs with HTTP 429 or a login wall without a signed-in session.
+      - key: INSTAGRAM_COOKIES_BASE64
+        sync: false
+      - key: FACEBOOK_COOKIES_BASE64
+        sync: false
       # Optional: the exact User-Agent from the browser that exported cookies.
       - key: YOUTUBE_USER_AGENT
         sync: false

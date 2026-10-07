@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _COOKIE_LOCK = threading.Lock()
-_COOKIE_CACHE: tuple[str, str] | None = None
+_COOKIE_FILES: dict[str, tuple[str, str]] = {}
 
 
 def _is_youtube_url(url: str) -> bool:
@@ -82,40 +82,64 @@ def youtube_video_key(video_id: str | None) -> str | None:
     return f"youtube:{video_id}" if video_id and _YOUTUBE_ID_RE.match(video_id) else None
 
 
-def _materialize_base64_cookies(encoded: str) -> str:
+def _materialize_base64_cookies(
+    encoded: str, site: str = "youtube", env_name: str = "YOUTUBE_COOKIES_BASE64"
+) -> str:
     """Decode a Netscape cookies file into a private process-temp file."""
-    global _COOKIE_CACHE
-
     compact = "".join(encoded.split())
     digest = hashlib.sha256(compact.encode("ascii", errors="ignore")).hexdigest()
 
     with _COOKIE_LOCK:
-        if _COOKIE_CACHE and _COOKIE_CACHE[0] == digest:
-            cached_path = Path(_COOKIE_CACHE[1])
-            if cached_path.is_file():
-                return str(cached_path)
+        cached = _COOKIE_FILES.get(site)
+        if cached and cached[0] == digest and Path(cached[1]).is_file():
+            return cached[1]
 
         try:
             cookie_bytes = base64.b64decode(compact, validate=True)
         except (ValueError, binascii.Error) as exc:
-            raise RuntimeError("YOUTUBE_COOKIES_BASE64 is not valid base64.") from exc
+            raise RuntimeError(f"{env_name} is not valid base64.") from exc
 
         if not cookie_bytes or len(cookie_bytes) > 1_000_000:
-            raise RuntimeError("The decoded YouTube cookies file is empty or too large.")
+            raise RuntimeError(f"The decoded {env_name} cookies file is empty or too large.")
 
         first_line = cookie_bytes.lstrip(b"\xef\xbb\xbf").splitlines()[0].strip()
         if first_line not in (b"# HTTP Cookie File", b"# Netscape HTTP Cookie File"):
             raise RuntimeError(
-                "The YouTube cookies secret is not a Netscape-format cookies.txt file."
+                f"{env_name} is not a Netscape-format cookies.txt file."
             )
 
-        cookie_path = Path(tempfile.gettempdir()) / f"unistream_youtube_{digest[:16]}.txt"
+        cookie_path = Path(tempfile.gettempdir()) / f"unistream_{site}_{digest[:16]}.txt"
         temporary_path = cookie_path.with_suffix(".tmp")
         temporary_path.write_bytes(cookie_bytes)
         os.chmod(temporary_path, 0o600)
         os.replace(temporary_path, cookie_path)
-        _COOKIE_CACHE = (digest, str(cookie_path))
+        _COOKIE_FILES[site] = (digest, str(cookie_path))
         return str(cookie_path)
+
+
+# Instagram and Facebook answer data-centre IPs with HTTP 429 or a login wall
+# unless the request carries a signed-in session, exported the same way as
+# the YouTube cookies (use a separate, throwaway account).
+_SOCIAL_COOKIE_ENVS = {
+    "instagram": "INSTAGRAM_COOKIES_BASE64",
+    "facebook": "FACEBOOK_COOKIES_BASE64",
+}
+
+
+def social_cookiefile(platform: str | None) -> str | None:
+    env_name = _SOCIAL_COOKIE_ENVS.get(platform or "")
+    encoded = os.getenv(env_name, "").strip() if env_name else ""
+    if not encoded:
+        return None
+    return _materialize_base64_cookies(encoded, platform, env_name)
+
+
+def social_cookie_status() -> dict:
+    """Which non-YouTube cookie secrets are set (never their values)."""
+    return {
+        platform: bool(os.getenv(env_name, "").strip())
+        for platform, env_name in _SOCIAL_COOKIE_ENVS.items()
+    }
 
 
 def _configured_cookiefile() -> str | None:
@@ -261,7 +285,13 @@ def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
     page and once through the player API.
     """
     if not _is_youtube_url(url):
-        return [("default", {"allowed_extractors": list(ALLOWED_EXTRACTORS)})]
+        options = {"allowed_extractors": list(ALLOWED_EXTRACTORS)}
+        from security import detect_platform  # local: security imports nothing from here
+
+        cookiefile = social_cookiefile(detect_platform(url))
+        if cookiefile:
+            options["cookiefile"] = cookiefile
+        return [("default", options)]
 
     network_options = _youtube_network_options()
     attempts = [(
@@ -674,7 +704,32 @@ def youtube_error_message(url: str, error: Exception) -> str:
             "video itself and copy its link."
         )
     if not _is_youtube_url(url):
+        from security import detect_platform
+
+        site = {"instagram": "Instagram", "facebook": "Facebook"}.get(detect_platform(url) or "")
+        if site and (
+            "429" in lowered or "too many requests" in lowered or "rate-limit" in lowered
+            or "login required" in lowered or "log in" in lowered or "login" in lowered
+            or "empty media response" in lowered or "cookies" in lowered
+        ):
+            logger.warning(
+                "%s refused this server (%s). Set %s with a signed-in session.",
+                site, message[:200], _SOCIAL_COOKIE_ENVS[site.lower()],
+            )
+            return (
+                f"{site} is limiting requests from our server right now. "
+                "Please try again in a few minutes."
+            )
         return message
+    if "failed to extract any player response" in lowered:
+        logger.warning(
+            "YouTube refused the watch page; the YouTube cookies have probably "
+            "expired. Export fresh ones and update YOUTUBE_COOKIES_BASE64."
+        )
+        return (
+            "YouTube refused our server's request right now. Please try again "
+            "in a few minutes."
+        )
     if "sign in to confirm" not in message.lower():
         if any(marker in message.lower() for marker in _IP_BLOCK_MARKERS):
             return _ip_blocked_message()

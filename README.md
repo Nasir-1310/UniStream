@@ -174,6 +174,7 @@ service with root directory `backend`, build command
 | `BREVO_API_KEY` / `RESEND_API_KEY` / `SMTP_PASSWORD` | **yes** | see Step 2 |
 | `EMAIL_FROM`, `EMAIL_FROM_NAME`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_SSL` | no | see Step 2 |
 | `YOUTUBE_COOKIES_BASE64` | **yes** | optional, see below |
+| `INSTAGRAM_COOKIES_BASE64`, `FACEBOOK_COOKIES_BASE64` | **yes** | optional: same export format for instagram.com / facebook.com (use a throwaway account); needed when they answer the server with HTTP 429 or a login wall |
 | `YOUTUBE_PROXY` | **yes** (may contain a password) | optional, see below |
 | `YOUTUBE_USER_AGENT` | no | optional, see below |
 | `MAX_CONCURRENT_DOWNLOADS` | no | `5` (server-wide) |

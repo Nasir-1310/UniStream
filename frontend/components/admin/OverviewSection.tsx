@@ -37,8 +37,8 @@ export function OverviewSection({ query }: { query: AdminQuery<Overview> }) {
       title="Overview"
       description={
         overview
-          ? `Access requests, members and downloads at a glance · updated ${formatTime(query.updatedAt)}`
-          : 'Access requests, members and downloads at a glance'
+          ? `Access requests, users and downloads at a glance · updated ${formatTime(query.updatedAt)}`
+          : 'Access requests, users and downloads at a glance'
       }
       actions={
         <button type="button" onClick={addUser} className="btn-primary btn-sm">
@@ -88,7 +88,7 @@ export function OverviewSection({ query }: { query: AdminQuery<Overview> }) {
           hint={users.pending > 0 ? 'Waiting for you' : 'All caught up'}
         />
         <StatCard
-          label="Active members"
+          label="Approved users"
           value={formatNumber(users.approved)}
           icon={UserCheck}
           tone="success"
@@ -99,7 +99,7 @@ export function OverviewSection({ query }: { query: AdminQuery<Overview> }) {
           value={formatNumber(downloads.today)}
           icon={Download}
           tone="brand"
-          hint={`Default limit ${formatLimit(settings.default_daily_limit)}`}
+          hint={`Daily limit: ${formatLimit(settings.default_daily_limit)}`}
         />
         <StatCard
           label="Last 30 days"
@@ -113,7 +113,7 @@ export function OverviewSection({ query }: { query: AdminQuery<Overview> }) {
       {users.pending > 0 && <PendingRequests total={users.pending} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5">
-        <Card title="Downloads per day" description="Last 14 days, completed downloads" icon={BarChart3} className="xl:col-span-2">
+        <Card title="Downloads per day" description="Completed downloads, last 14 days" icon={BarChart3} className="xl:col-span-2">
           <DownloadsChart daily={downloads.daily} />
         </Card>
         <Card title="By platform" description="Last 30 days" icon={PieChart}>
@@ -123,7 +123,7 @@ export function OverviewSection({ query }: { query: AdminQuery<Overview> }) {
             onClick={() => navigate('logs')}
             className="mt-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-indigo-300 hover:text-indigo-200 min-h-10"
           >
-            Open download logs
+            View download history
             <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </button>
         </Card>
@@ -134,7 +134,7 @@ export function OverviewSection({ query }: { query: AdminQuery<Overview> }) {
           <EmptyState
             icon={Users}
             title="No users yet"
-            description="Share the website link: students request access from the home page, and their requests appear here for approval. You can also add people yourself."
+            description="Share the website link. Students request access from the home page, and their requests appear here for you to approve. You can also add people yourself."
             action={
               <button type="button" onClick={addUser} className="btn-primary btn-sm">
                 <UserPlus className="w-4 h-4" aria-hidden="true" />
@@ -165,38 +165,38 @@ function SystemAlerts({ overview }: { overview: Overview }) {
       {!system.schema_ready && (
         <Alert
           tone="danger"
-          title="Database upgrade required"
+          title="Database upgrade needed"
           action={
             <button type="button" onClick={() => setShowSql(v => !v)} aria-expanded={showSql} className="btn-outline btn-sm">
-              {showSql ? 'Hide migration SQL' : 'Show migration SQL'}
+              {showSql ? 'Hide upgrade steps' : 'Show upgrade steps'}
             </button>
           }
         >
-          The Supabase database is missing the v2 tables and columns, so sign-up, sign-in and downloads fail until you run
-          the migration script once.
+          The database needs a one-time upgrade. Until it’s done, requesting access, signing in and downloading won’t work.
         </Alert>
       )}
       {!system.schema_ready && showSql && (
-        <Card title="Run the database migration" icon={Database}>
+        <Card title="Upgrade the database" icon={Database}>
           <MigrationPanel />
         </Card>
       )}
       {!system.persistent && (
         <Alert tone="warning" title="Data is stored on the server’s disk (SQLite)">
-          Accounts and logs can be lost when the server restarts or redeploys. Set <code className="text-slate-100">SUPABASE_URL</code>{' '}
-          and <code className="text-slate-100">SUPABASE_SERVICE_KEY</code> before launch.
+          Accounts and download history can be lost when the server restarts or redeploys. Set{' '}
+          <code className="text-slate-100">SUPABASE_URL</code> and <code className="text-slate-100">SUPABASE_SERVICE_KEY</code> before
+          launch.
         </Alert>
       )}
       {!system.email.configured && (
         <Alert tone="warning" title="Email isn’t set up" action={goSettings}>
           {system.email.issue ? `${system.email.issue} ` : ''}
-          Approvals still work, but you’ll have to share each password yourself, and “Forgot password” emails can’t be sent.
+          You can still approve users, but you’ll have to share each password yourself, and “Forgot password?” emails can’t be sent.
         </Alert>
       )}
       {!system.auth_secret_configured && (
         <Alert tone="warning" title="AUTH_SECRET is not set" action={goSettings}>
-          User sessions are signed with a fallback key. Set <code className="text-slate-100">AUTH_SECRET</code> to a random value of
-          at least 32 characters on the server so sessions stay valid when other secrets change.
+          Sign-ins use a fallback key. Set <code className="text-slate-100">AUTH_SECRET</code> on the server to a random value of at
+          least 32 characters, so users stay signed in when other settings change.
         </Alert>
       )}
     </>
@@ -211,15 +211,15 @@ function PendingRequests({ total }: { total: number }) {
   const { revisions, navigate, editUser } = useAdmin()
   const actions = useUserActions()
   // Oldest first: first come, first served.
-  const query = useAdminQuery(`pending-preview|${revisions.users}|${revisions.settings}`, secret =>
-    adminListUsers(secret, { status: 'pending', page_size: PREVIEW_SIZE, sort: 'created_at', order: 'asc' }),
+  const query = useAdminQuery(`pending-preview|${revisions.users}|${revisions.settings}`, () =>
+    adminListUsers({ status: 'pending', page_size: PREVIEW_SIZE, sort: 'created_at', order: 'asc' }),
   )
   const items = query.data?.items ?? []
 
   return (
     <Card
       title={`${pluralize(total, 'access request')} waiting`}
-      description="Approving creates a temporary password and emails it to the user."
+      description="Approving sends the user a temporary password by email."
       icon={Hourglass}
       bodyClassName="p-0"
       actions={

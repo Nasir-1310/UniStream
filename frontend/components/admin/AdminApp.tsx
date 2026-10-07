@@ -1,33 +1,58 @@
 'use client'
 // components/admin/AdminApp.tsx
 //
-// Entry point of /admin: the sign-in screen until a working secret is
-// stored for this tab, then the dashboard. A secret the server later
-// rejects (401, e.g. ADMIN_SECRET was rotated) returns here with a notice.
+// Entry point of /admin, driven by the admin session in lib/adminAuth:
+//   signed out                  → sign-in screen (with "Session expired" after a 401)
+//   signed in with the setup    → "Set your admin username and password" first
+//     password (bootstrap)
+//   signed in                   → the dashboard
+// A 401 from any admin call clears the session in lib/api, which brings this
+// back to the sign-in screen in place.
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Navbar from '@/components/Navbar'
 import { PageLoader } from '@/components/ui'
+import { adminMe, type AdminAuthResponse, type AdminMe } from '@/lib/api'
+import { clearAdminSession, useAdminSession } from '@/lib/adminAuth'
 import { AdminLogin } from './AdminLogin'
+import { AdminSetup } from './AdminSetup'
 import { AdminShell } from './AdminShell'
-import { useAdminSecret, writeAdminSecret } from './secret'
+
+/** GET /admin/auth/me once per session token (recovery mode; keeps the must-change flag in sync). */
+function useAdminMe(token: string | null): AdminMe | null {
+  const [state, setState] = useState<{ token: string; me: AdminMe } | null>(null)
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    adminMe({ signal: controller.signal }).then(
+      me => setState({ token, me }),
+      // A 401 already ended the session in lib/api; anything else just means
+      // no recovery banner until the next sign-in.
+      () => {},
+    )
+    return () => controller.abort()
+  }, [token])
+  return state && state.token === token ? state.me : null
+}
 
 export default function AdminApp() {
-  const secret = useAdminSecret()
-  const [notice, setNotice] = useState<string | null>(null)
+  const { ready, session, expiredMessage } = useAdminSession()
+  const me = useAdminMe(session?.token ?? null)
+  // The password the admin just signed in with, kept in memory (never stored)
+  // so the forced setup form doesn't ask for it again. Bound to that session.
+  const [setupPassword, setSetupPassword] = useState<{ token: string; password: string } | null>(null)
 
-  const signIn = useCallback((value: string) => {
-    setNotice(null)
-    writeAdminSecret(value)
+  const onSignedIn = useCallback((auth: AdminAuthResponse, password: string) => {
+    setSetupPassword(auth.must_change_password ? { token: auth.token, password } : null)
   }, [])
 
-  const signOut = useCallback((expired: boolean) => {
-    setNotice(expired ? 'The server no longer accepts this admin secret. Sign in again with the current one.' : null)
-    writeAdminSecret(null)
+  const signOut = useCallback(() => {
+    setSetupPassword(null)
+    clearAdminSession()
   }, [])
 
-  if (secret === undefined) {
-    // Server render / hydration: sessionStorage isn't readable yet.
+  if (!ready) {
+    // Server render / hydration: web storage isn't readable yet.
     return (
       <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
         <Navbar showAuth={false} homeHref="/" />
@@ -38,6 +63,19 @@ export default function AdminApp() {
     )
   }
 
-  if (!secret) return <AdminLogin notice={notice} onSignedIn={signIn} />
-  return <AdminShell secret={secret} onSignOut={signOut} />
+  if (!session) return <AdminLogin notice={expiredMessage} onSignedIn={onSignedIn} />
+
+  const recoveryMode = me?.recovery_mode ?? false
+  if (session.must_change_password) {
+    return (
+      <AdminSetup
+        session={session}
+        recoveryMode={recoveryMode}
+        initialCurrentPassword={setupPassword?.token === session.token ? setupPassword.password : ''}
+        onDone={() => setSetupPassword(null)}
+        onSignOut={signOut}
+      />
+    )
+  }
+  return <AdminShell session={session} recoveryMode={recoveryMode} onSignOut={signOut} />
 }

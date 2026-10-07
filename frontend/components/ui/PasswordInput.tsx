@@ -19,6 +19,8 @@ export interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputEl
   hint?: ReactNode
   /** Show the 4-step strength meter (for new passwords). */
   showStrength?: boolean
+  /** Minimum length the strength meter's hint asks for (default: the user rule, 8). */
+  strengthMinLength?: number
   /** Extra classes for the <input>. */
   inputClassName?: string
   /** Classes for the outer wrapper. */
@@ -34,13 +36,16 @@ const TEXT_COLORS = ['text-red-400', 'text-red-400', 'text-amber-300', 'text-sky
  * autoComplete defaults to "new-password" with `showStrength`, else "current-password".
  */
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(function PasswordInput(
-  { id, label, labelAside, error, hint, showStrength = false, inputClassName = '', className = '', onChange, autoComplete, ...rest },
+  {
+    id, label, labelAside, error, hint, showStrength = false, strengthMinLength,
+    inputClassName = '', className = '', onChange, autoComplete, ...rest
+  },
   ref,
 ) {
   const [visible, setVisible] = useState(false)
   const [innerValue, setInnerValue] = useState(typeof rest.defaultValue === 'string' ? rest.defaultValue : '')
   const value = typeof rest.value === 'string' ? rest.value : innerValue
-  const strength = showStrength && value ? passwordStrength(value) : null
+  const strength = showStrength && value ? passwordStrength(value, strengthMinLength) : null
   const strengthId = `${id}-strength`
   const describedIds = [describedBy(id, error, hint), strength ? strengthId : undefined].filter(Boolean).join(' ') || undefined
 

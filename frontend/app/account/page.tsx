@@ -127,9 +127,9 @@ function AccountContent({ user, refresh, signOut }: AccountContentProps) {
   return (
     <>
       <header className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">Your account</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-white">Account</h1>
         <p className="mt-1.5 text-sm sm:text-[15px] text-slate-400">
-          Your details, today&apos;s downloads and your password.
+          Your details, downloads left today and your password.
         </p>
       </header>
 
@@ -279,9 +279,9 @@ function UsageCard({
   if (unlimited) {
     status = 'Your account has unlimited downloads.'
   } else if (limit === 0) {
-    status = 'Downloads are paused for your account. Contact the administrator if you think this is a mistake.'
+    status = 'Downloads are turned off for your account. Contact the administrator if you think this is a mistake.'
   } else if (remaining === 0) {
-    status = "You've used all of today's downloads. Come back after the reset."
+    status = "You've used all of today's downloads. More unlock after the reset."
   } else {
     status = (
       <>
@@ -298,7 +298,7 @@ function UsageCard({
           <h2 id="usage-title" className="text-base font-semibold text-white">
             Today&apos;s downloads
           </h2>
-          <p className="mt-0.5 text-xs text-slate-500">Only completed downloads count. Checking a link is free.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Only finished downloads count. Looking up a link is free.</p>
         </div>
         <button
           type="button"
@@ -360,7 +360,7 @@ function UsageCard({
         {!unlimited ? (
           <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500">
             <Sparkles className="w-4 h-4 flex-shrink-0 text-violet-300" aria-hidden="true" />
-            <span>Need more? An optional premium plan with unlimited downloads is planned.</span>
+            <span>Need more? Premium with unlimited downloads is coming soon.</span>
           </p>
         ) : (
           <span />

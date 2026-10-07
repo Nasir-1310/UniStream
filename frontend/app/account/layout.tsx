@@ -3,8 +3,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Your account',
-  description: 'Your UniStream Saver profile, daily downloads and password.',
+  title: 'Account',
+  description: 'Your UniStream Saver details, downloads left today and password.',
   robots: { index: false, follow: false },
 }
 

@@ -308,6 +308,27 @@ class SendEmailGuardTests(NoNetworkTestCase):
                     email_service.send_email(to, "S", "h", "t")
                 post.assert_not_called()
 
+    def test_recipients_follow_the_sign_up_email_rules(self):
+        for to in ("Student <student@gmail.com>", "student@gmail.com;other@gmail.com",
+                   "student@gmail.com\nBcc: x@evil.com", "stu dent@gmail.com", "a..b@gmail.com",
+                   "student@gmail", "x" * 250 + "@gmail.com", None, 42):
+            with self.subTest(to=to), \
+                    email_env(BREVO_API_KEY="k", EMAIL_FROM="admin@example.com"), \
+                    patch.object(email_service.httpx, "post") as post:
+                with self.assertRaises(email_service.EmailError) as ctx:
+                    email_service.send_email(to, "S", "h", "t")
+                self.assertEqual(str(ctx.exception), "The recipient email address is not valid.")
+                post.assert_not_called()
+
+        with email_env(BREVO_API_KEY="k", EMAIL_FROM="admin@example.com"), \
+                patch.object(email_service.httpx, "post", return_value=response(201)) as post:
+            email_service.send_email("  Student@Gmail.com ", "Line one\r\nBcc: x@evil.com " + "s" * 300, "h", "t")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["to"], [{"email": "student@gmail.com"}])
+        self.assertNotIn("\n", payload["subject"])
+        self.assertNotIn("\r", payload["subject"])
+        self.assertLessEqual(len(payload["subject"]), 200)
+
     def test_logs_mask_the_recipient(self):
         with email_env(BREVO_API_KEY="k", EMAIL_FROM="admin@example.com"), \
                 patch.object(email_service.httpx, "post", return_value=response(201)), \

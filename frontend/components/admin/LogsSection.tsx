@@ -1,9 +1,9 @@
 'use client'
 // components/admin/LogsSection.tsx
 //
-// Completed downloads, newest first: filter by text, platform, user and
-// date range; delete single rows or the selected page rows; purge old logs
-// in bulk; export what the filters match as CSV.
+// Download history: completed downloads, newest first. Filter by text,
+// platform, user and date range; delete single entries or the selected page
+// rows; delete old entries in bulk; export what the filters match as CSV.
 
 import { useState } from 'react'
 import { Download, Eraser, ExternalLink, FileDown, ScrollText, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
@@ -62,7 +62,7 @@ function safeHref(url: string): string | undefined {
 }
 
 export function LogsSection({ intent }: { intent?: LogsIntent }) {
-  const { secret, revisions, invalidate, reportError, overview } = useAdmin()
+  const { revisions, invalidate, reportError, overview } = useAdmin()
   const timeZone = overview?.system.timezone || 'Asia/Dhaka'
   const toast = useToast()
   const confirm = useConfirm()
@@ -96,7 +96,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
 
   const query = useAdminQuery(
     `logs|${filterKey}|${page}|${pageSize}|${revisions.logs}`,
-    s => adminListLogs(s, { ...filters, page, page_size: pageSize }),
+    () => adminListLogs({ ...filters, page, page_size: pageSize }),
     { enabled: !rangeInvalid },
   )
   const items = query.data?.items ?? []
@@ -120,7 +120,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
 
   const deleteOne = async (log: LogEntry) => {
     const ok = await confirm({
-      title: 'Delete this log?',
+      title: 'Delete this entry?',
       message: (
         <>
           <span className="block text-white break-words">{log.title || log.url}</span>
@@ -130,16 +130,16 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
           <span className="mt-2 block">The user’s download counts are not affected.</span>
         </>
       ),
-      confirmLabel: 'Delete log',
+      confirmLabel: 'Delete entry',
       tone: 'danger',
     })
     if (!ok) return
     try {
-      await run(log.id, 'Deleting…', () => adminDeleteLog(secret, log.id))
-      toast.success('Log deleted')
+      await run(log.id, 'Deleting…', () => adminDeleteLog(log.id))
+      toast.success('Entry deleted')
       afterDelete(1)
     } catch (err) {
-      reportError(err, 'Could not delete the log')
+      reportError(err, 'Couldn’t delete this entry')
     }
   }
 
@@ -147,30 +147,30 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
     const count = selectedIds.length
     if (!count) return
     const ok = await confirm({
-      title: `Delete ${pluralize(count, 'log')}?`,
-      message: 'The selected download records are removed permanently. Users’ download counts are not affected.',
+      title: `Delete ${pluralize(count, 'entry', 'entries')}?`,
+      message: 'The selected entries are removed from the download history for good. Users’ download counts are not affected.',
       confirmLabel: 'Delete',
       tone: 'danger',
     })
     if (!ok) return
     try {
-      const { deleted } = await run('bulk', 'Deleting…', () => adminDeleteLogs(secret, selectedIds))
-      toast.success(`Deleted ${pluralize(deleted, 'log')}`)
+      const { deleted } = await run('bulk', 'Deleting…', () => adminDeleteLogs(selectedIds))
+      toast.success(`Deleted ${pluralize(deleted, 'entry', 'entries')}`)
       setSelection({ scope, ids: [] })
       afterDelete(count)
     } catch (err) {
-      reportError(err, 'Could not delete the selected logs')
+      reportError(err, 'Couldn’t delete the selected entries')
     }
   }
 
   const exportCsv = async () => {
     try {
       await run('export', 'Exporting…', () =>
-        adminExportLogs(secret, { ...filters, date_from: rangeInvalid ? undefined : filters.date_from, date_to: rangeInvalid ? undefined : filters.date_to }),
+        adminExportLogs({ ...filters, date_from: rangeInvalid ? undefined : filters.date_from, date_to: rangeInvalid ? undefined : filters.date_to }),
       )
-      toast.success('Export ready', { description: 'The CSV file was saved to your downloads (up to 50,000 rows).' })
+      toast.success('Export ready', { description: 'The CSV file is in your downloads folder (up to 50,000 rows).' })
     } catch (err) {
-      reportError(err, 'Could not export the logs')
+      reportError(err, 'Couldn’t export the download history')
     }
   }
 
@@ -199,7 +199,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
     <section aria-labelledby="admin-h-logs">
       <SectionHeader
         id="logs"
-        title="Download logs"
+        title="Download history"
         description={
           query.data
             ? `${pluralize(total, filtered ? 'matching download' : 'download')} recorded${filtered ? '' : ' in total'}.`
@@ -213,7 +213,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
             </button>
             <button type="button" onClick={() => setPurgeOpen(true)} className="btn-outline text-red-300 hover:text-red-200">
               <Eraser className="w-4 h-4" aria-hidden="true" />
-              Delete old logs
+              Delete old entries
             </button>
           </>
         }
@@ -224,7 +224,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
             <label htmlFor="logs-search" className="sr-only">
-              Search logs
+              Search download history
             </label>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
             <input
@@ -393,7 +393,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
           filtered ? (
             <EmptyState
               icon={Search}
-              title="No logs match these filters"
+              title="No downloads match these filters"
               action={
                 <button type="button" onClick={clearFilters} className="btn-outline">
                   Clear filters
@@ -448,7 +448,7 @@ export function LogsSection({ intent }: { intent?: LogsIntent }) {
                 resetPage()
               }}
               disabled={query.loading}
-              itemLabel="logs"
+              itemLabel="downloads"
             />
           </div>
         )}
@@ -536,7 +536,7 @@ function LogTitle({ log }: { log: LogEntry }) {
 function LogUser({ log, onFilterUser }: { log: LogEntry; onFilterUser: (log: LogEntry) => void }) {
   if (!log.user_id) {
     return (
-      <span className="block truncate text-[13px] text-slate-400" title="The account was deleted or predates user accounts">
+      <span className="block truncate text-[13px] text-slate-400" title="This account was deleted, or the download is from before accounts existed">
         {log.identifier || EMPTY}
       </span>
     )
@@ -567,8 +567,8 @@ function RowButtons({ log, busy, onDelete }: { log: LogEntry; busy: Record<strin
         onClick={() => onDelete(log)}
         disabled={Boolean(busy[log.id]) || Boolean(busy.bulk)}
         className="btn-icon hover:!text-red-300 hover:!bg-red-500/10"
-        aria-label="Delete log"
-        title="Delete log"
+        aria-label="Delete entry"
+        title="Delete entry"
       >
         {busy[log.id] ? <Spinner size="sm" label={null} /> : <Trash2 className="w-4 h-4" aria-hidden="true" />}
       </button>
@@ -581,7 +581,7 @@ function LogsTable({ items, selectedIds, allSelected, onToggle, onToggleAll, bus
     <>
       {/* md and up */}
       <table className="hidden md:table w-full table-fixed text-left">
-        <caption className="sr-only">Download logs</caption>
+        <caption className="sr-only">Download history</caption>
         <thead>
           <tr className="border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
             <th scope="col" className="w-12 py-3 pl-5 pr-1">
@@ -589,7 +589,7 @@ function LogsTable({ items, selectedIds, allSelected, onToggle, onToggleAll, bus
                 checked={allSelected}
                 indeterminate={selectedIds.length > 0 && !allSelected}
                 onChange={onToggleAll}
-                label="Select all logs on this page"
+                label="Select all entries on this page"
               />
             </th>
             <th scope="col" className="py-3 px-3">Video</th>
@@ -606,7 +606,7 @@ function LogsTable({ items, selectedIds, allSelected, onToggle, onToggleAll, bus
             return (
               <tr key={log.id} className={selected ? 'bg-indigo-500/[0.06]' : 'hover:bg-white/[0.02]'}>
                 <td className="py-3 pl-5 pr-1 align-top pt-4">
-                  <Checkbox checked={selected} onChange={on => onToggle(log.id, on)} label={`Select log: ${log.title || log.url}`} />
+                  <Checkbox checked={selected} onChange={on => onToggle(log.id, on)} label={`Select ${log.title || log.url}`} />
                 </td>
                 <td className="py-3 px-3 min-w-0">
                   <LogTitle log={log} />
@@ -635,7 +635,7 @@ function LogsTable({ items, selectedIds, allSelected, onToggle, onToggleAll, bus
             checked={allSelected}
             indeterminate={selectedIds.length > 0 && !allSelected}
             onChange={onToggleAll}
-            label="Select all logs on this page"
+            label="Select all entries on this page"
           />
           <span className="text-xs text-slate-500">Select all on this page</span>
         </div>
@@ -645,7 +645,7 @@ function LogsTable({ items, selectedIds, allSelected, onToggle, onToggleAll, bus
             return (
               <li key={log.id} className={`flex items-start gap-3 px-4 py-3.5 ${selected ? 'bg-indigo-500/[0.06]' : ''}`}>
                 <div className="pt-2">
-                  <Checkbox checked={selected} onChange={on => onToggle(log.id, on)} label={`Select log: ${log.title || log.url}`} />
+                  <Checkbox checked={selected} onChange={on => onToggle(log.id, on)} label={`Select ${log.title || log.url}`} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <LogTitle log={log} />

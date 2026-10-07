@@ -1,8 +1,9 @@
 // components/download/AnalyzingState.tsx
 //
-// Shown while /video-info runs. Analysis usually takes a few seconds, but the
-// first request after the API has slept (Render free tier) can take up to a
-// minute, so after a while the copy says so instead of looking stuck.
+// Shown while /video-info looks up the link. That usually takes a few
+// seconds, but the first request after the API has slept (Render free tier)
+// can take up to a minute, so after a while the copy says so instead of
+// looking stuck.
 
 import { Film, X } from 'lucide-react'
 
@@ -56,11 +57,11 @@ export function AnalyzingState({ slow, onCancel }: AnalyzingStateProps) {
       </div>
 
       <div className="mt-6 space-y-1.5 max-w-sm" role="status" aria-live="polite">
-        <p className="text-sm font-semibold text-white">Analyzing the link…</p>
+        <p className="text-sm font-semibold text-white">Getting the video…</p>
         <p className="text-xs leading-relaxed text-slate-500">
           {slow
             ? 'Still working. The first request after a quiet spell can take up to a minute while the server wakes up.'
-            : 'Finding the available qualities, sizes and details.'}
+            : 'Finding the available qualities and file sizes.'}
         </p>
       </div>
 
@@ -73,12 +74,6 @@ export function AnalyzingState({ slow, onCancel }: AnalyzingStateProps) {
           />
         ))}
       </div>
-      <style>{`
-        @keyframes dlbar {
-          from { opacity: 0.3; transform: scaleY(0.6); }
-          to   { opacity: 1;   transform: scaleY(1);   }
-        }
-      `}</style>
 
       <button type="button" onClick={onCancel} className="btn-ghost mt-6">
         <X className="w-4 h-4" aria-hidden="true" />

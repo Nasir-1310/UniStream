@@ -24,16 +24,18 @@ from urllib.parse import parse_qs, urlsplit
 import yt_dlp
 from fastapi.testclient import TestClient
 
+import admin_account
 import dependencies
 import email_service
 import main
 import security
 import storage
+from routers import admin_auth as admin_auth_router
 from routers import auth as auth_router
 from routers import download as download_router
 
 
-ADMIN_SECRET = "test-admin-secret-value"
+ADMIN_SECRET = "test-admin-secret-2026"
 ENV = {
     "ADMIN_SECRET": ADMIN_SECRET,
     "AUTH_SECRET": "a-test-signing-secret-that-is-long-enough-1234",
@@ -47,6 +49,8 @@ ENV = {
 FORGOT_MESSAGE = auth_router.FORGOT_MESSAGE
 INVALID_LOGIN = "Incorrect email/phone or password."
 SESSION_EXPIRED = "Your session has expired. Please sign in again."
+ADMIN_EXPIRED = "Admin session expired. Please sign in again."
+TICKET_EXPIRED = download_router.TICKET_EXPIRED_MESSAGE
 UNSUPPORTED = "Only YouTube, Facebook and Instagram links are supported."
 FACEBOOK_URL = "https://www.facebook.com/watch?v=1"
 
@@ -121,7 +125,9 @@ class ApiTestCase(unittest.TestCase):
         for reset in (
             security._auth_secret.cache_clear,
             security.rate_limiter.reset,
+            security.used_tickets.reset,
             dependencies.download_slots.reset,
+            admin_account.forget_cached_state,
         ):
             reset()
             self.addCleanup(reset)
@@ -199,13 +205,25 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return user_id, response.json()["token"], password
 
-    def download(self, token, url=FACEBOOK_URL, ext="mp4", height=720, client=None):
-        """Run /download/progress to the end; returns the SSE events."""
-        params = {"url": url, "format_id": "hd", "ext": ext}
-        if height:
-            params["height"] = height
-        if token is not None:
-            params["token"] = token
+    def request_ticket(self, token, url=FACEBOOK_URL, ext="mp4", height=720, client=None, **extra):
+        """POST /download/ticket; returns the response."""
+        body = {"url": url, "format_id": "hd", "ext": ext, "height": height, "source": None, **extra}
+        headers = bearer(token) if token is not None else {}
+        return (client or self.client).post("/download/ticket", json=body, headers=headers)
+
+    def ticket(self, token, **kwargs):
+        response = self.request_ticket(token, **kwargs)
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(set(body), {"ticket", "expires_in"})
+        self.assertEqual(body["expires_in"], 60)
+        return body["ticket"]
+
+    def stream(self, ticket=None, client=None, params=None):
+        """Run GET /download/progress to the end; returns the SSE events."""
+        params = dict(params or {})
+        if ticket is not None:
+            params["ticket"] = ticket
         response = (client or self.client).get("/download/progress", params=params)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
@@ -214,6 +232,20 @@ class ApiTestCase(unittest.TestCase):
             for line in response.text.splitlines()
             if line.startswith("data: ")
         ]
+
+    def download(self, token, url=FACEBOOK_URL, ext="mp4", height=720, client=None):
+        """Get a ticket and run the download stream to the end; returns the SSE events."""
+        ticket = self.ticket(token, url=url, ext=ext, height=height, client=client)
+        return self.stream(ticket, client=client)
+
+    def admin_session(self, username="admin", password=ADMIN_SECRET, remember=False, ip="198.51.100.200"):
+        """Sign in to the dashboard; returns the login response body."""
+        response = self.client.post(
+            "/admin/auth/login", json={"username": username, "password": password, "remember": remember},
+            headers={"x-forwarded-for": ip},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
 
     def assert_refused(self, events, code):
         self.assertEqual(len(events), 1, events)
@@ -238,14 +270,17 @@ class HealthAndValidationTests(ApiTestCase):
         )
 
     def test_access_log_never_records_tokens(self):
-        record = logging.LogRecord(
-            "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
-            ("203.0.113.5:4000", "GET", "/download/progress?url=x&token=abc.def&ext=mp4", "1.1", 200),
-            None,
-        )
-        main.RedactTokens().filter(record)
-        self.assertNotIn("abc.def", record.getMessage())
-        self.assertIn("token=[redacted]&ext=mp4", record.getMessage())
+        for path, secret, expected in (
+            ("/download/file?token=abc.def&x=1", "abc.def", "token=[redacted]&x=1"),
+            ("/download/progress?ticket=tik.sig", "tik.sig", "?ticket=[redacted]"),
+        ):
+            record = logging.LogRecord(
+                "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                ("203.0.113.5:4000", "GET", path, "1.1", 200), None,
+            )
+            main.RedactTokens().filter(record)
+            self.assertNotIn(secret, record.getMessage())
+            self.assertIn(expected, record.getMessage())
 
     def test_validation_errors_are_one_readable_string(self):
         response = self.client.post("/auth/login", json={})
@@ -367,8 +402,9 @@ class SignInTests(ApiTestCase):
         self.assertEqual((usage["used"], usage["limit"], usage["remaining"]), (0, 4, 4))
         self.assertEqual(usage["timezone"], "Asia/Dhaka")
         self.assertTrue(usage["resets_at"].endswith("T00:00:00+06:00"))
-        # EventSource-style query token works too.
-        self.assertEqual(self.client.get("/auth/me", params={"token": token}).status_code, 200)
+        # Sessions travel only in the Authorization header, never in a URL.
+        response = self.client.get("/auth/me", params={"token": token})
+        self.assertEqual((response.status_code, response.json()["detail"]), (401, SESSION_EXPIRED))
 
         response = self.client.post(
             "/auth/change-password", headers=bearer(token),
@@ -440,8 +476,8 @@ class SignInTests(ApiTestCase):
         self.assertEqual((response.status_code, response.json()["detail"]), (403, blocked))
         # Only the password holder learns the account is blocked.
         self.assertEqual(self.login("rahim@example.com", "wrong-pass-1").status_code, 401)
-        message = self.assert_refused(self.download(token), "auth")
-        self.assertEqual(message, blocked)
+        response = self.request_ticket(token)
+        self.assertEqual((response.status_code, response.json()["detail"]), (403, blocked))
 
         self.admin("POST", f"/admin/users/{user_id}/status", json={"status": "approved"})
         self.assertEqual(self.client.get("/auth/me", headers=bearer(token)).status_code, 200)
@@ -599,9 +635,11 @@ class PasswordResetTests(ApiTestCase):
 
 class AdminSecretTests(ApiTestCase):
     def test_admin_routes_need_the_secret(self):
-        self.assertEqual(self.client.get("/admin/overview").status_code, 401)
+        response = self.client.get("/admin/overview")
+        self.assertEqual((response.status_code, response.json()["detail"]), (401, ADMIN_EXPIRED))
         response = self.client.get("/admin/overview", headers={"x-admin-secret": "nope"})
-        self.assertEqual((response.status_code, response.json()["detail"]), (401, "Invalid admin secret."))
+        self.assertEqual((response.status_code, response.json()["detail"]), (401, ADMIN_EXPIRED))
+        # ADMIN_SECRET keeps working as an API key for scripts.
         self.assertEqual(self.admin("GET", "/admin/overview").status_code, 200)
 
     def test_failed_admin_secrets_are_limited_per_ip(self):
@@ -627,9 +665,14 @@ class AdminSecretTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_admin_is_disabled_without_a_configured_secret(self):
-        with patch.dict(os.environ, {"ADMIN_SECRET": ""}):
+        with patch.dict(os.environ, {"ADMIN_SECRET": "", "ADMIN_PASSWORD": ""}):
             response = self.admin("GET", "/admin/overview")
-        self.assertEqual(response.status_code, 503)
+            login = self.client.post("/admin/auth/login", json={"username": "admin", "password": ADMIN_SECRET})
+        self.assertEqual(
+            (response.status_code, response.json()["detail"]),
+            (503, "Admin access is not configured. Set ADMIN_SECRET on the server."),
+        )
+        self.assertEqual(login.status_code, 503)
 
 
 class AdminUserTests(ApiTestCase):
@@ -836,12 +879,20 @@ class DownloadTests(ApiTestCase):
             {key: complete["usage"][key] for key in ("used", "limit", "remaining")},
             {"used": 1, "limit": 2, "remaining": 1},
         )
-        served_dir = Path(download_router._jobs[f"token:{complete['token']}"]["filename"]).parent
+        entry = download_router._jobs[f"token:{complete['token']}"]
+        self.assertEqual(entry["user_id"], user_id)
+        self.assertIn("job_id", entry)
+        # The file token is random, not a guessable or sequential id.
+        self.assertGreaterEqual(len(complete["token"]), 40)
+        served_dir = Path(entry["filename"]).parent
         self.addCleanup(shutil.rmtree, served_dir, ignore_errors=True)
         file_response = self.client.get("/download/file", params={"token": complete["token"]})
         self.assertEqual(file_response.content, b"x" * 2048)
+        self.assertEqual(file_response.headers["cache-control"], "no-store")
         # The file token is single-use.
-        self.assertEqual(self.client.get("/download/file", params={"token": complete["token"]}).status_code, 404)
+        again = self.client.get("/download/file", params={"token": complete["token"]})
+        self.assertEqual(again.status_code, 404)
+        self.assertEqual(again.json()["detail"], download_router.FILE_GONE_MESSAGE)
 
         log = self.logs()[0]
         self.assertEqual(
@@ -849,19 +900,37 @@ class DownloadTests(ApiTestCase):
             (user_id, "rahim@example.com", "YouTube", "1080p MP4", 2048, "Lecture"),
         )
 
+        # Two tickets while one download is left: the stream start checks
+        # the limit again, so only one of them can be used.
+        spare = self.ticket(token)
         with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(title="Reel")):
             events = self.download(token, url="https://www.instagram.com/reel/abc/", ext="mp3", height=None)
         self.assertEqual(events[-1]["usage"]["remaining"], 0)
         self.assertEqual((self.logs()[0]["platform"], self.logs()[0]["quality"]), ("Instagram", "MP3"))
+        message = self.assert_refused(self.stream(spare), "limit")
+        self.assertEqual(message, "You've used all 2 downloads for today. Your limit resets at 12:00 AM.")
 
-        message = self.assert_refused(self.download(token), "limit")
-        self.assertIn("today's limit of 2 downloads", message)
+        response = self.request_ticket(token)
+        self.assertEqual(
+            (response.status_code, response.json()["detail"]),
+            (429, "You've used all 2 downloads for today. Your limit resets at 12:00 AM."),
+        )
         usage = self.client.get("/auth/me", headers=bearer(token)).json()["user"]["usage"]
         self.assertEqual((usage["used"], usage["remaining"]), (2, 0))
 
         user = self.admin("GET", "/admin/users").json()["items"][0]
         self.assertEqual((user["used_today"], user["total_downloads"]), (2, 2))
         self.assertIsNotNone(user["last_download_at"])
+
+    def test_a_single_download_limit_reads_naturally(self):
+        _user_id, token, _password = self.active_user(daily_limit=1)
+        with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl()):
+            self.download(token)
+        response = self.request_ticket(token)
+        self.assertEqual(
+            response.json()["detail"],
+            "You've used your 1 download for today. Your limit resets at 12:00 AM.",
+        )
 
     def test_failed_downloads_do_not_count(self):
         _user_id, token, _password = self.active_user(daily_limit=1)
@@ -877,24 +946,121 @@ class DownloadTests(ApiTestCase):
         with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl()):
             self.assertEqual(self.download(token)[-1]["status"], "complete")
 
-    def test_preflight_refusals_arrive_as_one_sse_event(self):
+    def test_ticket_prechecks(self):
         _user_id, token, _password = self.active_user()
-        self.assertEqual(self.assert_refused(self.download(None), "auth"), SESSION_EXPIRED)
-        self.assertEqual(self.assert_refused(self.download("forged.token"), "auth"), SESSION_EXPIRED)
-        self.assertEqual(
-            self.assert_refused(self.download(token, url="https://www.tiktok.com/@a/video/1"), "platform"),
-            UNSUPPORTED,
+        self.assertEqual(self.request_ticket(None).status_code, 401)
+        self.assertEqual(self.request_ticket("forged.token").status_code, 401)
+        for url in ("https://www.tiktok.com/@a/video/1", "javascript:alert(1)//youtube.com",
+                    "https://www.youtube.com@evil.example/watch?v=1", "http://169.254.169.254/latest"):
+            with self.subTest(url=url):
+                response = self.request_ticket(token, url=url)
+                self.assertEqual((response.status_code, response.json()["detail"]), (400, UNSUPPORTED))
+
+        cases = (
+            {"ext": "exe"},
+            {"height": 0},
+            {"url": "https://youtu.be/" + "a" * 2048},
+            {"format_id": "x" * 201},
+            {"format_id": "h\td"},
+            {"source": "s" * 33},
+            {"identifier": "extra field"},
         )
-        self.assert_refused(self.download(token, url="javascript:alert(1)//youtube.com"), "platform")
+        for change in cases:
+            with self.subTest(change=str(change)[:40]):
+                response = self.request_ticket(token, **change)
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertIsInstance(response.json()["detail"], str)
         self.assertEqual(self.logs(), [])
+
+    def test_stream_refuses_anything_but_a_fresh_ticket(self):
+        user_id, token, _password = self.active_user()
+        pv = security.password_version(storage.get_user_by_id(user_id)["password_hash"])
+        valid = self.ticket(token)
+        payload, signature = valid.split(".")
+        with patch.object(security, "time") as clock:
+            clock.time.return_value = time.time() - 61
+            expired = security.create_download_ticket(user_id, pv, url=FACEBOOK_URL, format_id="hd", ext="mp4")
+        with patch.dict(os.environ, {"AUTH_SECRET": "another-secret-that-is-long-enough-12345"}):
+            security._auth_secret.cache_clear()
+            foreign = security.create_download_ticket(user_id, pv, url=FACEBOOK_URL, format_id="hd", ext="mp4")
+        security._auth_secret.cache_clear()
+        other_url = security.create_download_ticket(user_id, pv, url="https://youtu.be/x", format_id="hd", ext="mp4")
+        tampered = f"{other_url.split('.')[0]}.{signature}"
+        session_token_as_ticket = token
+        admin_token_as_ticket = self.admin_session()["token"]
+
+        refusals = {
+            "missing": self.stream(None),
+            "garbage": self.stream("garbage"),
+            "expired": self.stream(expired),
+            "foreign": self.stream(foreign),
+            "tampered": self.stream(tampered),
+            "session token": self.stream(session_token_as_ticket),
+            "admin token": self.stream(admin_token_as_ticket),
+            "old query params": self.stream(params={"token": token, "url": FACEBOOK_URL, "format_id": "hd", "ext": "mp4"}),
+            "too long": self.stream("a" * 9000),
+        }
+        for name, events in refusals.items():
+            with self.subTest(name=name):
+                self.assertEqual(self.assert_refused(events, "auth"), TICKET_EXPIRED)
+
+        # A ticket works once.
+        with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl()):
+            self.assertEqual(self.stream(valid)[-1]["status"], "complete")
+        self.assertEqual(self.assert_refused(self.stream(valid), "auth"), TICKET_EXPIRED)
+        self.assertEqual(len(self.logs()), 1)
+
+        # A ticket the server signed for another platform is still re-checked.
+        sneaky = security.create_download_ticket(
+            user_id, pv, url="https://vimeo.com/1", format_id="hd", ext="mp4",
+        )
+        self.assertEqual(self.assert_refused(self.stream(sneaky), "platform"), UNSUPPORTED)
+
+    def test_password_change_voids_unused_tickets(self):
+        _user_id, token, password = self.active_user()
+        ticket = self.ticket(token)
+        response = self.client.post(
+            "/auth/change-password", headers=bearer(token),
+            json={"current_password": password, "new_password": "Changed pass 42"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.assert_refused(self.stream(ticket), "auth"), SESSION_EXPIRED)
+
+    def test_blocked_after_the_ticket_was_issued(self):
+        user_id, token, _password = self.active_user()
+        ticket = self.ticket(token)
+        self.admin("POST", f"/admin/users/{user_id}/status", json={"status": "blocked"})
+        self.assertEqual(
+            self.assert_refused(self.stream(ticket), "auth"),
+            "Your account has been blocked. Contact the administrator.",
+        )
+
+    def test_tickets_are_limited_per_user(self):
+        _user_id, token, _password = self.active_user()
+        limit, _window = download_router.TICKETS_PER_USER
+        for _ in range(limit):
+            self.ticket(token)
+        response = self.request_ticket(token)
+        self.assertEqual(response.status_code, 429)
+        self.assertRegex(response.json()["detail"], r"^Too many download attempts\. Try again in \d+ minutes\.$")
+
+    def test_tickets_and_sessions_cannot_stand_in_for_each_other(self):
+        _user_id, token, _password = self.active_user()
+        ticket = self.ticket(token)
+        self.assertEqual(self.client.get("/auth/me", headers=bearer(ticket)).status_code, 401)
+        self.assertEqual(self.client.get("/admin/overview", headers=bearer(ticket)).status_code, 401)
+        admin_token = self.admin_session()["token"]
+        self.assertEqual(self.request_ticket(admin_token).status_code, 401)
 
     def test_parallel_downloads_cannot_overshoot_the_limit(self):
         _user_id, token, _password = self.active_user(daily_limit=1)
         gate, started = threading.Event(), threading.Semaphore(0)
         results = {}
+        early_ticket = self.ticket(token)
+        first_ticket = self.ticket(token)
 
         def first():
-            results["events"] = self.download(token, client=TestClient(main.app))
+            results["events"] = self.stream(first_ticket, client=TestClient(main.app))
 
         with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(gate=gate, started=started)):
             thread = threading.Thread(target=first)
@@ -902,32 +1068,39 @@ class DownloadTests(ApiTestCase):
             try:
                 self.assertTrue(started.acquire(timeout=20))
                 # One download is running and none has completed: no room left.
-                message = self.assert_refused(self.download(token), "limit")
+                response = self.request_ticket(token)
+                self.assertEqual(response.status_code, 429)
+                self.assertIn("already in progress", response.json()["detail"])
+                message = self.assert_refused(self.stream(early_ticket), "limit")
                 self.assertIn("already in progress", message)
             finally:
                 gate.set()
                 thread.join(30)
 
         self.assertEqual(results["events"][-1]["status"], "complete")
-        self.assert_refused(self.download(token), "limit")
+        self.assertEqual(self.request_ticket(token).status_code, 429)
         self.assertEqual(len(self.logs()), 1)
 
     def test_at_most_two_downloads_run_at_once_per_account(self):
         _user_id, token, _password = self.active_user(daily_limit=-1)
         gate, started = threading.Event(), threading.Semaphore(0)
         results = []
+        tickets = [self.ticket(token) for _ in range(3)]
 
-        def run():
-            results.append(self.download(token, client=TestClient(main.app)))
+        def run(ticket):
+            results.append(self.stream(ticket, client=TestClient(main.app)))
 
         with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(gate=gate, started=started)):
-            threads = [threading.Thread(target=run) for _ in range(2)]
+            threads = [threading.Thread(target=run, args=(ticket,)) for ticket in tickets[:2]]
             for thread in threads:
                 thread.start()
             try:
                 for _ in threads:
                     self.assertTrue(started.acquire(timeout=20))
-                self.assertIn("2 downloads in progress", self.assert_refused(self.download(token), "busy"))
+                response = self.request_ticket(token)
+                self.assertEqual(response.status_code, 409)
+                self.assertIn("2 downloads in progress", response.json()["detail"])
+                self.assertIn("2 downloads in progress", self.assert_refused(self.stream(tickets[2]), "busy"))
             finally:
                 gate.set()
                 for thread in threads:
@@ -939,9 +1112,17 @@ class DownloadTests(ApiTestCase):
 
     def test_default_limit_comes_from_the_settings(self):
         _user_id, token, _password = self.active_user()
+        ticket = self.ticket(token)
         self.admin("PUT", "/admin/settings", json={"default_daily_limit": 0})
-        message = self.assert_refused(self.download(token), "limit")
-        self.assertIn("turned off", message)
+        response = self.request_ticket(token)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("turned off", response.json()["detail"])
+        self.assertIn("turned off", self.assert_refused(self.stream(ticket), "limit"))
+
+    def test_file_tokens_are_bounded(self):
+        self.assertEqual(self.client.get("/download/file", params={"token": "x" * 129}).status_code, 422)
+        response = self.client.get("/download/file", params={"token": "unknown"})
+        self.assertEqual((response.status_code, response.json()["detail"]), (404, download_router.FILE_GONE_MESSAGE))
 
 
 class VideoInfoTests(ApiTestCase):
@@ -1067,7 +1248,27 @@ class AdminLogTests(ApiTestCase):
         self.assertEqual(len(list(csv.reader(io.StringIO(filtered.content.decode("utf-8-sig"))))), 2)
 
 
+class CsvNeutralisationTests(unittest.TestCase):
+    def test_every_formula_prefix_is_neutralised(self):
+        from routers import admin as admin_router
+        for value in ("=1+1", "+1", "-1", "@SUM(A1)", "\t=1", "\r=1"):
+            with self.subTest(value=value):
+                self.assertEqual(admin_router._csv_cell(value), "'" + value)
+        for value, expected in (("Lecture 1", "Lecture 1"), ("", ""), (None, ""), (5, "5"), (" =1", " =1")):
+            self.assertEqual(admin_router._csv_cell(value), expected)
+
+
 class SettingsAndOverviewTests(ApiTestCase):
+    def test_no_secret_reaches_an_admin_response(self):
+        token = self.admin_session()["token"]
+        secrets_to_hide = (ENV["ADMIN_SECRET"], ENV["AUTH_SECRET"], ENV["BREVO_API_KEY"])
+        for path in ("/admin/overview", "/admin/settings", "/admin/storage", "/admin/auth/me", "/admin/schema"):
+            with self.subTest(path=path):
+                response = self.client.get(path, headers=bearer(token))
+                self.assertEqual(response.status_code, 200)
+                for secret in secrets_to_hide:
+                    self.assertNotIn(secret, response.text)
+
     def test_settings_round_trip(self):
         settings = self.admin("GET", "/admin/settings").json()
         self.assertEqual(settings["default_daily_limit"], 4)
@@ -1156,6 +1357,540 @@ class SettingsAndOverviewTests(ApiTestCase):
         self.assertEqual(me.status_code, 503)
         self.assertIn("Database upgrade required", me.json()["detail"])
 
+
+
+class AdminAuthTests(ApiTestCase):
+    NEW_PASSWORD = "Dhaka admin 2026"
+
+    def change(self, token, current, new=NEW_PASSWORD, username=None, **extra):
+        body = {"current_password": current, "new_password": new, **extra}
+        if username is not None:
+            body["new_username"] = username
+        return self.client.post("/admin/auth/change-credentials", json=body, headers=bearer(token))
+
+    def admin_login(self, username, password, ip="198.51.100.201", **extra):
+        return self.client.post(
+            "/admin/auth/login", json={"username": username, "password": password, **extra},
+            headers={"x-forwarded-for": ip},
+        )
+
+    def set_credentials(self, username="owner", password=NEW_PASSWORD):
+        token = self.admin_session()["token"]
+        response = self.change(token, ADMIN_SECRET, password, username)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_first_sign_in_uses_admin_secret_and_must_change(self):
+        before = datetime.now(timezone.utc)
+        body = self.admin_session(username="  Admin ")
+        self.assertEqual(set(body), {"token", "username", "must_change_password", "expires_at"})
+        self.assertEqual((body["username"], body["must_change_password"]), ("admin", True))
+        expires = datetime.fromisoformat(body["expires_at"])
+        self.assertAlmostEqual((expires - before).total_seconds(), 12 * 3600, delta=60)
+
+        token = body["token"]
+        self.assertEqual(self.client.get("/admin/overview", headers=bearer(token)).status_code, 200)
+        me = self.client.get("/admin/auth/me", headers=bearer(token))
+        self.assertEqual(me.json(), {"username": "admin", "must_change_password": True, "recovery_mode": False})
+        # The token payload names no secret.
+        payload = json.loads(base64_decode(token.split(".")[0]))
+        self.assertEqual(payload["purpose"], "admin")
+        self.assertNotIn(ADMIN_SECRET, json.dumps(payload))
+
+    def test_admin_password_env_replaces_the_secret_for_sign_in(self):
+        with patch.dict(os.environ, {"ADMIN_PASSWORD": "bootstrap-pass-99", "ADMIN_USERNAME": "Owner"}):
+            self.assertEqual(self.admin_login("admin", ADMIN_SECRET).status_code, 401)
+            self.assertEqual(self.admin_login("owner", ADMIN_SECRET).status_code, 401)
+            body = self.admin_login("owner", "bootstrap-pass-99").json()
+            self.assertEqual((body["username"], body["must_change_password"]), ("owner", True))
+            # ADMIN_SECRET is still the API key.
+            self.assertEqual(self.admin("GET", "/admin/overview").status_code, 200)
+
+    def test_wrong_credentials_get_one_answer(self):
+        answers = [
+            self.admin_login("admin", "wrong-password", ip="198.51.100.211"),
+            self.admin_login("nobody", ADMIN_SECRET, ip="198.51.100.212"),
+            self.admin_login("admin", ADMIN_SECRET + "x", ip="198.51.100.213"),
+        ]
+        for response in answers:
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.json(), {"detail": "Incorrect username or password."})
+
+    def test_wrong_credentials_still_spend_a_password_hash(self):
+        with patch.object(security, "verify_password", wraps=security.verify_password) as verify:
+            self.admin_login("nobody", "whatever-123")
+        verify.assert_called_once_with("whatever-123", None)
+
+    def test_change_credentials_ends_bootstrap_and_every_old_session(self):
+        first = self.admin_session()["token"]
+        second = self.admin_session(remember=True)["token"]
+
+        response = self.change(first, ADMIN_SECRET, username="Owner.BD")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual((body["username"], body["must_change_password"]), ("owner.bd", False))
+        new_token = body["token"]
+
+        stored = storage.get_setting("admin_password_hash")
+        self.assertTrue(stored.startswith("scrypt$"))
+        self.assertEqual(storage.get_setting("admin_username"), "owner.bd")
+        self.assertNotIn(stored, response.text)
+
+        for old in (first, second):
+            response = self.client.get("/admin/overview", headers=bearer(old))
+            self.assertEqual((response.status_code, response.json()["detail"]), (401, ADMIN_EXPIRED))
+        me = self.client.get("/admin/auth/me", headers=bearer(new_token)).json()
+        self.assertEqual(me, {"username": "owner.bd", "must_change_password": False, "recovery_mode": False})
+
+        # The bootstrap password no longer signs in; the new credentials do.
+        self.assertEqual(self.admin_login("admin", ADMIN_SECRET).status_code, 401)
+        self.assertEqual(self.admin_login("owner.bd", ADMIN_SECRET).status_code, 401)
+        self.assertEqual(self.admin_login("admin", self.NEW_PASSWORD).status_code, 401)
+        login = self.admin_login("OWNER.BD", self.NEW_PASSWORD)
+        self.assertEqual(login.status_code, 200)
+        self.assertFalse(login.json()["must_change_password"])
+        # ...and the API key keeps working for scripts.
+        self.assertEqual(self.admin("GET", "/admin/overview").status_code, 200)
+
+    def test_change_keeps_the_keep_me_signed_in_choice(self):
+        remembered = self.admin_session(remember=True)
+        before = datetime.now(timezone.utc)
+        self.assertAlmostEqual(
+            (datetime.fromisoformat(remembered["expires_at"]) - before).total_seconds(), 7 * 86400, delta=60,
+        )
+        body = self.change(remembered["token"], ADMIN_SECRET).json()
+        self.assertAlmostEqual(
+            (datetime.fromisoformat(body["expires_at"]) - before).total_seconds(), 7 * 86400, delta=60,
+        )
+        # Changing the username is optional: empty keeps it.
+        body = self.change(body["token"], self.NEW_PASSWORD, "Second pass 2026", username="").json()
+        self.assertEqual(body["username"], "admin")
+
+    def test_change_credentials_validation(self):
+        token = self.admin_session()["token"]
+        cases = [
+            ({"current": "not-it-123"}, 400, "Your current password is incorrect."),
+            ({"new": ADMIN_SECRET}, 400, "Your new password must be different from your current password."),
+            ({"new": "short1"}, 422, "Admin password must be at least 10 characters."),
+            ({"new": "onlyletters"}, 422, "Admin password must include at least one letter and one number."),
+            ({"new": "a1" * 65}, 422, "Admin password must be at most 128 characters."),
+            ({"username": "ab"}, 422, "Username must be at least 3 characters."),
+            ({"username": "x" * 33}, 422, "Username must be at most 32 characters."),
+            ({"username": "bad user!"}, 422,
+             "Username can only contain letters, numbers, dots, dashes and underscores."),
+        ]
+        for change, status, detail in cases:
+            with self.subTest(change=change):
+                response = self.change(
+                    token, change.get("current", ADMIN_SECRET), change.get("new", self.NEW_PASSWORD),
+                    change.get("username"),
+                )
+                self.assertEqual((response.status_code, response.json()["detail"]), (status, detail))
+        response = self.change(token, ADMIN_SECRET, extra_field=True)
+        self.assertEqual(response.status_code, 422)
+        # Nothing was saved by the failed attempts.
+        self.assertIsNone(storage.get_setting("admin_password_hash"))
+
+    def test_new_password_may_not_be_a_bootstrap_secret(self):
+        token = self.set_credentials()["token"]
+        response = self.change(token, self.NEW_PASSWORD, ADMIN_SECRET)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("ADMIN_SECRET", response.json()["detail"])
+
+    def test_new_password_may_not_be_admin_secret_when_admin_password_is_used(self):
+        with patch.dict(os.environ, {"ADMIN_PASSWORD": "bootstrap-pass-99"}):
+            token = self.admin_session(password="bootstrap-pass-99")["token"]
+            response = self.change(token, "bootstrap-pass-99", ADMIN_SECRET)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("ADMIN_SECRET", response.json()["detail"])
+
+    def test_wrong_current_passwords_are_limited(self):
+        token = self.admin_session()["token"]
+        limit, _window = admin_auth_router.CHANGE_FAILURES
+        for _ in range(limit):
+            self.assertEqual(self.change(token, "wrong-pass-1").status_code, 400)
+        response = self.change(token, ADMIN_SECRET)
+        self.assertEqual(response.status_code, 429)
+        self.assertRegex(response.json()["detail"], r"Try again in \d+ minutes")
+
+    def test_api_key_cannot_change_credentials(self):
+        response = self.admin("POST", "/admin/auth/change-credentials", json={
+            "current_password": ADMIN_SECRET, "new_password": self.NEW_PASSWORD,
+        })
+        self.assertEqual(response.status_code, 403)
+        me = self.admin("GET", "/admin/auth/me").json()
+        self.assertEqual(me, {"username": "admin", "must_change_password": True, "recovery_mode": False})
+        self.set_credentials()
+        self.assertFalse(self.admin("GET", "/admin/auth/me").json()["must_change_password"])
+
+    def test_recovery_mode_reopens_the_bootstrap_password(self):
+        self.set_credentials(username="owner")
+        with patch.dict(os.environ, {"ADMIN_RESET_PASSWORD": "true"}):
+            # The default username works too, in case the owner forgot theirs.
+            for username in ("admin", "owner"):
+                body = self.admin_login(username, ADMIN_SECRET).json()
+                self.assertEqual((body["username"], body["must_change_password"]), ("owner", True))
+            recovery_token = body["token"]
+            me = self.client.get("/admin/auth/me", headers=bearer(recovery_token)).json()
+            self.assertEqual(me, {"username": "owner", "must_change_password": True, "recovery_mode": True})
+            # The saved password still works and needs no change.
+            saved = self.admin_login("owner", self.NEW_PASSWORD).json()
+            self.assertFalse(saved["must_change_password"])
+
+            response = self.change(recovery_token, ADMIN_SECRET, "Recovered pass 2026")
+            self.assertEqual(response.status_code, 200, response.text)
+            new_token = response.json()["token"]
+            self.assertFalse(response.json()["must_change_password"])
+            for old in (recovery_token, saved["token"]):
+                self.assertEqual(self.client.get("/admin/auth/me", headers=bearer(old)).status_code, 401)
+            me = self.client.get("/admin/auth/me", headers=bearer(new_token)).json()
+            self.assertEqual(me, {"username": "owner", "must_change_password": False, "recovery_mode": True})
+
+        # Without the flag, only the new password signs in.
+        self.assertEqual(self.admin_login("owner", ADMIN_SECRET).status_code, 401)
+        self.assertEqual(self.admin_login("owner", "Recovered pass 2026").status_code, 200)
+        self.assertEqual(self.client.get("/admin/auth/me", headers=bearer(new_token)).status_code, 200)
+
+    def test_sign_in_is_limited_per_username_and_per_ip(self):
+        limit, _window = admin_auth_router.LOGIN_ATTEMPTS_PER_USERNAME
+        for attempt in range(limit):
+            self.assertEqual(self.admin_login("admin", "wrong-pass-1", ip=f"192.0.2.{attempt}").status_code, 401)
+            self.assertEqual(self.admin_login("ghost", "wrong-pass-1", ip=f"192.0.2.{attempt + 50}").status_code, 401)
+        locked = self.admin_login("admin", ADMIN_SECRET, ip="192.0.2.100")
+        unknown = self.admin_login("ghost", ADMIN_SECRET, ip="192.0.2.101")
+        self.assertEqual((locked.status_code, unknown.status_code), (429, 429))
+        # A lockout does not reveal whether the username exists.
+        self.assertEqual(locked.json(), unknown.json())
+        self.assertRegex(locked.json()["detail"], r"^Too many sign-in attempts\. Try again in \d+ minutes\.$")
+        self.assertIn("Retry-After", locked.headers)
+
+        ip_limit, _window = admin_auth_router.LOGIN_FAILURES_PER_IP
+        for index in range(ip_limit):
+            self.assertEqual(self.admin_login(f"user{index}", "wrong-pass-1", ip="192.0.2.150").status_code, 401)
+        self.assertEqual(self.admin_login("other", ADMIN_SECRET, ip="192.0.2.150").status_code, 429)
+        self.assertEqual(self.admin_login("other", "wrong-pass-1", ip="192.0.2.151").status_code, 401)
+
+    def test_successful_sign_ins_are_not_limited(self):
+        for _ in range(8):
+            self.admin_session(ip="192.0.2.160")
+
+    def test_sign_in_works_while_the_database_needs_its_upgrade(self):
+        self.set_credentials()
+        outdated = storage.SchemaOutdatedError("relation app_settings does not exist")
+        admin_account.forget_cached_state()
+        with patch.object(storage, "get_setting", side_effect=outdated), \
+                patch.object(storage, "set_settings", side_effect=outdated):
+            body = self.admin_session()
+            self.assertTrue(body["must_change_password"])
+            token = body["token"]
+            me = self.client.get("/admin/auth/me", headers=bearer(token))
+            self.assertEqual(me.status_code, 200)
+            self.assertTrue(me.json()["must_change_password"])
+            schema = self.client.get("/admin/schema", headers=bearer(token))
+            self.assertEqual(schema.status_code, 200)
+            self.assertIn("download_logs", schema.json()["migration_sql"])
+            response = self.change(token, ADMIN_SECRET)
+            self.assertEqual(response.status_code, 503)
+            self.assertIn("database upgrade", response.json()["detail"])
+
+    def test_a_damaged_stored_hash_falls_back_to_bootstrap(self):
+        storage.set_settings({"admin_username": "owner", "admin_password_hash": "scrypt$broken"})
+        body = self.admin_session(username="owner")
+        self.assertTrue(body["must_change_password"])
+
+    def test_sessions_survive_a_brief_database_outage(self):
+        token = self.set_credentials()["token"]
+        down = storage.StorageUnavailableError("Persistent storage is temporarily unavailable.")
+        with patch.object(storage, "get_setting", side_effect=down):
+            response = self.client.get("/admin/auth/me", headers=bearer(token))
+            self.assertEqual(response.status_code, 200)
+            # The bootstrap password does not reopen while the saved one is known.
+            self.assertEqual(self.admin_login("owner", ADMIN_SECRET).status_code, 401)
+
+    def test_admin_and_user_tokens_are_not_interchangeable(self):
+        user_id, user_token, _password = self.active_user()
+        admin_token = self.admin_session()["token"]
+        self.assertEqual(self.client.get("/auth/me", headers=bearer(admin_token)).status_code, 401)
+        response = self.client.get("/admin/overview", headers=bearer(user_token))
+        self.assertEqual((response.status_code, response.json()["detail"]), (401, ADMIN_EXPIRED))
+        pv = security.password_version(storage.get_user_by_id(user_id)["password_hash"])
+        for purpose in ("session", "reset", "download"):
+            forged = security.create_token("admin", pv, purpose, 600)
+            self.assertEqual(self.client.get("/admin/overview", headers=bearer(forged)).status_code, 401)
+        # An admin-purpose token for another subject or an old password version is refused.
+        other_subject = security.create_token(user_id, "", "admin", 600)
+        stale = security.create_token("admin", "boot-0000000000000000", "admin", 600)
+        for token in (other_subject, stale):
+            self.assertEqual(self.client.get("/admin/overview", headers=bearer(token)).status_code, 401)
+
+    def test_login_body_is_validated(self):
+        self.assertEqual(self.client.post("/admin/auth/login", json={}).status_code, 422)
+        cases = [
+            {"username": "admin", "password": "p" * 257},
+            {"username": "a" * 65, "password": ADMIN_SECRET},
+            {"username": "admin", "password": ADMIN_SECRET, "secret": "x"},
+        ]
+        for body in cases:
+            with self.subTest(body=str(body)[:40]):
+                response = self.client.post("/admin/auth/login", json=body)
+                self.assertEqual(response.status_code, 422)
+                self.assertIsInstance(response.json()["detail"], str)
+
+
+def base64_decode(text):
+    import base64
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+class AdminRouteAuditTests(ApiTestCase):
+    """Every /admin route requires an admin; nothing deletes on GET."""
+
+    def admin_routes(self):
+        from fastapi.routing import APIRoute
+        return [route for route in main.app.routes
+                if isinstance(route, APIRoute) and route.path.startswith("/admin")]
+
+    @staticmethod
+    def calls(dependant):
+        for sub in dependant.dependencies:
+            yield sub.call
+            yield from AdminRouteAuditTests.calls(sub)
+
+    def test_every_admin_route_depends_on_require_admin(self):
+        routes = self.admin_routes()
+        self.assertGreater(len(routes), 20)
+        for route in routes:
+            with self.subTest(path=route.path, methods=route.methods):
+                guarded = admin_account.require_admin in set(self.calls(route.dependant))
+                self.assertEqual(guarded, route.path != "/admin/auth/login")
+
+    def test_every_admin_route_refuses_anonymous_requests(self):
+        for route in self.admin_routes():
+            if route.path == "/admin/auth/login":
+                continue
+            path = route.path.replace("{user_id}", "1").replace("{log_id}", "1")
+            for method in route.methods:
+                with self.subTest(method=method, path=path):
+                    kwargs = {"json": {}} if method in {"POST", "PUT", "PATCH"} else {}
+                    response = self.client.request(method, path, **kwargs)
+                    self.assertEqual(response.status_code, 401, response.text)
+                    self.assertEqual(response.json()["detail"], ADMIN_EXPIRED)
+                    user_token = security.create_token("1", "", "session", 600)
+                    response = self.client.request(method, path, headers=bearer(user_token), **kwargs)
+                    self.assertEqual(response.status_code, 401)
+
+    def test_no_get_route_deletes(self):
+        for route in self.admin_routes():
+            if "GET" in route.methods:
+                with self.subTest(path=route.path):
+                    self.assertFalse(any(word in route.path for word in ("delete", "purge", "reset", "bulk")))
+        deleting = sorted(route.path for route in self.admin_routes() if "DELETE" in route.methods)
+        self.assertEqual(deleting, ["/admin/logs/{log_id}", "/admin/users/{user_id}"])
+
+
+class HttpHardeningTests(ApiTestCase):
+    def test_security_headers_on_every_response(self):
+        _user_id, token, _password = self.active_user()
+        responses = [
+            self.client.get("/"),
+            self.client.get("/auth/me", headers=bearer(token)),
+            self.client.get("/auth/me"),
+            self.admin("GET", "/admin/settings"),
+            self.client.post("/auth/login", json={}),
+        ]
+        for response in responses:
+            with self.subTest(status=response.status_code, url=str(response.url)):
+                self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+                self.assertEqual(response.headers["x-frame-options"], "DENY")
+                self.assertEqual(response.headers["referrer-policy"], "no-referrer")
+                self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_sse_keeps_its_own_cache_header(self):
+        events = self.client.get("/download/progress")
+        self.assertEqual(events.headers["cache-control"], "no-cache, no-transform")
+        self.assertEqual(events.headers["x-content-type-options"], "nosniff")
+
+    def test_cors_allows_only_the_frontend_without_credentials(self):
+        allowed = "http://localhost:3000"
+        preflight = self.client.options("/auth/login", headers={
+            "Origin": allowed,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization, content-type",
+        })
+        self.assertEqual(preflight.status_code, 200)
+        self.assertEqual(preflight.headers["access-control-allow-origin"], allowed)
+        self.assertNotIn("access-control-allow-credentials", preflight.headers)
+        methods = {m.strip() for m in preflight.headers["access-control-allow-methods"].split(",")}
+        self.assertEqual(methods, {"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"})
+
+        evil = self.client.options("/auth/login", headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+        })
+        self.assertEqual(evil.status_code, 400)
+        self.assertNotIn("access-control-allow-origin", evil.headers)
+        odd_header = self.client.options("/auth/login", headers={
+            "Origin": allowed,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-something-else",
+        })
+        self.assertEqual(odd_header.status_code, 400)
+        simple = self.client.get("/", headers={"Origin": "https://evil.example"})
+        self.assertNotIn("access-control-allow-origin", simple.headers)
+
+    def test_allowed_origins_come_from_frontend_url(self):
+        with patch.dict(os.environ, {"FRONTEND_URL": "https://unistream.example/, app.example.org"}):
+            self.assertEqual(
+                main._allowed_origins(),
+                ["http://localhost:3000", "https://unistream.example", "https://app.example.org"],
+            )
+
+    def test_unexpected_errors_are_generic_500s(self):
+        _user_id, token, _password = self.active_user()
+        boom = RuntimeError("relation users has password=hunter2 at /srv/secret.py line 3")
+        with patch.object(storage, "get_user_by_id", side_effect=boom), \
+                self.assertLogs("main", level="ERROR") as logs:
+            response = TestClient(main.app, raise_server_exceptions=False).get("/auth/me", headers=bearer(token))
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"detail": main.INTERNAL_ERROR_MESSAGE})
+        self.assertNotIn("hunter2", response.text)
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertIn("hunter2", "".join(logs.output))  # the details stay in the server log
+
+    def test_oversized_bodies_are_refused(self):
+        response = self.client.post(
+            "/auth/login", content=b'{"login": "' + b"a" * (2 * 1024 * 1024) + b'"}',
+            headers={"content-type": "application/json"},
+        )
+        self.assertEqual((response.status_code, response.json()["detail"]), (413, "This request is too large."))
+
+        def chunks():
+            yield b'{"login": "'
+            for _ in range(40):
+                yield b"a" * 65536
+            yield b'"}'
+
+        response = self.client.post("/auth/login", content=chunks(), headers={"content-type": "application/json"})
+        self.assertEqual(response.status_code, 413)
+
+
+class InputLimitTests(ApiTestCase):
+    def test_registration_fields_have_maximum_lengths(self):
+        cases = [
+            ({"name": "A" * 81}, "Name must be at most 80 characters."),
+            ({"email": "a" * 64 + "@" + "b" * 190 + ".com"}, "Email is too long."),
+            ({"phone": "+880 1712 345 678 999"}, "Phone number must be at most 20 characters."),
+            ({"note": "n" * 121}, "Institution / department must be at most 120 characters."),
+            ({"agree": True}, "Unexpected field: Agree."),
+        ]
+        for change, message in cases:
+            with self.subTest(change=str(change)[:30]):
+                body = {"name": "Rahim Uddin", "email": "rahim@example.com", "phone": "01712345678", **change}
+                response = self.client.post("/auth/register", json=body)
+                self.assertEqual((response.status_code, response.json()["detail"]), (422, message))
+
+    def test_sign_in_and_password_fields_have_maximum_lengths(self):
+        response = self.client.post("/auth/login", json={"login": "a" * 250 + "@x.com", "password": "Password1"})
+        self.assertEqual((response.status_code, response.json()["detail"]),
+                         (422, "Email or phone must be at most 254 characters."))
+        response = self.client.post("/auth/login", json={"login": "a@example.com", "password": "p1" * 65})
+        self.assertEqual((response.status_code, response.json()["detail"]),
+                         (422, "Password must be at most 128 characters."))
+        response = self.client.post("/auth/reset-password", json={"token": "t" * 2049, "password": "Fresh pass 99"})
+        self.assertEqual(response.status_code, 422)
+        response = self.client.post("/auth/forgot-password", json={"email": "a@example.com", "extra": 1})
+        self.assertEqual(response.status_code, 422)
+
+        _user_id, token, password = self.active_user()
+        response = self.client.post("/auth/change-password", headers=bearer(token),
+                                    json={"current_password": password, "new_password": "Ab1" * 43})
+        self.assertEqual((response.status_code, response.json()["detail"]),
+                         (422, "Password must be at most 128 characters."))
+        response = self.client.post("/video-info", headers=bearer(token),
+                                    json={"url": "https://youtu.be/" + "a" * 2040})
+        self.assertEqual(response.status_code, 422)
+        response = self.client.post("/video-info", headers=bearer(token),
+                                    json={"url": FACEBOOK_URL, "identifier": "rahim@example.com"})
+        self.assertEqual(response.status_code, 422)
+
+    def test_admin_fields_have_maximum_lengths(self):
+        user = self.admin("POST", "/admin/users", json={
+            "name": "Karim Ahmed", "email": "karim@example.com", "phone": "01612345678", "send_credentials": False,
+        }).json()["user"]
+        response = self.admin("PATCH", f"/admin/users/{user['id']}", json={"note": "n" * 301})
+        self.assertEqual((response.status_code, response.json()["detail"]),
+                         (422, "Note must be at most 300 characters."))
+        self.assertEqual(self.admin("PATCH", f"/admin/users/{user['id']}", json={"note": "n" * 300}).status_code, 200)
+        self.assertEqual(self.admin("PATCH", f"/admin/users/{user['id']}", json={"status": "approved"}).status_code, 422)
+        long_id = "1" * 65
+        self.assertEqual(self.admin("PATCH", f"/admin/users/{long_id}", json={"name": "X Y"}).status_code, 422)
+        self.assertEqual(self.admin("DELETE", f"/admin/users/{long_id}").status_code, 422)
+        self.assertEqual(self.admin("DELETE", f"/admin/logs/{long_id}").status_code, 422)
+        response = self.admin("POST", "/admin/users/bulk", json={"ids": [long_id], "action": "block"})
+        self.assertEqual((response.status_code, response.json()["detail"]), (422, "User ID is not valid."))
+        response = self.admin("POST", "/admin/logs/delete", json={"ids": [long_id]})
+        self.assertEqual((response.status_code, response.json()["detail"]), (422, "Log ID is not valid."))
+        response = self.admin("POST", "/admin/logs/purge", json={"all": True, "confirm": "DELETE"})
+        self.assertEqual(response.status_code, 422)
+
+    def test_youtube_check_only_probes_youtube(self):
+        for url in ("http://127.0.0.1:8000/admin", "https://evil.example/watch?v=1", "https://youtube.com@evil.example/"):
+            with self.subTest(url=url):
+                response = self.admin("GET", "/admin/youtube-check", params={"url": url})
+                self.assertEqual((response.status_code, response.json()["detail"]),
+                                 (400, "Enter a YouTube video link to check."))
+
+
+class AuthRateLimitTests(ApiTestCase):
+    def test_reset_attempts_are_limited_per_ip(self):
+        limit, _window = auth_router.RESET_PER_IP
+        headers = {"x-forwarded-for": "192.0.2.90"}
+        for _ in range(limit):
+            response = self.client.post("/auth/reset-password", headers=headers,
+                                        json={"token": "nonsense", "password": "Fresh pass 99"})
+            self.assertEqual(response.status_code, 400)
+        response = self.client.post("/auth/reset-password", headers=headers,
+                                    json={"token": "nonsense", "password": "Fresh pass 99"})
+        self.assertEqual(response.status_code, 429)
+
+    def test_change_password_is_limited_per_user(self):
+        _user_id, token, password = self.active_user()
+        limit, _window = auth_router.CHANGE_PASSWORD_PER_USER
+        for _ in range(limit):
+            response = self.client.post("/auth/change-password", headers=bearer(token),
+                                        json={"current_password": "wrong-pass-1", "new_password": "Another pass 7"})
+            self.assertEqual(response.status_code, 400)
+        response = self.client.post("/auth/change-password", headers=bearer(token),
+                                    json={"current_password": password, "new_password": "Another pass 7"})
+        self.assertEqual(response.status_code, 429)
+        self.assertRegex(response.json()["detail"], r"Try again in \d+ minutes")
+
+    def test_sign_in_lockouts_do_not_reveal_accounts(self):
+        self.active_user()
+        limit, _window = auth_router.LOGIN_ATTEMPTS_PER_LOGIN
+        for index in range(limit):
+            self.login("rahim@example.com", "wrong-pass-1", ip=f"192.0.2.{index}")
+            self.login("nobody@example.com", "wrong-pass-1", ip=f"192.0.2.{index + 100}")
+        existing = self.login("rahim@example.com", "wrong-pass-1", ip="192.0.2.250")
+        unknown = self.login("nobody@example.com", "wrong-pass-1", ip="192.0.2.251")
+        self.assertEqual((existing.status_code, unknown.status_code), (429, 429))
+        self.assertEqual(existing.json(), unknown.json())
+
+    def test_auth_endpoints_share_a_per_ip_cap(self):
+        with patch.object(dependencies, "AUTH_REQUESTS_PER_IP", (3, 900)):
+            headers = {"x-forwarded-for": "192.0.2.180"}
+            for _ in range(2):
+                self.client.post("/auth/forgot-password", json={"email": "a@example.com"}, headers=headers)
+            self.client.post("/admin/auth/login", json={"username": "x", "password": "y"}, headers=headers)
+            response = self.client.post("/auth/login", json={"login": "a@example.com", "password": "Password1"},
+                                        headers=headers)
+            self.assertEqual(response.status_code, 429)
+            self.assertIn("from your network", response.json()["detail"])
+            # Reading the session is not capped, and other networks are unaffected.
+            self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 401)
+            other = self.client.post("/auth/forgot-password", json={"email": "a@example.com"},
+                                     headers={"x-forwarded-for": "192.0.2.181"})
+            self.assertEqual(other.status_code, 200)
 
 if __name__ == "__main__":
     unittest.main()

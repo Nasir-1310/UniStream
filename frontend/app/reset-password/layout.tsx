@@ -4,8 +4,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Reset password',
-  description: 'Choose a new password for your UniStream Saver account.',
+  title: 'Set a new password',
+  description: 'Choose a new password for your UniStream Saver account and sign in.',
   referrer: 'no-referrer',
   robots: { index: false, follow: false },
 }

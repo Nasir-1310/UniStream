@@ -1,7 +1,7 @@
 {
   "name": "UniStream Saver",
   "short_name": "UniStream",
-  "description": "University Students Video Downloader",
+  "description": "Save YouTube, Facebook and Instagram videos in up to 1080p HD. Free for approved students.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f1117",

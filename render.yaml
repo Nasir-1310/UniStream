@@ -13,11 +13,27 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
-      # Password for the /admin panel. Use a long random value.
+      # SECRET. A long random value (32+ characters). First admin sign-in:
+      # username "admin" + this value, after which the dashboard asks you to
+      # choose your own username and password. It also stays valid as an API
+      # key for scripts (x-admin-secret header).
       - key: ADMIN_SECRET
         sync: false
-      # Signs user sessions and password-reset links. Render generates a
-      # random value once; changing it signs every user out.
+      # Optional: the admin username used before you choose your own (default "admin").
+      - key: ADMIN_USERNAME
+        sync: false
+      # Optional SECRET: a first-sign-in password other than ADMIN_SECRET.
+      # Remove it once you have chosen your own admin password.
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Recovery only: set to "true" if you forget the admin password, sign in
+      # with ADMIN_SECRET (or ADMIN_PASSWORD), choose a new password, then
+      # delete this variable again.
+      - key: ADMIN_RESET_PASSWORD
+        sync: false
+      # SECRET. Signs user sessions, password-reset links, admin sessions and
+      # download tickets. Render generates a random value once; changing it
+      # signs everyone out.
       - key: AUTH_SECRET
         generateValue: true
       # Public URL of the Next.js site (used in emails and for CORS). Several

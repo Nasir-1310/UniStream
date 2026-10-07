@@ -401,6 +401,18 @@ class StorageContract:
         storage.set_setting("default_daily_limit", 8)
         self.assertEqual(storage.get_setting("default_daily_limit"), "8")
 
+    def test_set_settings_saves_several_values_together(self):
+        storage.set_settings({"test_pair_a": "one", "test_pair_b": "two"})
+        self.assertEqual(storage.get_setting("test_pair_a"), "one")
+        self.assertEqual(storage.get_setting("test_pair_b"), "two")
+        storage.set_settings({"test_pair_a": "three", "test_pair_b": 4})
+        self.assertEqual(
+            (storage.get_setting("test_pair_a"), storage.get_setting("test_pair_b")),
+            ("three", "4"),
+        )
+        storage.set_settings({})
+        self.assertEqual(storage.get_setting("default_daily_limit"), "4")
+
     def test_schema_is_ready(self):
         status = storage.schema_status(refresh=True)
         self.assertEqual((status["ready"], status["missing"]), (True, []))

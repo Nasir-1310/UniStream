@@ -1,22 +1,22 @@
 'use client'
 // components/download/VideoSummary.tsx
 //
-// The analysed video: thumbnail, title, channel and the details yt-dlp found.
+// The video behind the link: thumbnail, title, channel and its details.
 // A compact side-by-side card on phones (so the formats stay near the top),
 // a full sidebar from the `lg` breakpoint.
 
 import { useState, type ReactNode } from 'react'
-import { Calendar, Clock, ExternalLink, Eye, Film, Hash, Layers, RefreshCw, ThumbsUp, UserRound } from 'lucide-react'
+import { Calendar, Clock, ExternalLink, Eye, Film, Layers, RefreshCw, ThumbsUp, UserRound } from 'lucide-react'
 import { PlatformBadge } from '@/components/ui'
 import type { VideoInfo } from '@/lib/api'
-import { formatCompact, formatDuration, pluralize } from '@/lib/format'
+import { formatCompact, formatDuration, formatNumber } from '@/lib/format'
 import { PLATFORM_LABELS, type Platform } from '@/lib/validation'
 
 export interface VideoSummaryProps {
   info: VideoInfo
-  /** Platform detected from the analysed link. */
+  /** Platform detected from the link. */
   platform: Platform | null
-  /** The analysed link (opened by "View original"). */
+  /** The video's link (opened by "View original"). */
   url: string
   onReset: () => void
   /** True while a download runs (starting over would cancel it). */
@@ -111,7 +111,7 @@ export function VideoSummary({ info, platform, url, onReset, resetDisabled }: Vi
       {/* Full details only where there is room for them. */}
       <div className="hidden lg:block surface-card overflow-hidden">
         <p className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 border-b border-white/[0.05]">
-          Details
+          Video details
         </p>
         <dl className="divide-y divide-white/[0.05]">
           {duration && (
@@ -134,13 +134,8 @@ export function VideoSummary({ info, platform, url, onReset, resetDisabled }: Vi
               {uploaded}
             </MetaRow>
           )}
-          {info.id && (
-            <MetaRow icon={<Hash className="w-3.5 h-3.5" />} label="Video ID">
-              <span className="font-mono font-normal text-slate-400">{info.id}</span>
-            </MetaRow>
-          )}
-          <MetaRow icon={<Layers className="w-3.5 h-3.5" />} label="Formats">
-            {pluralize(info.formats.length, 'option')}
+          <MetaRow icon={<Layers className="w-3.5 h-3.5" />} label="Download options">
+            {formatNumber(info.formats.length)}
           </MetaRow>
         </dl>
       </div>
@@ -154,7 +149,7 @@ export function VideoSummary({ info, platform, url, onReset, resetDisabled }: Vi
           className="btn-secondary btn-sm flex-1"
         >
           <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          Analyze another
+          Try another link
         </button>
         <a
           href={url}

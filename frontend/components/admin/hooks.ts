@@ -2,8 +2,19 @@
 // components/admin/hooks.ts
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { apiErrorMessage } from '@/lib/api'
-import { useAdmin } from './AdminContext'
+import { apiErrorMessage, apiErrorStatus } from '@/lib/api'
+import { getAdminToken, useAdminSession } from '@/lib/adminAuth'
+
+/**
+ * True when `err` is a 401 that ended the admin session. lib/api has already
+ * cleared it and AdminApp is swapping to the sign-in screen, so callers skip
+ * their own error message. A 401 for a token that was replaced meanwhile
+ * (e.g. right after changing the password) does not end the session and is
+ * reported like any other error.
+ */
+export function isAdminSessionEnded(err: unknown): boolean {
+  return apiErrorStatus(err) === 401 && getAdminToken() === null
+}
 
 interface QueryState<T> {
   /** Request the stored result answers; differs from the current one while loading. */
@@ -30,33 +41,23 @@ export interface AdminQuery<T> {
 
 /**
  * Fetch admin data for `key`; refetches whenever the key changes (put every
- * filter and relevant revision counter in it). A 401 signs the admin out.
- * Responses for an older key are ignored, so fast filter changes can't show
- * results for the wrong filter.
+ * filter and relevant revision counter in it). Responses for an older key are
+ * ignored, so fast filter changes can't show results for the wrong filter.
+ *
+ * lib/api adds the admin token to the request. The token is part of the
+ * request key, so new credentials refetch everything under the new session,
+ * and nothing is fetched while signed out. Works outside the dashboard shell
+ * too (the first-sign-in setup screen).
  */
 export function useAdminQuery<T>(
   key: string,
-  fetcher: (secret: string) => Promise<T>,
+  fetcher: () => Promise<T>,
   options: { enabled?: boolean } = {},
 ): AdminQuery<T> {
-  const { secret, handleAuthError } = useAdmin()
-  return useSecretQuery(secret, handleAuthError, key, fetcher, options)
-}
-
-/**
- * useAdminQuery for the shell itself, which provides the context and so
- * can't read it: takes the secret and the 401 handler explicitly.
- */
-export function useSecretQuery<T>(
-  secret: string,
-  handleAuthError: (err: unknown) => boolean,
-  key: string,
-  fetcher: (secret: string) => Promise<T>,
-  options: { enabled?: boolean } = {},
-): AdminQuery<T> {
-  const enabled = options.enabled ?? true
+  const token = useAdminSession().session?.token ?? null
+  const enabled = (options.enabled ?? true) && token !== null
   const [reloads, setReloads] = useState(0)
-  const requestKey = enabled ? `${key}#${reloads}` : null
+  const requestKey = enabled ? `${key}#${reloads}#${token}` : null
   const [state, setState] = useState<QueryState<T>>({ requestKey: null, data: undefined, error: null, updatedAt: 0 })
 
   // The latest fetcher without making it an effect dependency (callers pass inline closures).
@@ -68,19 +69,19 @@ export function useSecretQuery<T>(
   useEffect(() => {
     if (requestKey === null) return
     let active = true
-    fetcherRef.current(secret).then(
+    fetcherRef.current().then(
       data => {
         if (active) setState({ requestKey, data, error: null, updatedAt: Date.now() })
       },
       (err: unknown) => {
-        if (!active || handleAuthError(err)) return
+        if (!active || isAdminSessionEnded(err)) return
         setState(prev => ({ ...prev, requestKey, error: apiErrorMessage(err) }))
       },
     )
     return () => {
       active = false
     }
-  }, [requestKey, secret, handleAuthError])
+  }, [requestKey])
 
   const reload = useCallback(() => setReloads(n => n + 1), [])
   const mutate = useCallback((update: (data: T) => T) => {

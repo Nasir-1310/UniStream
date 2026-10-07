@@ -135,10 +135,17 @@ def _mask(address: str) -> str:
 
 
 def _clean_recipient(to) -> str:
-    address = str(to or "").strip()
-    if len(address) > 254 or not _ADDRESS_RE.fullmatch(address):
+    """The recipient, validated with the same rules as sign-up emails.
+
+    One plain address only: no display name, no list, no CR/LF, so a value
+    can never add headers or extra recipients.
+    """
+    if not isinstance(to, str) or any(ch in to for ch in "\r\n,;<>\"'"):
         raise EmailError("The recipient email address is not valid.")
-    return address
+    try:
+        return security.validate_email(to)
+    except ValueError:
+        raise EmailError("The recipient email address is not valid.") from None
 
 
 def send_email(to: str, subject: str, html: str, text: str) -> None:
@@ -147,7 +154,7 @@ def send_email(to: str, subject: str, html: str, text: str) -> None:
     if provider is None or issue:
         raise EmailError(f"Email is not configured: {issue}")
     recipient = _clean_recipient(to)
-    subject = " ".join(str(subject).split())  # no CR/LF: header injection
+    subject = " ".join(str(subject).split())[:200]  # no CR/LF: header injection
     from_email, from_name = _sender()
     send = {"brevo": _send_brevo, "resend": _send_resend, "smtp": _send_smtp}[provider]
     try:

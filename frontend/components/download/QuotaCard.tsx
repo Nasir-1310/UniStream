@@ -57,15 +57,15 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
     )
     detail = `${pluralize(usage.used, 'download')} today.`
   } else if (limit === 0) {
-    headline = 'Downloads are paused'
-    detail = 'Your account can analyze links but not download right now. Contact the administrator if this is a mistake.'
+    headline = 'Downloads are turned off'
+    detail = 'Downloads are turned off for your account right now. Contact the administrator if this is a mistake.'
   } else if (remaining === 0) {
     headline = 'Daily limit reached'
     detail = (
       <>
         You&apos;ve used {limit === 1 ? 'today’s download' : `all ${formatNumber(limit)} of today’s downloads`}. More
         unlock at {resetText}
-        {resetsIn ? ` (in ${resetsIn})` : ''}. You can still analyze links.
+        {resetsIn ? ` (in ${resetsIn})` : ''}.
       </>
     )
   } else {

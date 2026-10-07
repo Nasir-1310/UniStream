@@ -36,6 +36,7 @@ import {
   MonitorSmartphone,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   UserPlus,
   Youtube,
   type LucideIcon,
@@ -136,24 +137,25 @@ export default function HomePage() {
             <div className="lg:col-start-1 lg:row-start-1 lg:self-end">
               <p className="eyebrow-badge mb-4 sm:mb-6">
                 <GraduationCap className="w-3.5 h-3.5" aria-hidden="true" />
-                Free for students · Early access
+                Free for approved students
               </p>
               <h1
                 id="hero-title"
                 className="text-[1.875rem] leading-[1.1] sm:text-5xl lg:text-[3.4rem] font-extrabold text-white max-w-2xl"
                 style={{ letterSpacing: '-0.025em' }}
               >
-                Save study videos.{' '}
+                Save YouTube, Facebook and Instagram videos{' '}
                 <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-violet-400 bg-clip-text text-transparent">
-                  Watch them anywhere, even offline.
+                  in up to 1080p HD.
                 </span>
               </h1>
               <p className="mt-3 sm:mt-5 text-[15px] sm:text-base leading-relaxed text-slate-400 max-w-xl">
-                Download lectures, tutorials and clips from YouTube, Facebook and Instagram in the quality you choose.
-                <span className="hidden sm:inline">
-                  {' '}
-                  HD for your laptop, small files for your phone&apos;s data plan, or audio only.
-                </span>
+                Simple and fast: paste a link, choose a quality and download. Free for approved students, with 4
+                downloads a day.
+              </p>
+              <p className="mt-3 inline-flex items-start gap-2 text-[13px] sm:text-sm leading-relaxed text-violet-200/90">
+                <Sparkles className="w-4 h-4 mt-px flex-shrink-0 text-violet-300" aria-hidden="true" />
+                <span>Premium with unlimited downloads is coming soon.</span>
               </p>
             </div>
 
@@ -175,7 +177,7 @@ export default function HomePage() {
               <ul className="grid gap-2.5 sm:grid-cols-2 max-w-xl text-[14px] text-slate-300">
                 {[
                   '4 free downloads a day',
-                  'HD, data-saver or audio-only',
+                  'Up to 1080p HD, or audio only (MP3)',
                   'Works in your phone’s browser',
                   'No ads, no app to install',
                 ].map(item => (
@@ -370,7 +372,7 @@ function SignedInPanel({ user, redirecting }: { user: PublicUser; redirecting: b
           Download videos
         </Link>
         <Link href="/account" className="btn-secondary">
-          Your account
+          Account
         </Link>
       </div>
     </div>
@@ -671,7 +673,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
     <form onSubmit={onSubmit} noValidate className="relative" aria-describedby="request-intro">
       <h2 className="text-lg sm:text-xl font-bold text-white">Request access</h2>
       <p id="request-intro" className="mt-1 mb-5 text-[13px] sm:text-sm text-slate-400">
-        Free for students. An admin reviews every request, then we email you a password.
+        Free for students. Once an admin approves you, we email you a password.
       </p>
 
       {formError && (
@@ -773,7 +775,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            maxLength={24}
+            maxLength={20}
             placeholder="01XXXXXXXXX"
             value={phone}
             onChange={e => {
@@ -838,11 +840,11 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
             </span>
             <span>
               I agree to the{' '}
-              <Link href="/terms" target="_blank" rel="noopener" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
+              <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 Terms of Use
               </Link>{' '}
               and{' '}
-              <Link href="/privacy" target="_blank" rel="noopener" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 Privacy Policy
               </Link>
               , and will only download videos for personal or educational use.
@@ -892,7 +894,7 @@ function RequestSuccessPanel({
   const steps: { title: string; body: ReactNode }[] = [
     {
       title: 'An admin reviews your request',
-      body: 'Every request is checked by hand to keep the service fair for everyone.',
+      body: 'Every request is checked by hand, so how long it takes depends on the admin.',
     },
     {
       title: 'You get an email with your password',
@@ -984,7 +986,7 @@ const PLATFORM_CARDS: { name: string; Icon: LucideIcon; tone: string; ring: stri
     tone: 'text-red-400',
     ring: 'bg-red-500/10 border-red-500/20',
     what: 'Lectures, tutorials, Shorts',
-    detail: 'Pick any resolution the video offers, from data-saving 360p to full HD and beyond, or save just the audio.',
+    detail: 'Choose anything from data-saving 360p up to 1080p Full HD, or save just the audio as an MP3.',
   },
   {
     name: 'Facebook',
@@ -1012,7 +1014,7 @@ function PlatformsSection() {
           id="platforms-title"
           eyebrow="Supported platforms"
           title="Download from the platforms you already use"
-          intro="Paste a link from any of these and choose the format that suits your device and data plan."
+          intro="Paste a link from any of these and choose the quality that suits your device and data plan."
         />
         <ul className="grid gap-4 md:grid-cols-3">
           {PLATFORM_CARDS.map(({ name, Icon, tone, ring, what, detail }) => (
@@ -1031,7 +1033,7 @@ function PlatformsSection() {
           ))}
         </ul>
         <p className="mt-5 text-[13px] text-slate-500">
-          Private, members-only and age-restricted videos can&apos;t be downloaded. Other sites aren&apos;t supported yet.
+          Private, members-only and age-restricted videos may not work. Other sites aren&apos;t supported yet.
         </p>
       </div>
     </section>
@@ -1048,12 +1050,12 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
     {
       Icon: MailCheck,
       title: 'Get your password by email',
-      body: 'Once an admin approves you, a temporary password arrives in your inbox. Change it any time.',
+      body: 'When an admin approves you, we email you a temporary password. Not in your inbox? Check your spam folder.',
     },
     {
       Icon: ClipboardPaste,
       title: 'Paste a link and download',
-      body: 'Choose the quality and save the file to your device. Your daily count resets at midnight.',
+      body: 'Choose a quality and save it to your device. You get 4 downloads a day, reset at midnight Bangladesh time.',
     },
   ]
   return (
@@ -1096,19 +1098,19 @@ function FeaturesSection() {
     {
       Icon: SlidersHorizontal,
       title: 'Choose your quality',
-      body: 'Full HD for a laptop, a small file to save mobile data, or audio only for lectures you just want to listen to.',
+      body: 'Up to 1080p Full HD for a laptop, a small file to save mobile data, or audio only (MP3) for lectures you just want to hear.',
       tone: 'text-sky-300 bg-sky-500/10 border-sky-500/20',
     },
     {
       Icon: Gauge,
       title: 'A fair daily allowance',
-      body: 'Every member gets 4 downloads a day by default. Only finished downloads count; checking a link is free.',
+      body: 'Approved students get 4 downloads a day. Only finished downloads count, and premium with unlimited downloads is coming soon.',
       tone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20',
     },
     {
       Icon: ShieldCheck,
       title: 'Private by design',
-      body: 'We keep only what the service needs. Passwords are stored encrypted (hashed), and no one, not even the admin, can read them.',
+      body: 'We keep only what the service needs. Passwords are stored as secure hashes, so no one, not even the admin, can read them.',
       tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20',
     },
     {
@@ -1155,19 +1157,19 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'Who can use UniStream Saver?',
       a: (
         <>
-          We&apos;re starting with university students. {inlineButton('Request access', 'request')} with your name, email
-          and mobile number. An admin approves each request so the service stays fast and fair for everyone.
+          We&apos;re opening to students first. {inlineButton('Request access', 'request')} with your name, email and
+          mobile number, and an admin approves each request so the service stays fast and fair for everyone.
         </>
       ),
     },
     {
       id: 'faq-approval',
-      q: 'How does approval work?',
+      q: 'How long does approval take?',
       a: (
         <>
-          After you request access, your account shows as waiting for approval. Requests are reviewed by hand. When
-          yours is approved, you&apos;ll get an email with a temporary password. If you try to sign in before then,
-          you&apos;ll see a message saying your account is still waiting.
+          The admin reviews every request by hand, so it depends on when they get to yours. You don&apos;t need to send
+          another request: when you&apos;re approved, we email you a temporary password. Until then, signing in shows
+          that your account is waiting for approval.
         </>
       ),
     },
@@ -1176,14 +1178,15 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'I was approved. Where is my password?',
       a: (
         <>
-          It&apos;s in the email we sent to the address you registered with. Check your Spam or Promotions folder too.
-          Sign in with your email or mobile number and that password, then set your own password from your{' '}
+          It&apos;s in the email we sent to the address you registered with. If it isn&apos;t in your inbox, check your
+          spam or promotions folder. Sign in with your email or mobile number and that password, then set your own
+          password on the{' '}
           <Link href="/account" className={linkClass}>
             Account
           </Link>{' '}
-          page. Can&apos;t find the email? Use{' '}
+          page. Still can&apos;t find it? Use{' '}
           <Link href="/forgot-password" className={linkClass}>
-            Forgot password
+            Forgot password?
           </Link>{' '}
           to get a new link.
         </>
@@ -1194,10 +1197,21 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'How many videos can I download?',
       a: (
         <>
-          Each account can download <strong className="text-slate-200">4 videos a day</strong> by default. The count
-          resets at midnight Bangladesh time. Only completed downloads count: checking a link or a failed download
-          doesn&apos;t use your allowance. The admin can set a different limit for individual accounts, and you can always
-          see what&apos;s left at the top of the page.
+          Each account can download <strong className="text-slate-200">4 videos a day</strong>. The count resets at
+          midnight Bangladesh time. Only finished downloads count: looking up a link, cancelling or a failed download
+          doesn&apos;t use one. You can always see how many downloads you have left today at the top of the page.
+        </>
+      ),
+    },
+    {
+      id: 'faq-quality',
+      q: 'Which sites and qualities are supported?',
+      a: (
+        <>
+          YouTube, Facebook and Instagram. On YouTube you can choose any quality up to{' '}
+          <strong className="text-slate-200">1080p Full HD</strong>, or save just the audio as an MP3. Facebook and
+          Instagram offer the qualities the post itself has. Private, members-only and age-restricted videos may not
+          work.
         </>
       ),
     },
@@ -1207,18 +1221,8 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       a: (
         <>
           Tap <strong className="text-slate-200">Forgot password?</strong> on the sign-in form and enter your email.
-          We&apos;ll send a reset link that works for 60 minutes. Once you set a new password you&apos;re signed in
-          straight away. You can also change your password at any time from your Account page.
-        </>
-      ),
-    },
-    {
-      id: 'faq-sites',
-      q: 'Which sites and videos are supported?',
-      a: (
-        <>
-          YouTube, Facebook and Instagram. The video must be publicly viewable: private, members-only and
-          age-restricted videos can&apos;t be downloaded. You can save the video in several qualities or just the audio.
+          We&apos;ll send a reset link that works for 60 minutes (check your spam folder if you don&apos;t see it). Once
+          you set a new password you&apos;re signed in straight away.
         </>
       ),
     },
@@ -1227,9 +1231,8 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'Is it free? Will there be a paid plan?',
       a: (
         <>
-          Yes, it&apos;s free with the daily allowance. If UniStream Saver grows, we plan to offer an optional premium
-          plan with unlimited downloads. Nothing will ever be charged without your clear agreement, and we&apos;ll
-          announce any plan here first.
+          Yes, it&apos;s free for approved students, with 4 downloads a day. A premium plan with unlimited downloads is
+          coming soon. It will be optional, and nothing will ever be charged without your clear agreement.
         </>
       ),
     },
@@ -1238,8 +1241,8 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'What am I allowed to download?',
       a: (
         <>
-          Videos for your own study and offline viewing. Please respect copyright and each platform&apos;s rules:
-          don&apos;t re-upload, share or sell other people&apos;s videos. Read the{' '}
+          Videos for your own personal or educational use, such as offline study. Please respect copyright and each
+          platform&apos;s rules: don&apos;t re-upload, share or sell other people&apos;s videos. Read the{' '}
           <Link href="/terms" className={linkClass}>
             Terms of Use
           </Link>{' '}
@@ -1308,7 +1311,7 @@ function CtaSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
             </button>
             <button type="button" onClick={() => onOpenAuth('signin')} className="btn-secondary">
               <LogIn className="w-4 h-4" aria-hidden="true" />
-              I already have an account
+              Sign in
             </button>
           </div>
         </div>

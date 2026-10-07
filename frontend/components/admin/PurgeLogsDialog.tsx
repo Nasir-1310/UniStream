@@ -1,14 +1,14 @@
 'use client'
 // components/admin/PurgeLogsDialog.tsx
 //
-// Delete old download logs in bulk, oldest first, so a busy launch can't
+// Delete old download history in bulk, oldest first, so a busy launch can't
 // fill the free database tier. "Everything" needs the word DELETE typed.
 
 import { useState, type FormEvent } from 'react'
 import { Eraser } from 'lucide-react'
 import { Alert, Modal, Spinner, useToast } from '@/components/ui'
 import { adminPurgeLogs, apiErrorMessage, type PurgeRequest } from '@/lib/api'
-import { formatDate, formatNumber, pluralize, toDateInputValue } from '@/lib/format'
+import { formatDate, pluralize, toDateInputValue } from '@/lib/format'
 import { useAdmin } from './AdminContext'
 
 type Choice = 'd7' | 'd30' | 'd90' | 'before' | 'all'
@@ -17,8 +17,8 @@ const CHOICES: { id: Choice; label: string; hint: string }[] = [
   { id: 'd7', label: 'Older than 7 days', hint: 'Keep the last week' },
   { id: 'd30', label: 'Older than 30 days', hint: 'Keep the last month' },
   { id: 'd90', label: 'Older than 90 days', hint: 'Keep the last three months' },
-  { id: 'before', label: 'Before a date', hint: 'Remove logs from before the day you pick' },
-  { id: 'all', label: 'Everything', hint: 'Delete every log' },
+  { id: 'before', label: 'Before a date', hint: 'Delete entries from before the day you pick' },
+  { id: 'all', label: 'Everything', hint: 'Delete the whole download history' },
 ]
 
 const DAYS: Partial<Record<Choice, number>> = { d7: 7, d30: 30, d90: 90 }
@@ -36,7 +36,7 @@ function initialState() {
 }
 
 export function PurgeLogsDialog({ open, onClose, totalLogs }: { open: boolean; onClose: () => void; totalLogs: number | null }) {
-  const { secret, handleAuthError, invalidate } = useAdmin()
+  const { handleAuthError, invalidate } = useAdmin()
   const toast = useToast()
   const [form, setForm] = useState(initialState)
   const [busy, setBusy] = useState(false)
@@ -72,30 +72,30 @@ export function PurgeLogsDialog({ open, onClose, totalLogs }: { open: boolean; o
     setBusy(true)
     setError(null)
     try {
-      const { deleted } = await adminPurgeLogs(secret, body)
+      const { deleted } = await adminPurgeLogs(body)
       invalidate('logs')
       setBusy(false)
       setForm(initialState())
       onClose()
-      toast.success(deleted ? `Deleted ${pluralize(deleted, 'log')}` : 'No logs matched', {
-        description: deleted ? 'Older download history has been removed.' : 'Nothing was old enough to delete.',
+      toast.success(deleted ? `Deleted ${pluralize(deleted, 'entry', 'entries')}` : 'Nothing to delete', {
+        description: deleted ? 'The older download history has been removed.' : 'No entries were old enough to delete.',
       })
     } catch (err) {
       setBusy(false)
       if (handleAuthError(err)) return
-      setError(apiErrorMessage(err, 'Could not delete the logs.'))
+      setError(apiErrorMessage(err, 'Couldn’t delete the entries. Please try again.'))
     }
   }
 
   const days = DAYS[choice]
   const summary =
     choice === 'all'
-      ? `Every download log${totalLogs !== null ? ` (${formatNumber(totalLogs)})` : ''} will be deleted.`
+      ? `The whole download history${totalLogs !== null ? ` (${pluralize(totalLogs, 'entry', 'entries')})` : ''} will be deleted.`
       : choice === 'before'
       ? before
-        ? `Logs from before ${formatDate(`${before}T00:00:00`, { time: false })} will be deleted.`
+        ? `Entries from before ${formatDate(`${before}T00:00:00`, { time: false })} will be deleted.`
         : 'Pick a date.'
-      : `Logs from before ${formatDate(daysAgo(days ?? 30), { time: false })} will be deleted.`
+      : `Entries from before ${formatDate(daysAgo(days ?? 30), { time: false })} will be deleted.`
 
   return (
     <Modal
@@ -103,8 +103,8 @@ export function PurgeLogsDialog({ open, onClose, totalLogs }: { open: boolean; o
       onClose={close}
       dismissible={!busy}
       size="md"
-      title="Delete old logs"
-      description="Free up database space by removing old download records."
+      title="Delete old download history"
+      description="Free up database space by removing old entries."
       icon={
         <div className="w-10 h-10 rounded-xl border border-red-500/25 bg-red-500/10 text-red-400 flex items-center justify-center">
           <Eraser className="w-5 h-5" aria-hidden="true" />
@@ -117,7 +117,7 @@ export function PurgeLogsDialog({ open, onClose, totalLogs }: { open: boolean; o
           </button>
           <button type="submit" form={FORM_ID} disabled={busy || !body} className="btn-danger">
             {busy && <Spinner size="sm" label={null} />}
-            {busy ? 'Deleting…' : 'Delete logs'}
+            {busy ? 'Deleting…' : 'Delete entries'}
           </button>
         </>
       }
@@ -163,7 +163,7 @@ export function PurgeLogsDialog({ open, onClose, totalLogs }: { open: boolean; o
           {choice === 'before' && (
             <div className="mt-3">
               <label htmlFor="purge-before" className="field-label">
-                Delete logs before
+                Delete entries before
               </label>
               <input
                 id="purge-before"
@@ -198,8 +198,8 @@ export function PurgeLogsDialog({ open, onClose, totalLogs }: { open: boolean; o
           {summary} This can’t be undone.
         </p>
         <p className="mt-1.5 text-xs text-slate-500">
-          Users’ daily limits and all-time download counts are not affected. The Overview charts and the CSV export only
-          cover logs that remain — export first if you need a copy.
+          Users’ daily limits and download counts are not affected. The Overview charts and the CSV export only cover
+          entries that remain, so export a CSV first if you need a copy.
         </p>
 
         {error && (

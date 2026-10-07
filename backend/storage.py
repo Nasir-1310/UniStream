@@ -1902,25 +1902,38 @@ def get_setting(key: str, default: str | None = None) -> str | None:
 
 
 def set_setting(key: str, value: str) -> None:
-    value = str(value)
+    set_settings({key: value})
+
+
+def set_settings(values: dict[str, str]) -> None:
+    """Save several settings at once: all of them or none (one upsert request
+    on Supabase, one transaction on SQLite), e.g. the admin username together
+    with its password hash."""
+    values = {str(key): str(value) for key, value in values.items()}
+    if not values:
+        return
     if SUPABASE_CONFIGURED:
-        payload = {"key": key, "value": value, "updated_at": _now_iso()}
+        now = _now_iso()
+        payload = [{"key": key, "value": value, "updated_at": now} for key, value in values.items()]
         _remote(
-            "save setting",
+            "save settings",
             lambda client: client.table("app_settings")
             .upsert(payload, on_conflict="key", returning="minimal").execute(),
         )
+        expires = time.monotonic() + _SETTINGS_TTL_SECONDS
         with _cache_lock:
-            _settings_cache[key] = (value, time.monotonic() + _SETTINGS_TTL_SECONDS)
+            for key, value in values.items():
+                _settings_cache[key] = (value, expires)
         return
 
+    now = _db_ts(_utcnow())
     with _local_transaction() as conn:
-        conn.execute(
+        conn.executemany(
             """
             INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
             """,
-            (key, value, _db_ts(_utcnow())),
+            [(key, value, now) for key, value in values.items()],
         )
 
 

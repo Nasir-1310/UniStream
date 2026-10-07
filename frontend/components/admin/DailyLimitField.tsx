@@ -64,14 +64,14 @@ export function DailyLimitField({
 
   const hint =
     value.mode === 'default'
-      ? `Follows the default setting${defaultLimit !== null && defaultLimit !== undefined ? ` (currently ${formatLimit(defaultLimit)})` : ''}; changes when you change the default.`
+      ? `Uses the default daily limit${defaultLimit !== null && defaultLimit !== undefined ? ` (now ${formatLimit(defaultLimit)})` : ''} and follows it when you change it in Settings.`
       : value.mode === 'unlimited'
       ? 'No daily cap for this user.'
-      : `Fixed for this user, from 0 to ${DAILY_LIMIT_MAX.toLocaleString('en-US')}. 0 pauses their downloads.`
+      : `Only for this user, from 0 to ${DAILY_LIMIT_MAX.toLocaleString('en-US')}. 0 pauses their downloads.`
 
   return (
     <fieldset disabled={disabled} className="min-w-0">
-      <legend className="field-label">Daily download limit</legend>
+      <legend className="field-label">Daily limit</legend>
       <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-[#0d0f1a] p-1">
         {OPTIONS.map(option => {
           const checked = value.mode === option.mode

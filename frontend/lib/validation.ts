@@ -226,10 +226,12 @@ function hasSequence(pw: string, run = 4): boolean {
 
 /**
  * Rough strength estimate for a strength meter. Anything failing
- * validatePassword() scores at most 1.
+ * validatePassword() (or shorter than `minLength`) scores at most 1.
+ * `minLength` raises the minimum for stricter forms, e.g. the admin password (10).
  */
-export function passwordStrength(pw: string): PasswordStrength {
-  if (!pw) return { score: 0, label: STRENGTH_LABELS[0], hint: `Use at least ${PASSWORD_MIN} characters.` }
+export function passwordStrength(pw: string, minLength: number = PASSWORD_MIN): PasswordStrength {
+  const min = Math.max(PASSWORD_MIN, minLength)
+  if (!pw) return { score: 0, label: STRENGTH_LABELS[0], hint: `Use at least ${min} characters.` }
 
   const length = codePoints(pw)
   const lower = pw.toLowerCase()
@@ -241,7 +243,7 @@ export function passwordStrength(pw: string): PasswordStrength {
   ].filter(Boolean).length
 
   let score = 0
-  if (length >= PASSWORD_MIN) score += 1
+  if (length >= min) score += 1
   if (length >= 12) score += 1
   if (length >= 16) score += 1
   if (classes >= 3) score += 1
@@ -263,9 +265,9 @@ export function passwordStrength(pw: string): PasswordStrength {
   }
 
   const valid = validatePassword(pw)
-  if (!valid.ok) {
+  if (!valid.ok || length < min) {
     score = Math.min(score, 1)
-    hint = valid.error
+    hint = length < min ? `Password must be at least ${min} characters.` : valid.ok ? hint : valid.error
   }
 
   const clamped = Math.max(0, Math.min(4, score)) as StrengthScore

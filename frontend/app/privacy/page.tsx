@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     'What UniStream Saver stores (name, email, phone and download history), why, who can see it and how to have it deleted.',
 }
 
-const LAST_UPDATED = '6 October 2026'
+const LAST_UPDATED = '7 October 2026'
 
 const P = 'mt-3 text-[15px] leading-7 text-slate-300'
 const UL = 'mt-3 space-y-2 pl-5 list-disc marker:text-slate-600 text-[15px] leading-7 text-slate-300'
@@ -28,7 +28,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Who we are',
     body: (
       <p className={P}>
-        UniStream Saver is a small, independently run service that lets approved members save YouTube, Facebook and
+        UniStream Saver is an independently run service that lets approved members save YouTube, Facebook and
         Instagram videos for study and offline viewing. This policy explains what information we keep about you, why,
         and the choices you have. It applies together with our{' '}
         <Link href="/terms" className={A}>
@@ -63,7 +63,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
         </ul>
         <p className={P}>
           We don&apos;t keep copies of the videos you download. Each file is deleted from our server as soon as it&apos;s
-          delivered to you, or within a few minutes if it isn&apos;t collected. Links you only check (without
+          delivered to you, or within a few minutes if it isn&apos;t collected. Links you only look up (without
           downloading) aren&apos;t added to your history.
         </p>
         <p className={P}>
@@ -164,8 +164,10 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <p className={P}>
         Passwords are hashed with scrypt, sign-in attempts are rate-limited, and changing your password immediately signs
-        out every other device. Data travels over encrypted (HTTPS) connections. No system is perfectly secure, so please
-        use a password you don&apos;t use anywhere else and tell the administrator if you notice anything unusual.
+        out every other device. Your sign-in token is never put in a web address: each download starts with a
+        short-lived, single-use download link instead. Data travels over encrypted (HTTPS) connections. No system is
+        perfectly secure, so please use a password you don&apos;t use anywhere else and tell the administrator if you
+        notice anything unusual.
       </p>
     ),
   },
@@ -192,8 +194,8 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Children',
     body: (
       <p className={P}>
-        UniStream Saver is meant for university students. If you&apos;re under 18, please use it only with a parent&apos;s
-        or guardian&apos;s permission. We don&apos;t knowingly accept accounts from children under 13.
+        UniStream Saver is meant for students. If you&apos;re under 18, please use it only with a parent&apos;s or
+        guardian&apos;s permission. We don&apos;t knowingly accept accounts from children under 13.
       </p>
     ),
   },
@@ -202,8 +204,8 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Changes to this policy',
     body: (
       <p className={P}>
-        We&apos;ll update this policy if what we collect or how we use it changes, for example if a paid plan is
-        introduced. The date at the top shows the latest version, and we&apos;ll give notice in the app for important
+        We&apos;ll update this policy if what we collect or how we use it changes, for example when the premium plan
+        launches. The date at the top shows the latest version, and we&apos;ll give notice in the app for important
         changes.
       </p>
     ),

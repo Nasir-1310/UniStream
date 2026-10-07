@@ -328,6 +328,177 @@ class TokenTests(unittest.TestCase):
         self.assertNotEqual(security.verify_token(token, "session")["pv"], new)
 
 
+class DownloadTicketTests(unittest.TestCase):
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"AUTH_SECRET": "t" * 40})
+        self.env.start()
+        security._auth_secret.cache_clear()
+
+    def tearDown(self):
+        self.env.stop()
+        security._auth_secret.cache_clear()
+
+    def ticket(self, **overrides):
+        args = {"url": "https://youtu.be/x", "format_id": "137", "ext": "mp4", "height": 1080, "source": "web"}
+        args.update(overrides)
+        return security.create_download_ticket("u1", "pv1", **args)
+
+    def test_round_trip_carries_the_download(self):
+        claims = security.verify_download_ticket(self.ticket())
+        self.assertEqual(
+            {key: claims[key] for key in ("sub", "pv", "purpose", "url", "format_id", "ext", "height", "source")},
+            {"sub": "u1", "pv": "pv1", "purpose": "download", "url": "https://youtu.be/x",
+             "format_id": "137", "ext": "mp4", "height": 1080, "source": "web"},
+        )
+        self.assertAlmostEqual(claims["exp"] - security.time.time(), 60, delta=2)
+        # Every ticket is different, even for the same download.
+        self.assertNotEqual(claims["jti"], security.verify_download_ticket(self.ticket())["jti"])
+
+    def test_long_urls_fit(self):
+        url = "https://www.youtube.com/watch?v=x&" + "a" * 2000
+        self.assertEqual(security.verify_download_ticket(self.ticket(url=url))["url"], url)
+
+    def test_expires_after_a_minute(self):
+        ticket = self.ticket()
+        later = security.time.time() + 61
+        with patch.object(security.time, "time", return_value=later):
+            self.assertIsNone(security.verify_download_ticket(ticket))
+
+    def test_purposes_cannot_be_swapped(self):
+        ticket = self.ticket()
+        for purpose in ("session", "reset", "admin"):
+            self.assertIsNone(security.verify_token(ticket, purpose))
+            other = security.create_token("u1", "pv1", purpose, 600)
+            self.assertIsNone(security.verify_download_ticket(other))
+
+    def test_tampering_and_bad_claims_are_rejected(self):
+        payload_b64, signature = self.ticket().split(".")
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4)))
+        payload["url"] = "https://evil.example/"
+        forged = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        self.assertIsNone(security.verify_download_ticket(f"{forged}.{signature}"))
+
+        good = json.loads(base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4)))
+        for change in ({"ext": "exe"}, {"height": True}, {"height": 0}, {"height": "1080"},
+                       {"jti": "short"}, {"url": ""}, {"url": 5}, {"format_id": ""},
+                       {"source": 7}, {"format_id": "x" * 201}):
+            with self.subTest(change=change):
+                signed = security._encode_signed({**good, **change})
+                self.assertIsNone(security.verify_download_ticket(signed))
+        self.assertIsNotNone(security.verify_download_ticket(security._encode_signed(good)))
+        for bad in (None, "", "garbage", "a.b", "x" * 9000):
+            self.assertIsNone(security.verify_download_ticket(bad))
+
+    def test_invalid_arguments(self):
+        with self.assertRaises(ValueError):
+            self.ticket(ext="exe")
+        with self.assertRaises(ValueError):
+            security.create_download_ticket("", "pv", url="https://youtu.be/x", format_id="1", ext="mp3")
+
+
+class UsedTicketsTests(unittest.TestCase):
+    def test_each_ticket_is_consumed_once(self):
+        clock = FakeClock(1000.0)
+        used = security.UsedTickets(clock=clock)
+        self.assertTrue(used.consume("jti-aaaaaaaa", 1060))
+        self.assertFalse(used.consume("jti-aaaaaaaa", 1060))
+        self.assertTrue(used.consume("jti-bbbbbbbb", 1060))
+
+    def test_expired_ids_are_forgotten(self):
+        clock = FakeClock(1000.0)
+        used = security.UsedTickets(clock=clock)
+        for index in range(100):
+            used.consume(f"old-{index:08d}", 1060)
+        clock.advance(61)
+        used.consume("fresh-00000001", 1121)
+        self.assertEqual(used.size(), 1)
+
+    def test_memory_is_bounded_without_forgetting_live_ids(self):
+        clock = FakeClock(1000.0)
+        used = security.UsedTickets(max_entries=3, clock=clock)
+        for index in range(3):
+            self.assertTrue(used.consume(f"live-{index:08d}", 1060))
+        # Full of unexpired ids: refuse rather than forget one (no replay).
+        self.assertFalse(used.consume("another-0001", 1060))
+        self.assertFalse(used.consume("live-00000000", 1060))
+        clock.advance(61)
+        self.assertTrue(used.consume("another-0001", 1121))
+
+    def test_thread_safety(self):
+        used = security.UsedTickets()
+        results = []
+
+        def worker():
+            results.append(used.consume("same-ticket-id", security.time.time() + 60))
+
+        threads = [threading.Thread(target=worker) for _ in range(16)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(results.count(True), 1)
+
+    def test_module_level_instance(self):
+        self.assertIsInstance(security.used_tickets, security.UsedTickets)
+
+
+class AdminRulesTests(unittest.TestCase):
+    def test_username_rules(self):
+        self.assertEqual(security.validate_admin_username("  Owner.BD_1-x "), "owner.bd_1-x")
+        cases = {
+            "": "Please enter a username.",
+            None: "Please enter a username.",
+            "ab": "Username must be at least 3 characters.",
+            "a" * 33: "Username must be at most 32 characters.",
+            "no spaces": "Username can only contain letters, numbers, dots, dashes and underscores.",
+            "name@site": "Username can only contain letters, numbers, dots, dashes and underscores.",
+            "nämé": "Username can only contain letters, numbers, dots, dashes and underscores.",
+        }
+        for value, message in cases.items():
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as ctx:
+                    security.validate_admin_username(value)
+                self.assertEqual(str(ctx.exception), message)
+
+    def test_password_rules(self):
+        self.assertEqual(security.validate_admin_password("Dhaka admin 2026"), "Dhaka admin 2026")
+        cases = {
+            "": "Please enter a new password.",
+            "short12": "Admin password must be at least 10 characters.",
+            "a1" * 65: "Admin password must be at most 128 characters.",
+            "onlyletters": "Admin password must include at least one letter and one number.",
+            "1234567890": "Admin password must include at least one letter and one number.",
+        }
+        for value, message in cases.items():
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as ctx:
+                    security.validate_admin_password(value)
+                self.assertEqual(str(ctx.exception), message)
+
+    def test_secret_matches(self):
+        self.assertTrue(security.secret_matches("abc", "abc"))
+        self.assertFalse(security.secret_matches("abc", "abd"))
+        self.assertFalse(security.secret_matches("abc", "abcd"))
+        self.assertFalse(security.secret_matches("", ""))
+        self.assertFalse(security.secret_matches(None, "abc"))
+        self.assertFalse(security.secret_matches("abc", None))
+
+    def test_bootstrap_version(self):
+        with patch.dict(os.environ, {"AUTH_SECRET": "t" * 40}):
+            security._auth_secret.cache_clear()
+            first = security.bootstrap_version("secret-1", None)
+            self.assertTrue(first.startswith("boot-"))
+            self.assertEqual(first, security.bootstrap_version("secret-1", None))
+            self.assertNotEqual(first, security.bootstrap_version("secret-2", None))
+            self.assertNotEqual(first, security.bootstrap_version("secret-1", "scrypt$hash"))
+            self.assertNotIn("secret-1", first)
+            # Keyed with the signing secret: not computable from the password alone.
+            with patch.dict(os.environ, {"AUTH_SECRET": "z" * 40}):
+                security._auth_secret.cache_clear()
+                self.assertNotEqual(first, security.bootstrap_version("secret-1", None))
+        security._auth_secret.cache_clear()
+
+
 class SecretTests(unittest.TestCase):
     KEYS = ("AUTH_SECRET", "ADMIN_SECRET", "SUPABASE_SERVICE_KEY")
 
@@ -515,6 +686,9 @@ class PlatformTests(unittest.TestCase):
             "http://instagram.com/p/xyz": "instagram",
             "https://instagr.am/p/xyz": "instagram",
             "https://www.youtube.com:443/watch?v=x": "youtube",
+            "http://m.facebook.com:80/watch?v=1": "facebook",
+            "https://www.youtube.com/watch?v=x&feature=share@home": "youtube",
+            "https://youtube.com/" + "a" * 2000: "youtube",
         }
         for url, platform in cases.items():
             with self.subTest(url=url):
@@ -544,6 +718,33 @@ class PlatformTests(unittest.TestCase):
             "",
             None,
             "https://youtube.com/" + "a" * 5000,
+            "https://youtube.com/" + "a" * 2030,
+            # Credentials before the host: parsers disagree on which part is the host.
+            "https://youtube.com@evil.example/watch?v=x",
+            "https://user:pass@www.youtube.com/watch?v=x",
+            "https://@youtube.com/watch?v=x",
+            "https://evil.example\\@youtube.com/watch?v=x",
+            "https://evil.example\\.youtube.com/",
+            "https://youtube.com\\@evil.example/",
+            # IP literals and other ways to name a host by number.
+            "http://142.250.183.14/watch?v=x",
+            "http://[::1]/youtube.com",
+            "http://[2607:f8b0::200e]/watch",
+            "http://2130706433/",
+            "http://169.254.169.254/latest/meta-data/",
+            # Ports other than the default ones, and malformed ports.
+            "https://www.youtube.com:8080/watch?v=x",
+            "https://www.youtube.com:0/",
+            "https://www.youtube.com:99999/",
+            "https://www.youtube.com:abc/",
+            # Encoded, non-ASCII and control-character hosts.
+            "https://%79outube.com/watch?v=x",
+            "https://youtube.com%2F@evil.example/",
+            "https://y\u043eutube.com/watch?v=x",
+            "https://youtube.com\x00.evil.example/",
+            "https://youtube.com\x7f/",
+            "https://youtube..com/",
+            "https://-youtube.com/",
         ):
             with self.subTest(url=url):
                 self.assertIsNone(security.detect_platform(url))

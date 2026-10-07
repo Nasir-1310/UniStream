@@ -1,7 +1,9 @@
 # backend/dependencies.py
 """Shared FastAPI dependencies and account helpers used by every router.
 
-* require_user / require_admin guard the user and admin endpoints.
+* require_user guards the user endpoints (Bearer session tokens only: a
+  token in a URL ends up in proxy and access logs). The admin guard lives in
+  admin_account.py.
 * The quota helpers turn a stored account into today's allowance, and the
   in-memory download reservations stop parallel downloads from overshooting
   it: a download only counts once it completes, so without a reservation two
@@ -13,15 +15,13 @@ Storage calls here are synchronous: FastAPI runs sync dependencies and routes
 in its thread pool, and async routes call these helpers via asyncio.to_thread.
 """
 
-import hashlib
 import hmac
 import math
-import os
 import threading
 import unicodedata
 from datetime import date
 
-from fastapi import Header, HTTPException, Query, Request
+from fastapi import Header, HTTPException, Request
 
 import security
 import storage
@@ -38,9 +38,11 @@ MAX_DAILY_LIMIT = 10_000
 UNLIMITED = -1
 MAX_CONCURRENT_DOWNLOADS_PER_USER = 2
 
-# Failed admin-secret attempts allowed per client IP and window.
-ADMIN_FAILURE_LIMIT = 10
-ADMIN_FAILURE_WINDOW_SECONDS = 15 * 60
+# Requests per client IP and window across every sign-in style endpoint
+# (POST /auth/* and /admin/auth/login), on top of each endpoint's own limits.
+# Sized for a campus network or a mobile carrier's CGNAT sharing one IP: it
+# only stops floods, the per-account limits stop guessing.
+AUTH_REQUESTS_PER_IP = (300, 15 * 60)
 
 
 # ── Errors ────────────────────────────────────────────────────────────────────
@@ -130,74 +132,74 @@ def session_user(token: str | None) -> dict:
     return user
 
 
-def bearer_token(authorization: str | None, token: str | None = None) -> str | None:
-    """Token from "Authorization: Bearer ..." or, failing that, `?token=`.
-
-    The query form exists for EventSource, which cannot send headers.
-    """
+def bearer_token(authorization: str | None) -> str | None:
+    """The token from an "Authorization: Bearer ..." header, else None."""
     if authorization:
         scheme, _, value = authorization.strip().partition(" ")
         if scheme.lower() == "bearer" and value.strip():
             return value.strip()
-    return token.strip() if token and token.strip() else None
+    return None
 
 
-def require_user(
-    authorization: str | None = Header(None),
-    token: str | None = Query(None, max_length=2048, description="Session token (for EventSource)"),
-) -> dict:
-    """FastAPI dependency: the signed-in, approved account (storage row)."""
-    return session_user(bearer_token(authorization, token))
+def require_user(authorization: str | None = Header(None)) -> dict:
+    """FastAPI dependency: the signed-in, approved account (storage row).
 
-
-# ── Admin ─────────────────────────────────────────────────────────────────────
-
-def require_admin(request: Request, x_admin_secret: str | None = Header(None)) -> None:
-    """FastAPI dependency for every /admin route.
-
-    The secret is read at call time so a redeploy with a new value (or a
-    test) takes effect without code changes. Failed guesses are limited per
-    client IP; a missing header is not counted, since it is never a guess.
+    Only the Authorization header is read. The download stream, which
+    EventSource opens without headers, uses a short-lived single-use ticket
+    instead (routers/download.py).
     """
-    secret = os.getenv("ADMIN_SECRET", "").strip()
-    if not secret:
-        raise HTTPException(
-            status_code=503,
-            detail="Admin access is not configured. Set ADMIN_SECRET on the server.",
-        )
-    ip = security.client_ip(request)
-    allowed, retry_after = security.rate_limiter.check(
-        "admin_failures", ip, ADMIN_FAILURE_LIMIT, ADMIN_FAILURE_WINDOW_SECONDS,
-    )
+    return session_user(bearer_token(authorization))
+
+
+def limit_rule(bucket: str, key: str, rule: tuple[int, int], message: str, *, record: bool = True) -> None:
+    """Raise 429 when `key` is over `rule` (limit, window seconds).
+
+    With record=False nothing is counted: used to refuse early once failures,
+    recorded separately, have reached the limit.
+    """
+    limit, window = rule
+    check = security.rate_limiter.hit if record else security.rate_limiter.check
+    allowed, retry_after = check(bucket, str(key), limit, window)
     if not allowed:
-        raise too_many_requests(
-            "Too many failed admin sign-in attempts. Try again in {wait}.", retry_after,
-        )
-    given = (x_admin_secret or "").strip()
-    if not given or not hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8")):
-        if given and _first_time_wrong_secret(ip, given):
-            security.rate_limiter.hit(
-                "admin_failures", ip, ADMIN_FAILURE_LIMIT, ADMIN_FAILURE_WINDOW_SECONDS,
-            )
-        raise HTTPException(status_code=401, detail="Invalid admin secret.")
+        raise too_many_requests(message, retry_after)
 
 
-def _first_time_wrong_secret(ip: str, given: str) -> bool:
-    """True the first time this IP sends this wrong secret in the window.
-
-    A dashboard tab still holding a rotated secret fires several requests at
-    once, all with the same stale value; counting each would lock the admin
-    out of their own IP after a couple of reloads. Repeating one wrong value
-    teaches a guesser nothing, so only distinct guesses count as failures.
-    """
-    fingerprint = hashlib.sha256(given.encode("utf-8")).hexdigest()[:16]
-    first, _retry = security.rate_limiter.hit(
-        "admin_failure_guesses", f"{ip}|{fingerprint}", 1, ADMIN_FAILURE_WINDOW_SECONDS,
+def auth_ip_cap(request: Request) -> None:
+    """Router dependency: overall cap on sign-in style requests per client IP."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    limit_rule(
+        "auth_requests_ip", security.client_ip(request), AUTH_REQUESTS_PER_IP,
+        "Too many requests from your network. Try again in {wait}.",
     )
-    return first
 
 
 # ── Field helpers shared by request models ────────────────────────────────────
+# Maximum lengths (characters) of request fields. Request bodies are also
+# capped as a whole (main.py), so no field can make validation expensive.
+
+PHONE_INPUT_MAX = 20
+NOTE_MAX = 300
+ID_MAX = 64
+TOKEN_MAX = 2048
+
+
+def capped(value, max_length: int, label: str):
+    """Reject an over-long string before any normalisation runs on it."""
+    if isinstance(value, str) and len(value.strip()) > max_length:
+        raise ValueError(f"{label} must be at most {max_length} characters.")
+    return value
+
+
+def clean_id(value, label: str = "ID") -> str:
+    """A user or log id from a request: short, printable, trimmed."""
+    text = str(value if value is not None else "").strip()
+    if not text:
+        raise ValueError(f"{label} is required.")
+    if len(text) > ID_MAX or not text.isprintable():
+        raise ValueError(f"{label} is not valid.")
+    return text
+
 
 def clean_note(value, *, label: str, max_length: int, multiline: bool = False) -> str | None:
     """Optional free text: trimmed, None when blank, length-capped.
@@ -388,56 +390,83 @@ class DownloadSlots:
 download_slots = DownloadSlots()
 
 
-def _limit_message(limit: int, used: int) -> str:
-    zone = security.app_timezone_name()
+def reset_time_text() -> str:
+    """When daily limits reset, as people read a clock: "12:00 AM"."""
+    return security.next_reset_at().strftime("%I:%M %p").lstrip("0")
+
+
+def limit_message(limit: int, used: int) -> str:
+    """Why no download can start now. The frontend shows the quota banner for
+    messages that mention "downloads for today", so keep that wording."""
     if limit == 0:
         return "Downloads are turned off for your account. Contact the administrator."
+    resets = f"Your limit resets at {reset_time_text()}."
     if used >= limit:
-        plural = "" if limit == 1 else "s"
-        return (
-            f"You've reached today's limit of {limit} download{plural}. "
-            f"It resets at midnight ({zone} time)."
-        )
+        if limit == 1:
+            return f"You've used your 1 download for today. {resets}"
+        return f"You've used all {limit} downloads for today. {resets}"
+    return f"Your remaining downloads for today are already in progress. {resets}"
+
+
+def busy_message(active: int) -> str:
     return (
-        "Your remaining downloads for today are already in progress. "
-        f"Your limit resets at midnight ({zone} time)."
+        f"You already have {active} downloads in progress. "
+        "Wait for one to finish, then try again."
     )
 
 
-def reserve_download(token: str | None, url: str) -> tuple[dict, str, int | None]:
-    """Pre-flight for a download: (account, platform key, effective limit).
+def download_room(user: dict) -> tuple[int | None, str | None, str | None]:
+    """(effective limit, refusal code, refusal message) for starting a download now.
+
+    Code is None when there is room: today's completed downloads plus the
+    ones in progress are below the limit, and fewer than two are running.
+    """
+    limit = effective_limit(user, default_daily_limit())
+    used = used_today(user)
+    active = download_slots.active(user["id"])
+    if active >= MAX_CONCURRENT_DOWNLOADS_PER_USER:
+        return limit, "busy", busy_message(active)
+    if limit is not None and used + active >= limit:
+        return limit, "limit", limit_message(limit, used)
+    return limit, None, None
+
+
+def check_download_room(user: dict) -> None:
+    """Ticket pre-check: 429 when today's downloads are used up, 409 when two
+    downloads are already running. Reserves nothing (the stream start does)."""
+    _limit, code, message = download_room(user)
+    if code == "limit":
+        raise HTTPException(status_code=429, detail=message)
+    if code == "busy":
+        raise HTTPException(status_code=409, detail=message)
+
+
+def reserve_download(ticket: dict) -> tuple[dict, str, int | None]:
+    """Start of a download from verified ticket claims (security.verify_download_ticket):
+    (account, platform key, effective limit).
 
     Raises DownloadRefused with code "auth", "platform", "limit" or "busy".
     On success one slot is held; the caller must end it with
     complete_download() or release_download().
     """
-    payload = security.verify_token(token, "session") if token else None
-    if payload is None:
-        raise DownloadRefused("auth", SESSION_EXPIRED_MESSAGE)
     try:
-        platform = security.ensure_supported_url(url)
+        platform = security.ensure_supported_url(ticket["url"])
     except ValueError as exc:
         raise DownloadRefused("platform", str(exc)) from None
 
-    user_id = payload["sub"]
+    user_id = ticket["sub"]
     with user_lock(user_id):
         user = storage.get_user_by_id(user_id)
-        if user is None or not _token_matches(payload, user):
+        # The ticket names the password version it was issued under, so a
+        # password change in the last minute also voids unused tickets.
+        if user is None or not _token_matches(ticket, user):
             raise DownloadRefused("auth", SESSION_EXPIRED_MESSAGE)
         error = status_error(user)
         if error is not None:
             raise DownloadRefused("auth", error.detail)
-        limit = effective_limit(user, default_daily_limit())
-        used = used_today(user)
-        active = download_slots.active(user["id"])
-        if active >= MAX_CONCURRENT_DOWNLOADS_PER_USER:
-            raise DownloadRefused(
-                "busy",
-                f"You already have {active} downloads in progress. "
-                "Wait for one to finish, then try again.",
-            )
-        if limit is not None and used + active >= limit:
-            raise DownloadRefused("limit", _limit_message(limit, used))
+        limit, code, message = download_room(user)
+        if code is not None:
+            raise DownloadRefused(code, message)
         download_slots.add(user["id"])
     return user, platform, limit
 

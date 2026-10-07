@@ -4,24 +4,26 @@ import { ToastProvider } from '@/components/ui/Toast'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import './globals.css'
 
+// Shared by every page that doesn't set its own; also the landing page's
+// metadata (it's a client component, so it can't export any).
 const description =
-  'Save YouTube, Facebook and Instagram videos in HD or data-saving quality. Free for approved members, with a daily download allowance.'
+  'Save YouTube, Facebook and Instagram videos in up to 1080p HD, or just the audio as MP3. Free for approved students, with 4 downloads a day.'
 
 export const metadata: Metadata = {
   title: {
-    default: 'UniStream Saver — Video Downloader for Students',
+    default: 'UniStream Saver: download YouTube, Facebook and Instagram videos',
     template: '%s · UniStream Saver',
   },
   description,
   applicationName: 'UniStream Saver',
-  keywords: ['video downloader', 'YouTube', 'Facebook', 'Instagram', 'students', 'Bangladesh'],
+  keywords: ['video downloader', 'YouTube downloader', 'Facebook video', 'Instagram reels', 'MP3', 'students', 'Bangladesh'],
   manifest: '/manifest.json',
   icons: {
     icon: '/unistream-icon.svg',
   },
   openGraph: {
     title: 'UniStream Saver',
-    description: 'Save YouTube, Facebook and Instagram videos for study and offline viewing.',
+    description: 'Save YouTube, Facebook and Instagram videos in up to 1080p HD. Free for approved students.',
     type: 'website',
     siteName: 'UniStream Saver',
   },

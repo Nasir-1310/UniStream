@@ -4,9 +4,21 @@
 // the same-origin /api rewrite (next.config.js); the SSE progress stream and
 // the long YouTube check connect straight to FastAPI because the rewrite proxy
 // can buffer or time out on them.
+//
+// Two separate Bearer tokens: user endpoints carry the user session
+// (lib/auth.ts), /admin/* carries the admin session (lib/adminAuth.ts). Neither
+// is ever put in a URL: the download stream authenticates with a short-lived,
+// single-use ticket from POST /download/ticket instead.
 
 import axios, { isAxiosError, type AxiosRequestConfig } from 'axios'
 import { clearSession, getToken, setSession, SESSION_EXPIRED_PATH } from './auth'
+import {
+  expireAdminSession,
+  getAdminToken,
+  setAdminSession,
+  updateAdminSession,
+  type AdminAuthResponse,
+} from './adminAuth'
 import type { Platform } from './validation'
 
 declare module 'axios' {
@@ -199,13 +211,16 @@ export interface YoutubeCheckResult {
   [key: string]: unknown
 }
 
+/** File types the API produces (and accepts for a download ticket). */
+export type DownloadExt = 'mp4' | 'mp3'
+
 export interface VideoFormat {
   type: 'video' | 'audio'
   format_id: string
   label: string
   icon: string
   resolution: string
-  ext: string
+  ext: DownloadExt
   filesize_bytes: number | null
   filesize_human: string
   bitrate?: string
@@ -325,6 +340,28 @@ export type PurgeRequest =
   | { before: string }
   | { all: true }
 
+// ── Admin account ─────────────────────────────────────────────────────────────
+
+export type { AdminAuthResponse, AdminSession } from './adminAuth'
+
+/** GET /admin/auth/me. */
+export interface AdminMe {
+  username: string
+  /** Signed in with the bootstrap password: the UI must force new credentials first. */
+  must_change_password: boolean
+  /** ADMIN_RESET_PASSWORD is set on the server: warn the owner to remove it after resetting. */
+  recovery_mode: boolean
+}
+
+/** POST /admin/auth/change-credentials. */
+export interface AdminChangeCredentialsRequest {
+  current_password: string
+  /** 10–128 characters with at least one letter and one digit; must differ from the current one. */
+  new_password: string
+  /** 3–32 characters of a–z, 0–9, '.', '_' or '-'; omit (or leave empty) to keep the current username. */
+  new_username?: string | null
+}
+
 // ── Download progress (SSE) ───────────────────────────────────────────────────
 
 export type DownloadStatus = 'starting' | 'downloading' | 'merging' | 'complete' | 'error'
@@ -353,16 +390,22 @@ export interface DownloadProgressEvent {
   usage?: Usage
 }
 
-export interface DownloadProgressParams {
+/** POST /download/ticket body: everything the progress stream needs, signed into the ticket. */
+export interface DownloadTicketRequest {
   url: string
-  formatId: string
-  ext: string
-  /** Video height in pixels; lets the server pick the matching YouTube stream. */
+  format_id: string
+  ext: DownloadExt
+  /** Video height in pixels; lets the server pick the matching YouTube stream. null for audio. */
   height?: number | null
   /** VideoInfo.source from the analysis. */
   source?: string | null
-  /** Session token (EventSource cannot send headers). Defaults to the stored one. */
-  token?: string | null
+}
+
+/** A single-use pass for one GET /download/progress stream. */
+export interface DownloadTicket {
+  ticket: string
+  /** Seconds until the ticket expires (60): open the stream right away. */
+  expires_in: number
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -388,10 +431,17 @@ function isLoginPath(url: string | undefined): boolean {
   return /^\/?auth\/login(\/|$|\?)/.test(url ?? '')
 }
 
+/** A 401 from admin login means wrong credentials, not an expired session. */
+function isAdminLoginPath(url: string | undefined): boolean {
+  return /^\/?admin\/auth\/login(\/|$|\?)/.test(url ?? '')
+}
+
 API.interceptors.request.use(config => {
-  // Admin calls authenticate with the admin secret only; user calls carry the session.
-  if (!isAdminPath(config.url) && !config.headers.has('Authorization')) {
-    const token = getToken()
+  // Each side only ever sees its own token: the user session never reaches
+  // /admin/*, and the admin token never reaches user endpoints.
+  if (!config.headers.has('Authorization')) {
+    const admin = isAdminPath(config.url)
+    const token = admin ? (isAdminLoginPath(config.url) ? null : getAdminToken()) : getToken()
     if (token) config.headers.set('Authorization', `Bearer ${token}`)
   }
   return config
@@ -402,8 +452,13 @@ API.interceptors.response.use(
   (error: unknown) => {
     if (isAxiosError(error) && error.response?.status === 401 && error.config) {
       const { config } = error
-      const sentToken = Boolean(config.headers?.get?.('Authorization'))
-      if (sentToken && !config.skipAuthRedirect && !isLoginPath(config.url) && !isAdminPath(config.url)) {
+      const sent = config.headers?.get?.('Authorization')
+      const sentToken = typeof sent === 'string' ? sent.replace(/^Bearer\s+/i, '') : null
+      if (config.skipAuthRedirect) {
+        // The caller handles it.
+      } else if (isAdminPath(config.url)) {
+        if (!isAdminLoginPath(config.url)) handleExpiredAdminSession(sentToken)
+      } else if (sentToken && !isLoginPath(config.url)) {
         handleExpiredSession()
       }
     }
@@ -419,8 +474,16 @@ function handleExpiredSession(): void {
   }
 }
 
-function adminHeaders(secret: string) {
-  return { 'x-admin-secret': secret }
+/**
+ * The admin token was rejected: clear it and fire the expiry event so the
+ * admin UI swaps to its sign-in screen in place (no redirect). A late 401 for
+ * a token that has since been replaced (by change-credentials or a new
+ * sign-in) must not end the newer session.
+ */
+function handleExpiredAdminSession(sentToken: string | null): void {
+  const current = getAdminToken()
+  if (current && sentToken !== current) return
+  expireAdminSession()
 }
 
 /** Drop empty values so the query string has no `q=&platform=`. */
@@ -573,18 +636,49 @@ export async function getVideoInfo(url: string, config: Pick<AxiosRequestConfig,
   return data
 }
 
-/** EventSource URL for GET /download/progress (connects straight to FastAPI). */
-export function downloadProgressUrl(params: DownloadProgressParams): string {
-  const query = new URLSearchParams({
-    url: params.url,
-    format_id: params.formatId,
-    ext: params.ext,
-  })
-  if (params.height && params.height > 0) query.set('height', String(Math.round(params.height)))
-  if (params.source) query.set('source', params.source)
-  const token = params.token ?? getToken()
-  if (token) query.set('token', token)
-  return `${BACKEND_ORIGIN}/download/progress?${query.toString()}`
+/**
+ * POST /download/ticket — step 1 of a download. Runs the platform, account and
+ * daily-limit checks and returns a single-use ticket valid for 60 seconds; it
+ * does not use up a download (only a completed download counts).
+ *
+ * Rejects with the API's `detail`: 400 unsupported link, 401 (session expired:
+ * handled like every user endpoint), 403 account blocked/pending, 429 daily
+ * limit reached (see isDailyLimitError) or too many attempts.
+ */
+export async function createDownloadTicket(
+  body: DownloadTicketRequest,
+  config: Pick<AxiosRequestConfig, 'signal'> = {},
+): Promise<DownloadTicket> {
+  const height = typeof body.height === 'number' && body.height > 0 ? Math.round(body.height) : null
+  const { data } = await API.post<DownloadTicket>(
+    '/download/ticket',
+    { url: body.url, format_id: body.format_id, ext: body.ext, height, source: body.source || null },
+    config,
+  )
+  return data
+}
+
+/**
+ * Step 2: the EventSource URL for GET /download/progress. Connects straight to
+ * FastAPI (the rewrite proxy can buffer SSE). The ticket replaces the session
+ * token, which must never appear in a URL; open it immediately — it expires in
+ * 60 seconds and works once, so a retry needs a new ticket.
+ */
+export function downloadProgressUrl(ticket: string): string {
+  return `${BACKEND_ORIGIN}/download/progress?ticket=${encodeURIComponent(ticket)}`
+}
+
+/**
+ * True when a ticket request was refused because no download can count today:
+ * today's downloads are used up (429 "You've used all N downloads for today…",
+ * or "…for today are already in progress"), or downloads are turned off for
+ * the account (429 "Downloads are turned off…", a limit of 0). Not the
+ * per-hour attempt limit. Show the quota banner (and refresh usage) for these.
+ */
+export function isDailyLimitError(err: unknown): boolean {
+  if (!isAxiosError(err) || err.response?.status !== 429) return false
+  const detail = detailOf(err.response.data) ?? ''
+  return /downloads? for today|downloads are turned off/i.test(detail)
 }
 
 /** URL that saves the finished file (token from the `complete` event; single use, 5 minutes). */
@@ -626,138 +720,150 @@ export function isUnlimited(usage: Usage | null | undefined): boolean {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Admin endpoints (every call takes the admin secret explicitly)
+// Admin endpoints
+//
+// Every /admin/* call carries the admin Bearer token from lib/adminAuth.ts
+// (added by the request interceptor). A 401 clears the admin session and fires
+// ADMIN_SESSION_EXPIRED_EVENT ('unistream:admin-session-expired') so the admin
+// UI shows its sign-in screen; the promise still rejects for the caller.
 // ═════════════════════════════════════════════════════════════════════════════
 
+/**
+ * POST /admin/auth/login — sign in to the dashboard and store the admin
+ * session (localStorage when `remember`, else sessionStorage; 7 days vs 12 h).
+ * Rejects with 401 "Incorrect username or password." or 429 (rate limited).
+ * When the result says `must_change_password`, show the "Set your admin
+ * username and password" screen before the dashboard.
+ */
+export async function adminLogin(username: string, password: string, remember = false): Promise<AdminAuthResponse> {
+  const { data } = await API.post<AdminAuthResponse>('/admin/auth/login', {
+    username: username.trim(),
+    password,
+    remember,
+  })
+  setAdminSession(data, remember)
+  return data
+}
+
+/** GET /admin/auth/me — who is signed in, whether new credentials are required, and recovery mode. */
+export async function adminMe(config: Pick<AxiosRequestConfig, 'signal'> = {}): Promise<AdminMe> {
+  const { data } = await API.get<AdminMe>('/admin/auth/me', config)
+  updateAdminSession({ username: data.username, must_change_password: data.must_change_password })
+  return data
+}
+
+/**
+ * POST /admin/auth/change-credentials — set a new password (and optionally a
+ * new username). Every other admin session ends; the fresh token returned is
+ * stored automatically, keeping the "Keep me signed in" choice.
+ * Rejects with 400 "Your current password is incorrect." / validation detail,
+ * or 503 when the database migration has not been run yet.
+ */
+export async function adminChangeCredentials(body: AdminChangeCredentialsRequest): Promise<AdminAuthResponse> {
+  const newUsername = body.new_username?.trim()
+  const { data } = await API.post<AdminAuthResponse>('/admin/auth/change-credentials', {
+    current_password: body.current_password,
+    new_password: body.new_password,
+    ...(newUsername ? { new_username: newUsername } : {}),
+  })
+  setAdminSession(data)
+  return data
+}
+
 /** GET /admin/overview — dashboard counters, 14-day chart data and system status. */
-export async function adminOverview(secret: string): Promise<Overview> {
-  const { data } = await API.get<Overview>('/admin/overview', { headers: adminHeaders(secret) })
+export async function adminOverview(): Promise<Overview> {
+  const { data } = await API.get<Overview>('/admin/overview')
   return data
 }
 
 /** GET /admin/users — search, filter, sort and paginate users. */
-export async function adminListUsers(secret: string, query: AdminUserQuery = {}): Promise<Paginated<AdminUser>> {
-  const { data } = await API.get<Paginated<AdminUser>>('/admin/users', {
-    headers: adminHeaders(secret),
-    params: cleanParams(query),
-  })
+export async function adminListUsers(query: AdminUserQuery = {}): Promise<Paginated<AdminUser>> {
+  const { data } = await API.get<Paginated<AdminUser>>('/admin/users', { params: cleanParams(query) })
   return data
 }
 
 /** POST /admin/users — add a user (approved by default, credentials emailed by default). */
-export async function adminCreateUser(secret: string, body: AdminCreateUserRequest): Promise<UserWithCredentials> {
-  const { data } = await API.post<UserWithCredentials>('/admin/users', body, { headers: adminHeaders(secret) })
+export async function adminCreateUser(body: AdminCreateUserRequest): Promise<UserWithCredentials> {
+  const { data } = await API.post<UserWithCredentials>('/admin/users', body)
   return data
 }
 
 /** PATCH /admin/users/{id} — edit profile fields and the daily limit. */
-export async function adminUpdateUser(
-  secret: string,
-  id: string,
-  body: AdminUpdateUserRequest,
-): Promise<{ user: AdminUser }> {
-  const { data } = await API.patch<{ user: AdminUser }>(`/admin/users/${encodeURIComponent(id)}`, body, {
-    headers: adminHeaders(secret),
-  })
+export async function adminUpdateUser(id: string, body: AdminUpdateUserRequest): Promise<{ user: AdminUser }> {
+  const { data } = await API.patch<{ user: AdminUser }>(`/admin/users/${encodeURIComponent(id)}`, body)
   return data
 }
 
 /** POST /admin/users/{id}/approve — approve and (by default) email a new temporary password. */
 export async function adminApproveUser(
-  secret: string,
   id: string,
   options: { sendCredentials?: boolean } = {},
 ): Promise<UserWithCredentials> {
-  const { data } = await API.post<UserWithCredentials>(
-    `/admin/users/${encodeURIComponent(id)}/approve`,
-    { send_credentials: options.sendCredentials ?? true },
-    { headers: adminHeaders(secret) },
-  )
+  const { data } = await API.post<UserWithCredentials>(`/admin/users/${encodeURIComponent(id)}/approve`, {
+    send_credentials: options.sendCredentials ?? true,
+  })
   return data
 }
 
 /** POST /admin/users/{id}/status — approve / move to pending / block without sending a password. */
-export async function adminSetUserStatus(secret: string, id: string, status: UserStatus): Promise<{ user: AdminUser }> {
-  const { data } = await API.post<{ user: AdminUser }>(
-    `/admin/users/${encodeURIComponent(id)}/status`,
-    { status },
-    { headers: adminHeaders(secret) },
-  )
+export async function adminSetUserStatus(id: string, status: UserStatus): Promise<{ user: AdminUser }> {
+  const { data } = await API.post<{ user: AdminUser }>(`/admin/users/${encodeURIComponent(id)}/status`, { status })
   return data
 }
 
 /** POST /admin/users/{id}/send-password — new temporary password (signs the user out everywhere). */
-export async function adminSendPassword(secret: string, id: string): Promise<UserWithCredentials> {
-  const { data } = await API.post<UserWithCredentials>(
-    `/admin/users/${encodeURIComponent(id)}/send-password`,
-    {},
-    { headers: adminHeaders(secret) },
-  )
+export async function adminSendPassword(id: string): Promise<UserWithCredentials> {
+  const { data } = await API.post<UserWithCredentials>(`/admin/users/${encodeURIComponent(id)}/send-password`, {})
   return data
 }
 
 /** POST /admin/users/{id}/reset-usage — give back today's downloads. */
-export async function adminResetUsage(secret: string, id: string): Promise<{ user: AdminUser }> {
-  const { data } = await API.post<{ user: AdminUser }>(
-    `/admin/users/${encodeURIComponent(id)}/reset-usage`,
-    {},
-    { headers: adminHeaders(secret) },
-  )
+export async function adminResetUsage(id: string): Promise<{ user: AdminUser }> {
+  const { data } = await API.post<{ user: AdminUser }>(`/admin/users/${encodeURIComponent(id)}/reset-usage`, {})
   return data
 }
 
 /** DELETE /admin/users/{id}. Their download logs stay (user_id becomes null). */
-export async function adminDeleteUser(secret: string, id: string): Promise<{ deleted: boolean }> {
-  const { data } = await API.delete<{ deleted: boolean }>(`/admin/users/${encodeURIComponent(id)}`, {
-    headers: adminHeaders(secret),
-  })
+export async function adminDeleteUser(id: string): Promise<{ deleted: boolean }> {
+  const { data } = await API.delete<{ deleted: boolean }>(`/admin/users/${encodeURIComponent(id)}`)
   return data
 }
 
 /** POST /admin/users/bulk — apply one action to up to 200 users; per-user results. */
 export async function adminBulkUsers(
-  secret: string,
   ids: string[],
   action: BulkAction,
   options: { sendCredentials?: boolean } = {},
 ): Promise<{ results: BulkResult[] }> {
-  const { data } = await API.post<{ results: BulkResult[] }>(
-    '/admin/users/bulk',
-    { ids, action, send_credentials: options.sendCredentials ?? true },
-    { headers: adminHeaders(secret) },
-  )
+  const { data } = await API.post<{ results: BulkResult[] }>('/admin/users/bulk', {
+    ids,
+    action,
+    send_credentials: options.sendCredentials ?? true,
+  })
   return data
 }
 
 /** GET /admin/logs — newest first, filtered and paginated. */
-export async function adminListLogs(secret: string, query: LogQuery = {}): Promise<Paginated<LogEntry>> {
-  const { data } = await API.get<Paginated<LogEntry>>('/admin/logs', {
-    headers: adminHeaders(secret),
-    params: cleanParams(query),
-  })
+export async function adminListLogs(query: LogQuery = {}): Promise<Paginated<LogEntry>> {
+  const { data } = await API.get<Paginated<LogEntry>>('/admin/logs', { params: cleanParams(query) })
   return data
 }
 
 /** DELETE /admin/logs/{id}. */
-export async function adminDeleteLog(secret: string, id: string): Promise<{ deleted: number }> {
-  const { data } = await API.delete<{ deleted: number }>(`/admin/logs/${encodeURIComponent(id)}`, {
-    headers: adminHeaders(secret),
-  })
+export async function adminDeleteLog(id: string): Promise<{ deleted: number }> {
+  const { data } = await API.delete<{ deleted: number }>(`/admin/logs/${encodeURIComponent(id)}`)
   return data
 }
 
 /** POST /admin/logs/delete — delete up to 500 selected logs. */
-export async function adminDeleteLogs(secret: string, ids: string[]): Promise<{ deleted: number }> {
-  const { data } = await API.post<{ deleted: number }>('/admin/logs/delete', { ids }, {
-    headers: adminHeaders(secret),
-  })
+export async function adminDeleteLogs(ids: string[]): Promise<{ deleted: number }> {
+  const { data } = await API.post<{ deleted: number }>('/admin/logs/delete', { ids })
   return data
 }
 
 /** POST /admin/logs/purge — delete old logs in bulk (older than N days, before a date, or all). */
-export async function adminPurgeLogs(secret: string, body: PurgeRequest): Promise<{ deleted: number }> {
+export async function adminPurgeLogs(body: PurgeRequest): Promise<{ deleted: number }> {
   const { data } = await API.post<{ deleted: number }>('/admin/logs/purge', body, {
-    headers: adminHeaders(secret),
     // Deleting a large history can take a while on Supabase.
     timeout: 300000,
   })
@@ -766,12 +872,12 @@ export async function adminPurgeLogs(secret: string, body: PurgeRequest): Promis
 
 /**
  * GET /admin/logs/export — download the filtered logs as CSV (max 50,000 rows).
- * Triggers the browser's save dialog; resolves once the file is handed over.
+ * Fetched with the admin Bearer token (a plain link could not send it), then
+ * handed to the browser's save dialog; resolves once the file is handed over.
  */
-export async function adminExportLogs(secret: string, filters: LogFilters = {}): Promise<void> {
+export async function adminExportLogs(filters: LogFilters = {}): Promise<void> {
   try {
     const response = await API.get<Blob>('/admin/logs/export', {
-      headers: adminHeaders(secret),
       params: cleanParams(filters),
       responseType: 'blob',
       timeout: 300000,
@@ -820,44 +926,43 @@ export function saveBlob(blob: Blob, filename: string): void {
 }
 
 /** GET /admin/settings. */
-export async function adminGetSettings(secret: string): Promise<Settings> {
-  const { data } = await API.get<Settings>('/admin/settings', { headers: adminHeaders(secret) })
+export async function adminGetSettings(): Promise<Settings> {
+  const { data } = await API.get<Settings>('/admin/settings')
   return data
 }
 
 /** PUT /admin/settings — change the default daily limit (0..10000). */
-export async function adminUpdateSettings(secret: string, body: { default_daily_limit: number }): Promise<Settings> {
-  const { data } = await API.put<Settings>('/admin/settings', body, { headers: adminHeaders(secret) })
+export async function adminUpdateSettings(body: { default_daily_limit: number }): Promise<Settings> {
+  const { data } = await API.put<Settings>('/admin/settings', body)
   return data
 }
 
 /** POST /admin/email/test — send a test email; rejects (502) with the provider's reason. */
-export async function adminSendTestEmail(secret: string, to: string): Promise<{ sent: boolean }> {
-  const { data } = await API.post<{ sent: boolean }>('/admin/email/test', { to }, {
-    headers: adminHeaders(secret),
-    timeout: 60000,
-  })
+export async function adminSendTestEmail(to: string): Promise<{ sent: boolean }> {
+  const { data } = await API.post<{ sent: boolean }>('/admin/email/test', { to }, { timeout: 60000 })
   return data
 }
 
-/** GET /admin/schema — database status and the migration SQL to run. */
-export async function adminGetSchema(secret: string): Promise<SchemaInfo> {
-  const { data } = await API.get<SchemaInfo>('/admin/schema', { headers: adminHeaders(secret) })
+/** GET /admin/schema — database status and the migration SQL to run (works before the migration). */
+export async function adminGetSchema(): Promise<SchemaInfo> {
+  const { data } = await API.get<SchemaInfo>('/admin/schema')
   return data
 }
 
 /** GET /admin/storage — which database is live and the download toolchain versions. */
-export async function adminGetStorage(secret: string): Promise<StorageHealth> {
-  const { data } = await API.get<StorageHealth>('/admin/storage', { headers: adminHeaders(secret) })
+export async function adminGetStorage(): Promise<StorageHealth> {
+  const { data } = await API.get<StorageHealth>('/admin/storage')
   return data
 }
 
 // Probes every YouTube client from the server and can take a few minutes, so
-// it goes straight to the API rather than through the /api rewrite proxy.
+// it goes straight to the API rather than through the /api rewrite proxy. It
+// still uses the shared client, so it carries the admin Bearer token and a
+// 401 expires the admin session like any other admin call.
 /** GET /admin/youtube-check — which YouTube clients list which resolutions from the server. */
-export async function adminYoutubeCheck(secret: string, url?: string): Promise<YoutubeCheckResult> {
-  const { data } = await axios.get<YoutubeCheckResult>(`${BACKEND_ORIGIN}/admin/youtube-check`, {
-    headers: adminHeaders(secret),
+export async function adminYoutubeCheck(url?: string): Promise<YoutubeCheckResult> {
+  const { data } = await API.get<YoutubeCheckResult>('/admin/youtube-check', {
+    baseURL: BACKEND_ORIGIN,
     params: url ? { url } : undefined,
     timeout: 300000,
   })

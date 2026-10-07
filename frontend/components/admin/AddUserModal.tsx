@@ -18,7 +18,8 @@ type FieldName = 'name' | 'email' | 'phone' | 'note' | 'limit'
 type Errors = Partial<Record<FieldName, string>>
 
 const FORM_ID = 'admin-add-user-form'
-const NOTE_MAX = 500
+/** Same limit as the API (300). */
+const NOTE_MAX = 300
 
 export function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
@@ -29,7 +30,7 @@ export function AddUserModal({ open, onClose }: { open: boolean; onClose: () => 
       dismissible={!busy}
       size="lg"
       title="Add a user"
-      description="Create an account without a sign-up request."
+      description="Create an account directly, without an access request."
       icon={
         <div className="w-10 h-10 rounded-xl border border-indigo-500/25 bg-indigo-500/10 text-indigo-300 flex items-center justify-center">
           <UserPlus className="w-5 h-5" aria-hidden="true" />
@@ -54,7 +55,7 @@ export function AddUserModal({ open, onClose }: { open: boolean; onClose: () => 
 }
 
 function AddUserForm({ onDone, onBusyChange, busy }: { onDone: () => void; onBusyChange: (busy: boolean) => void; busy: boolean }) {
-  const { secret, handleAuthError, invalidate, overview, presentCredentials } = useAdmin()
+  const { handleAuthError, invalidate, overview, presentCredentials } = useAdmin()
   const defaultLimit = overview?.settings.default_daily_limit
   const emailReady = overview?.system.email.configured ?? true
   const [name, setName] = useState('')
@@ -82,7 +83,7 @@ function AddUserForm({ onDone, onBusyChange, busy }: { onDone: () => void; onBus
       name: n.ok ? undefined : n.error,
       email: e.ok ? undefined : e.error,
       phone: p.ok ? undefined : p.error,
-      note: cleanNote.length > NOTE_MAX ? `Keep the note under ${NOTE_MAX} characters.` : undefined,
+      note: cleanNote.length > NOTE_MAX ? `Note must be at most ${NOTE_MAX} characters.` : undefined,
       limit: l.ok ? undefined : l.error,
     }
     setErrors(next)
@@ -94,7 +95,7 @@ function AddUserForm({ onDone, onBusyChange, busy }: { onDone: () => void; onBus
 
     onBusyChange(true)
     try {
-      const result = await adminCreateUser(secret, {
+      const result = await adminCreateUser({
         name: n.value,
         email: e.value,
         phone: p.value,
@@ -215,7 +216,7 @@ function AddUserForm({ onDone, onBusyChange, busy }: { onDone: () => void; onBus
             {(
               [
                 ['approved', 'Approved', 'Can sign in right away.'],
-                ['pending', 'Pending', 'Approve later from the list.'],
+                ['pending', 'Pending', 'Approve later from Users.'],
               ] as const
             ).map(([value, label, hint]) => (
               <label
@@ -252,17 +253,17 @@ function AddUserForm({ onDone, onBusyChange, busy }: { onDone: () => void; onBus
                 className="mt-1 w-4 h-4 accent-indigo-500"
               />
               <span>
-                <span className="block text-[13px] font-semibold text-white">Generate a password and email it</span>
+                <span className="block text-[13px] font-semibold text-white">Send a password by email</span>
                 <span className="block text-xs text-slate-400">
                   {emailReady
-                    ? 'They receive their sign-in details and a temporary password to change.'
-                    : 'Email isn’t set up yet, so the password will be shown to you to share.'}
+                    ? 'They get their sign-in details and a temporary password to change after signing in.'
+                    : 'Email isn’t set up yet, so the password is shown to you to share.'}
                 </span>
               </span>
             </label>
             {!sendCredentials && (
               <p className="mt-2 text-xs text-slate-500">
-                Without a password they can’t sign in until you send one or they use “Forgot password”.
+                Without a password they can’t sign in until you send one or they use “Forgot password?”.
               </p>
             )}
           </div>

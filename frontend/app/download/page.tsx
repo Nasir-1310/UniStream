@@ -1,15 +1,18 @@
 'use client'
 // frontend/app/download/page.tsx
 //
-// The signed-in workspace: paste a YouTube / Facebook / Instagram link, see
-// every quality the server can fetch, and download one with live progress.
+// The signed-in download page: paste a YouTube / Facebook / Instagram link,
+// see every quality the server can fetch, and download one with live progress.
 //
-// Auth is the session token (useSession). Analysis goes through the /api
-// proxy; the progress stream (SSE) connects straight to FastAPI because the
-// proxy can buffer it, and carries the token as a query parameter since
-// EventSource cannot send headers. A finished download arrives as a one-time
-// file token plus the account's updated usage, which feeds the quota card and
-// the Navbar pill through the shared session cache.
+// Auth is the session token (useSession), sent only as a Bearer header.
+// Looking up a video goes through the /api proxy. A download takes two steps:
+// POST /download/ticket runs the platform, account and daily-limit checks and
+// returns a single-use, 60-second ticket; the progress stream (SSE) then
+// opens with that ticket, straight to FastAPI because the proxy can buffer it.
+// EventSource cannot send headers, and the session token must never appear in
+// a URL (proxy and access logs), hence the ticket. A finished download arrives
+// as a one-time file token plus the account's updated usage, which feeds the
+// quota card and the Navbar pill through the shared session cache.
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -24,13 +27,16 @@ import { LinkForm } from '@/components/download/LinkForm'
 import { QuotaCard, resetTimeText } from '@/components/download/QuotaCard'
 import { VideoSummary } from '@/components/download/VideoSummary'
 import { useClock, useInAppBrowser, useOnline } from '@/components/download/hooks'
-import { IDLE, extractLink, heightOf, type RowState } from '@/components/download/types'
+import { IDLE, extractLink, formatName, heightOf, type RowState } from '@/components/download/types'
 import {
   apiErrorMessage,
+  apiErrorStatus,
+  createDownloadTicket,
   downloadFileUrl,
   downloadProgressUrl,
   getVideoInfo,
   hasDownloadsLeft,
+  isDailyLimitError,
   parseProgressEvent,
   warmBackend,
   type DownloadProgressEvent,
@@ -45,6 +51,8 @@ import { validateVideoUrl, type Platform } from '@/lib/validation'
 
 /** Matches the API's message for an expired or revoked session. */
 const SESSION_EXPIRED_TEXT = 'Your session has expired. Please sign in again.'
+/** The stream's refusal of a spent or expired ticket ("This download link has expired…"). */
+const TICKET_EXPIRED_RE = /download link has expired/i
 /** Show the "server is waking up" hint after this long. */
 const SLOW_ANALYSIS_MS = 8000
 
@@ -90,6 +98,7 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Page
 // ═════════════════════════════════════════════════════════════════════════════
@@ -113,7 +122,7 @@ export default function DownloadPage() {
       </div>
     )
   } else {
-    content = <PageLoader label="Loading your workspace…" />
+    content = <PageLoader label="Loading your account…" />
   }
 
   return (
@@ -159,6 +168,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [rows, setRows] = useState<Record<string, RowState>>({})
   const [activeId, setActiveId] = useState<string | null>(null)
+  /** True once the server is actually downloading (the stream is open), not while the ticket is fetched. */
+  const [streaming, setStreaming] = useState(false)
   const [limitNotice, setLimitNotice] = useState<string | null>(null)
   const [authIssue, setAuthIssue] = useState<string | null>(null)
   const [hideTempNotice, setHideTempNotice] = useState(false)
@@ -169,6 +180,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const analysisRef = useRef<AbortController | null>(null)
+  /** The pending POST /download/ticket, so Cancel (or leaving) can abort it. */
+  const ticketRef = useRef<AbortController | null>(null)
   const streamRef = useRef<EventSource | null>(null)
   /** format_id of the running download; a ref so stream callbacks see the latest value. */
   const activeRef = useRef<string | null>(null)
@@ -186,25 +199,28 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     warmBackend()
   }, [])
 
-  // Leaving the page ends the analysis and the stream; the server then drops
-  // the unfinished download without counting it.
+  // Leaving the page ends the lookup, the ticket request and the stream; the
+  // server then drops the unfinished download without counting it.
   useEffect(() => {
     return () => {
       analysisRef.current?.abort()
+      ticketRef.current?.abort()
       streamRef.current?.close()
     }
   }, [])
 
-  // Closing or reloading the tab mid-download cancels it, so ask first.
+  // Closing or reloading the tab mid-download cancels it, so ask first. Not
+  // while the ticket is being fetched: nothing is lost then, and a 401 there
+  // redirects to sign-in, which must not trigger a "Leave site?" prompt.
   useEffect(() => {
-    if (!activeId) return
+    if (!streaming) return
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [activeId])
+  }, [streaming])
 
   // Coming back to the tab (perhaps after downloading on another device):
   // re-read the usage. refreshSession() is deduplicated and rate-limited.
@@ -279,7 +295,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       )
     } catch (err) {
       if (controller.signal.aborted || analysisRef.current !== controller) return
-      setUrlError(apiErrorMessage(err, 'We couldn’t analyze this link. Check it and try again.'))
+      setUrlError(apiErrorMessage(err, 'We couldn’t get this video. Check the link and try again.'))
       focusInputWhenIdle.current = true
     } finally {
       window.clearTimeout(slowTimer)
@@ -297,7 +313,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     setAnalyzing(false)
     setSlow(false)
     focusInputWhenIdle.current = true
-    setAnnouncement('Analysis cancelled.')
+    setAnnouncement('Stopped looking up the video.')
   }
 
   async function pasteFromClipboard() {
@@ -347,16 +363,27 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     setRows(prev => ({ ...prev, [formatId]: state }))
   }
 
-  /** Close the stream and unlock the other formats. */
+  /** Stop the ticket request or the stream, and unlock the other formats. */
   function endStream() {
+    ticketRef.current?.abort()
+    ticketRef.current = null
     streamRef.current?.close()
     streamRef.current = null
     activeRef.current = null
     setActiveId(null)
+    setStreaming(false)
   }
 
-  function startDownload(format: VideoFormat) {
-    if (!result || activeRef.current) return
+  /**
+   * Start a download in two steps: ask for a ticket (the server checks the
+   * link, the account and today's limit, and answers with a normal HTTP
+   * error the page can show), then open the progress stream with it.
+   * `isRetry` marks the single automatic retry after the stream turned down
+   * its ticket.
+   */
+  async function startDownload(format: VideoFormat, isRetry = false) {
+    const analysed = result
+    if (!analysed || activeRef.current) return
     const formatId = format.format_id
     if (!online) {
       toast.error('You’re offline', { description: 'Reconnect to the internet and try again.' })
@@ -364,32 +391,53 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     }
     // The cache can be fresher than this render (another tab finished a download).
     if (!hasDownloadsLeft(getCachedUser()?.usage ?? usage)) return
-    const token = getToken()
-    if (!token) return // signed out elsewhere; useSession is redirecting
+    if (!getToken()) return // signed out elsewhere; useSession is redirecting
 
-    let stream: EventSource
+    // Lock the list straight away: on a sleeping server the ticket can take a while.
+    const controller = new AbortController()
+    ticketRef.current = controller
+    activeRef.current = formatId
+    setActiveId(formatId)
+    setLimitNotice(null)
+    setRow(formatId, { status: 'active', progress: STARTING })
+    if (!isRetry) setAnnouncement(`Starting download: ${formatName(format)}.`)
+
+    let ticket: string
     try {
-      stream = new EventSource(
-        downloadProgressUrl({
-          url: result.url,
-          formatId,
+      const issued = await createDownloadTicket(
+        {
+          url: analysed.url,
+          format_id: formatId,
           ext: format.ext,
           height: format.type === 'video' ? heightOf(format.resolution) : null,
-          source: result.info.source,
-          token,
-        }),
+          source: analysed.info.source,
+        },
+        { signal: controller.signal },
       )
+      ticket = issued.ticket
+    } catch (err) {
+      // Cancelled, or the page closed: endStream() has already reset the row.
+      if (controller.signal.aborted) return
+      endStream()
+      refuseDownload(format, err)
+      return
+    }
+    if (controller.signal.aborted) return
+    ticketRef.current = null
+
+    // Single use and valid for 60 seconds, so it is opened right away and
+    // every retry asks for a new one.
+    let stream: EventSource
+    try {
+      stream = new EventSource(downloadProgressUrl(ticket))
     } catch {
+      endStream()
       setRow(formatId, { status: 'error', message: 'The download couldn’t start. Please try again.', retryable: true })
       return
     }
 
     streamRef.current = stream
-    activeRef.current = formatId
-    setActiveId(formatId)
-    setLimitNotice(null)
-    setRow(formatId, { status: 'active', progress: STARTING })
-    setAnnouncement(`Starting download: ${format.label}.`)
+    setStreaming(true)
 
     let settled = false
     let received = false
@@ -410,7 +458,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       if (event.status === 'error') {
         settled = true
         endStream()
-        failDownload(format, event)
+        failDownload(format, event, isRetry)
         return
       }
       if (event.status !== lastStatus) {
@@ -422,8 +470,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       setRow(formatId, { status: 'active', progress: event })
     }
 
-    // EventSource reconnects on its own after an error, which would start a
-    // second download, so any error ends this one for good.
+    // EventSource reconnects on its own after an error, which would replay a
+    // spent ticket, so any error ends this download for good.
     stream.onerror = () => {
       if (settled || streamRef.current !== stream) return
       settled = true
@@ -437,6 +485,34 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       setRow(formatId, { status: 'error', message, retryable: true })
       setAnnouncement(`Download failed. ${message}`)
     }
+  }
+
+  /** The ticket request was refused (or failed): say why, next to the quality that was chosen. */
+  function refuseDownload(format: VideoFormat, err: unknown) {
+    const formatId = format.format_id
+    const status = apiErrorStatus(err)
+    const message = apiErrorMessage(err, 'The download couldn’t start. Please try again.')
+    if (status === 401) {
+      // lib/api has already ended the session and is taking the user to sign in.
+      setRow(formatId, { status: 'error', message, retryable: false })
+    } else if (status === 403) {
+      // Blocked, or moved back to pending, since the page loaded.
+      setAuthIssue(message)
+      setRow(formatId, { status: 'error', message, retryable: false })
+    } else if (isDailyLimitError(err)) {
+      // Today's downloads are used up (or taken by downloads in progress), or
+      // downloads are turned off for the account: the quota banner, not Retry.
+      setLimitNotice(message)
+      setRow(formatId, { status: 'error', message, retryable: false })
+      // The server counted downloads this page doesn't know about (another tab or device).
+      refresh().catch(() => undefined)
+    } else {
+      // 400/422: this link or quality can't be downloaded. 409: two downloads
+      // already running. 429: too many attempts this hour. Network errors and
+      // 5xx: worth another try.
+      setRow(formatId, { status: 'error', message, retryable: status !== 400 && status !== 422 })
+    }
+    setAnnouncement(`Download not started. ${message}`)
   }
 
   function finishDownload(format: VideoFormat, event: DownloadProgressEvent) {
@@ -457,17 +533,28 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     toast.success('Download complete', {
       description: `Saved to your device.${left ? ` ${left}` : ''}`,
     })
-    setAnnouncement(`Download complete: ${format.label}. ${left}`)
+    setAnnouncement(`Download complete: ${formatName(format)}. ${left}`)
   }
 
-  function failDownload(format: VideoFormat, event: DownloadProgressEvent) {
+  function failDownload(format: VideoFormat, event: DownloadProgressEvent, isRetry: boolean) {
     const formatId = format.format_id
     const message = event.error?.trim() || 'The download failed. Please try again.'
     switch (event.code) {
       case 'auth':
-        // Expired session, password changed elsewhere, or the account was blocked.
-        setAuthIssue(message)
-        setRow(formatId, { status: 'error', message, retryable: false })
+        if (!isRetry) {
+          // Usually the ticket ran out before the stream opened (a slow
+          // connection). A fresh ticket fixes that; if the session or the
+          // account is the real problem, the ticket request says so instead.
+          void startDownload(format, true)
+          return
+        }
+        if (TICKET_EXPIRED_RE.test(message)) {
+          setRow(formatId, { status: 'error', message, retryable: true })
+        } else {
+          // Expired session, password changed elsewhere, or the account was blocked.
+          setAuthIssue(message)
+          setRow(formatId, { status: 'error', message, retryable: false })
+        }
         break
       case 'limit':
         setLimitNotice(message)
@@ -513,13 +600,13 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     ? 'You’re offline. Reconnect to the internet to download.'
     : exhausted
     ? usage.limit === 0
-      ? 'Downloads are paused for your account. Contact the administrator if this is a mistake.'
+      ? 'Downloads are turned off for your account. Contact the administrator if this is a mistake.'
       : `You’ve used all of today’s downloads. More unlock at ${resetTimeText(usage)}.`
     : null
   const lockedReason = activeId
-    ? 'A download is running. Wait for it to finish, or cancel it, before analyzing another link.'
+    ? 'A download is running. Wait for it to finish, or cancel it, before getting another video.'
     : !online
-    ? 'You’re offline. Reconnect to analyze links.'
+    ? 'You’re offline. Reconnect to get videos.'
     : null
   const sessionExpired = authIssue === SESSION_EXPIRED_TEXT
 
@@ -540,7 +627,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       <div className="space-y-3 mb-4 sm:mb-5 empty:hidden">
         {!online && (
           <Alert tone="warning" title="You’re offline">
-            Reconnect to the internet to analyze links and download.
+            Reconnect to the internet to get videos and download them.
           </Alert>
         )}
         {user.temp_password && !hideTempNotice && (
@@ -614,7 +701,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
                 formats={result.info.formats ?? []}
                 rows={rows}
                 activeId={activeId}
-                onDownload={startDownload}
+                onDownload={format => void startDownload(format)}
                 onCancel={cancelDownload}
                 blockedReason={blockedReason}
                 headingRef={headingRef}

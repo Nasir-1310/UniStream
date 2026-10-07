@@ -1,9 +1,9 @@
 'use client'
 // components/admin/SystemSection.tsx
 //
-// Server health: which database is live and reachable, the v2 schema, the
-// download toolchain, and the YouTube resolution check (which YouTube
-// clients list which resolutions from this server's IP).
+// Server health: which database is live and reachable, the database
+// upgrade, the download tools, and the YouTube resolution check (which
+// YouTube clients list which resolutions from this server's IP).
 
 import { useState, type FormEvent } from 'react'
 import { Activity, Clapperboard, Database, HardDrive, Play, RefreshCw } from 'lucide-react'
@@ -55,7 +55,7 @@ export function SystemSection() {
             </>
           )
         )}
-        <Card title="Database schema" description="Tables and columns the v2 app needs" icon={Database} className="xl:col-span-2">
+        <Card title="Database upgrade" description="One-time setup for accounts, daily limits and download history" icon={Database} className="xl:col-span-2">
           <MigrationPanel compact />
         </Card>
         <YoutubeCheckCard storage={storage} />
@@ -91,7 +91,7 @@ function StorageCard({ storage }: { storage: StorageHealth }) {
       )}
       {storage.reachable && !storage.persistent && (
         <Alert tone="warning" className="mb-4" title="Local development storage">
-          SQLite is active. Accounts and logs can disappear on redeploy — configure Supabase before launch.
+          SQLite is active. Accounts and download history can disappear on redeploy, so set up Supabase before launch.
         </Alert>
       )}
       {storage.configuration_warning && (
@@ -108,8 +108,8 @@ function StorageCard({ storage }: { storage: StorageHealth }) {
               ? `${formatNumber(counts.approved ?? 0)} approved · ${formatNumber(counts.pending ?? 0)} pending · ${formatNumber(counts.blocked ?? 0)} blocked`
               : EMPTY,
           ],
-          ['Download logs', storage.download_log_count === null || storage.download_log_count === undefined ? EMPTY : formatNumber(storage.download_log_count)],
-          ['Schema', storage.schema ? (storage.schema.ready ? 'Up to date' : 'Upgrade required') : EMPTY],
+          ['Download history', storage.download_log_count === null || storage.download_log_count === undefined ? EMPTY : formatNumber(storage.download_log_count)],
+          ['Database upgrade', storage.schema ? (storage.schema.ready ? 'Up to date' : 'Needed') : EMPTY],
           ...(supabase
             ? ([['Last successful query', lastSuccess ? formatDate(lastSuccess) : EMPTY]] as [string, string][])
             : ([['Database file', activePath ?? EMPTY]] as [string, string][])),
@@ -180,7 +180,7 @@ function asReports(clients: unknown): [string, Record<string, ClientReport> | st
 }
 
 function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
-  const { secret, handleAuthError } = useAdmin()
+  const { handleAuthError } = useAdmin()
   const [url, setUrl] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
   const [running, setRunning] = useState<number | null>(null)
@@ -201,7 +201,7 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
     setResult(null)
     setRunning(Date.now())
     try {
-      setResult(await adminYoutubeCheck(secret, target || undefined))
+      setResult(await adminYoutubeCheck(target || undefined))
     } catch (err) {
       if (!handleAuthError(err)) setError(apiErrorMessage(err, 'The YouTube check failed.'))
     } finally {
@@ -259,7 +259,7 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
         </button>
       </form>
       <p className="mt-2 text-xs text-slate-500" aria-live="polite">
-        {running !== null ? 'Each client is probed separately — this usually takes 1–3 minutes. Keep this tab open.' : 'Takes 1–3 minutes.'}
+        {running !== null ? 'Each client is checked separately. This usually takes 1–3 minutes, so keep this tab open.' : 'Takes 1–3 minutes.'}
       </p>
 
       {error && (

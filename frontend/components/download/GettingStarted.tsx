@@ -1,6 +1,6 @@
 // components/download/GettingStarted.tsx
 //
-// What the page shows before the first analysis: three steps and what each
+// What the page shows before the first link: three steps and what each
 // platform supports, so nobody has to guess why a private post fails.
 
 import { ClipboardPaste, Download, Search } from 'lucide-react'
@@ -9,12 +9,12 @@ import { PLATFORMS, PLATFORM_LABELS, type Platform } from '@/lib/validation'
 
 const STEPS = [
   { Icon: ClipboardPaste, title: 'Copy the link', text: 'In the app, tap Share → Copy link.' },
-  { Icon: Search, title: 'Paste and analyze', text: 'We list every quality with its file size.' },
-  { Icon: Download, title: 'Download', text: 'Pick a quality and it saves to your device.' },
+  { Icon: Search, title: 'Paste it here', text: 'Tap Get video to see every quality and its file size.' },
+  { Icon: Download, title: 'Download', text: 'Choose a quality and it saves to your device.' },
 ]
 
 const PLATFORM_NOTES: Record<Platform, string> = {
-  youtube: 'Videos and Shorts in HD, or as MP3 audio.',
+  youtube: 'Videos and Shorts up to 1080p HD, or audio only (MP3).',
   facebook: 'Public videos and reels.',
   instagram: 'Public reels and video posts.',
 }
@@ -58,8 +58,8 @@ export function GettingStarted() {
           ))}
         </ul>
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Private, friends-only and age-restricted posts can&apos;t be downloaded. Other sites aren&apos;t
-          supported yet.
+          Private, friends-only and age-restricted videos may not work. Other sites aren&apos;t supported
+          yet.
         </p>
       </div>
     </section>

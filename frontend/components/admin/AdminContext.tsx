@@ -1,13 +1,13 @@
 'use client'
 // components/admin/AdminContext.tsx
 //
-// What every admin section needs from the shell: the secret for API calls,
-// error handling that sends a rejected secret back to the sign-in screen,
-// cache invalidation after mutations, navigation between sections, and the
-// shared dialogs (credentials, edit user, add user).
+// What every admin section needs from the shell: the signed-in admin, error
+// handling, cache invalidation after mutations, navigation between sections,
+// and the shared dialogs (credentials, edit user, add user). API calls need
+// nothing from here: lib/api attaches the admin token itself.
 
 import { createContext, useContext } from 'react'
-import type { AdminUser, CredentialsResult, Overview } from '@/lib/api'
+import type { AdminSession, AdminUser, CredentialsResult, Overview } from '@/lib/api'
 
 export type SectionId = 'overview' | 'users' | 'logs' | 'settings' | 'system'
 
@@ -30,12 +30,15 @@ export interface CredentialsEntry {
 }
 
 export interface AdminContextValue {
-  secret: string
-  /** Leave the dashboard; `expired` explains on the sign-in screen that the secret was rejected. */
-  signOut: (options?: { expired?: boolean }) => void
+  /** The signed-in admin (token, username, expiry, "keep me signed in"). */
+  session: AdminSession
+  /** ADMIN_RESET_PASSWORD is set on the server (from GET /admin/auth/me). */
+  recoveryMode: boolean
+  /** Sign out of the dashboard on this device. */
+  signOut: () => void
   /**
-   * Returns true (and signs out) when the error is a 401 — the secret was
-   * changed on the server. Callers skip their own error display then.
+   * True when the error is a 401 that ended the admin session (the sign-in
+   * screen is already on its way). Callers skip their own error display then.
    */
   handleAuthError: (err: unknown) => boolean
   /** Toast an API error (title + detail). Handles 401 like handleAuthError. */
@@ -61,6 +64,11 @@ export function useAdmin(): AdminContextValue {
   const ctx = useContext(AdminContext)
   if (!ctx) throw new Error('useAdmin() must be used inside the admin dashboard.')
   return ctx
+}
+
+/** The dashboard context, or null outside it (the first-sign-in setup screen). */
+export function useOptionalAdmin(): AdminContextValue | null {
+  return useContext(AdminContext)
 }
 
 /** Display name for a user row: name, else email, else phone, else the legacy identifier. */

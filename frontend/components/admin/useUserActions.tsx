@@ -36,7 +36,7 @@ import { useBusy } from './hooks'
 
 export function useUserActions(options: { onRemoved?: (ids: string[]) => void } = {}) {
   const { onRemoved } = options
-  const { secret, reportError, invalidate, presentCredentials, editUser, navigate } = useAdmin()
+  const { reportError, invalidate, presentCredentials, editUser, navigate } = useAdmin()
   const confirm = useConfirm()
   const toast = useToast()
   const { busy, run } = useBusy()
@@ -59,7 +59,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       user,
       'Approving…',
       async () => {
-        const result = await adminApproveUser(secret, user.id)
+        const result = await adminApproveUser(user.id)
         const entries: CredentialsEntry[] = result.credentials ? [{ user: result.user, credentials: result.credentials }] : []
         presentCredentials(entries, `${userLabel(result.user)} approved`)
       },
@@ -85,7 +85,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       user,
       'Sending…',
       async () => {
-        const result = await adminSendPassword(secret, user.id)
+        const result = await adminSendPassword(user.id)
         presentCredentials(
           result.credentials ? [{ user: result.user, credentials: result.credentials }] : [],
           `New password for ${userLabel(result.user)}`,
@@ -119,7 +119,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       user,
       'Updating…',
       async () => {
-        const result = await adminSetUserStatus(secret, user.id, status)
+        const result = await adminSetUserStatus(user.id, status)
         toast.success(`${userLabel(result.user)} ${done}`, {
           description:
             status === 'approved' && !result.user.has_password
@@ -136,7 +136,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       user,
       'Resetting…',
       async () => {
-        const result = await adminResetUsage(secret, user.id)
+        const result = await adminResetUsage(user.id)
         toast.success('Today’s downloads reset', {
           description: `${userLabel(result.user)} can download again today.`,
         })
@@ -148,7 +148,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
     const ok = await confirm({
       title: `Delete ${userLabel(user)}?`,
       message:
-        'The account is deleted permanently and they can no longer sign in. Their download logs stay for your records. This can’t be undone — block the user instead if you may want to restore access.',
+        'The account is deleted permanently and they can’t sign in again. Their download history is kept for your records. This can’t be undone, so block the user instead if you may want to restore access later.',
       confirmLabel: 'Delete user',
       tone: 'danger',
     })
@@ -157,7 +157,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       user,
       'Deleting…',
       async () => {
-        await adminDeleteUser(secret, user.id)
+        await adminDeleteUser(user.id)
         toast.success(`${userLabel(user)} deleted`)
         onRemoved?.([user.id])
       },
@@ -176,7 +176,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       approve: {
         title: `Approve ${count}?`,
         message:
-          'Each newly approved user gets a temporary password by email (already active users keep theirs). Passwords that can’t be emailed are shown to you.',
+          'Each newly approved user gets a temporary password by email (users who already have one keep it). Any password that can’t be emailed is shown to you.',
         confirmLabel: 'Approve',
         tone: 'primary',
       },
@@ -194,7 +194,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       },
       delete: {
         title: `Delete ${count}?`,
-        message: 'These accounts are deleted permanently. Their download logs are kept. This can’t be undone.',
+        message: 'These accounts are deleted permanently. Their download history is kept. This can’t be undone.',
         confirmLabel: 'Delete',
         tone: 'danger',
         requireText: 'DELETE',
@@ -206,7 +206,6 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
     try {
       const { results } = await run('bulk', 'Working…', () =>
         adminBulkUsers(
-          secret,
           users.map(user => user.id),
           action,
         ),
@@ -229,7 +228,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       }
       return true
     } catch (err) {
-      reportError(err, 'The bulk action failed')
+      reportError(err, 'Couldn’t update the selected users')
       return false
     } finally {
       invalidate('users')
@@ -240,13 +239,13 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
 
   /** Menu entries for a user, depending on its status. */
   const menuItems = (user: AdminUser): ActionMenuItem[] => {
-    const items: ActionMenuItem[] = [{ key: 'edit', label: 'View & edit details', icon: Pencil, onSelect: () => editUser(user) }]
+    const items: ActionMenuItem[] = [{ key: 'edit', label: 'View & edit', icon: Pencil, onSelect: () => editUser(user) }]
     if (user.status === 'pending') {
       items.push({ key: 'approve', label: 'Approve & send password', icon: CircleCheck, onSelect: () => void approve(user) })
     }
     if (user.status === 'blocked') {
       items.push({ key: 'unblock', label: 'Unblock', icon: ShieldCheck, onSelect: () => void setStatus(user, 'approved') })
-      items.push({ key: 'approve', label: 'Approve & send new password', icon: CircleCheck, onSelect: () => void approve(user) })
+      items.push({ key: 'approve', label: 'Approve & send password', icon: CircleCheck, onSelect: () => void approve(user) })
     }
     if (user.status === 'approved') {
       items.push({
@@ -260,7 +259,7 @@ export function useUserActions(options: { onRemoved?: (ids: string[]) => void } 
       items.push({ key: 'reset', label: 'Reset today’s downloads', icon: RotateCcw, onSelect: () => void resetUsage(user) })
     }
     if (user.total_downloads > 0) {
-      items.push({ key: 'logs', label: 'View downloads', icon: History, onSelect: () => viewDownloads(user) })
+      items.push({ key: 'logs', label: 'View download history', icon: History, onSelect: () => viewDownloads(user) })
     }
     if (user.status !== 'pending') {
       items.push({ key: 'pending', label: 'Move to pending', icon: Clock3, onSelect: () => void setStatus(user, 'pending'), separated: true })

@@ -75,7 +75,7 @@ export default function Navbar({ showAuth = true, rightSlot, homeHref }: NavbarP
 function UsagePill({ usage }: { usage: Usage | undefined }) {
   if (!usage) return null
   const unlimited = usage.limit === null
-  const remaining = usage.remaining ?? 0
+  const remaining = unlimited ? 0 : Math.max(0, usage.remaining ?? (usage.limit ?? 0) - usage.used)
   const tone = unlimited
     ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200'
     : remaining <= 0
@@ -85,7 +85,7 @@ function UsagePill({ usage }: { usage: Usage | undefined }) {
     : 'border-white/10 bg-white/[0.04] text-slate-200'
   const description = unlimited
     ? `Unlimited downloads. ${usage.used} today.`
-    : `${usage.used} of ${usage.limit} downloads used today, ${remaining} left. Resets at ${formatTime(usage.resets_at)}.`
+    : `${remaining} of ${usage.limit} downloads left today. Resets at ${formatTime(usage.resets_at, usage.timezone)}.`
 
   return (
     <Link
@@ -102,10 +102,12 @@ function UsagePill({ usage }: { usage: Usage | undefined }) {
       ) : (
         <>
           <Download className="w-3.5 h-3.5" aria-hidden="true" />
-          <span>
-            {usage.used}/{usage.limit}
+          {/* Downloads left today: "2 left" on phones, "2 of 4 left" from sm up. */}
+          <span className="whitespace-nowrap">
+            {remaining}
+            <span className="hidden sm:inline"> of {usage.limit}</span>
+            <span className="font-normal opacity-70"> left</span>
           </span>
-          <span className="hidden sm:inline font-normal opacity-70">today</span>
         </>
       )}
     </Link>
@@ -213,7 +215,7 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
           className="ui-menu absolute right-0 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-white/10 bg-[#141729] p-1.5 shadow-2xl shadow-black/50 z-40"
         >
           <div className="px-3 pt-2 pb-2.5 mb-1 border-b border-white/[0.06]">
-            <p className="text-sm font-semibold text-white truncate">{user.name || 'Your account'}</p>
+            <p className="text-sm font-semibold text-white truncate">{user.name || 'Account'}</p>
             <p className="text-xs text-slate-500 truncate">{user.email || formatPhone(user.phone)}</p>
           </div>
 
@@ -236,7 +238,7 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
           </Link>
           <Link href="/account" role="menuitem" tabIndex={-1} onClick={() => setOpen(false)} className={itemClass}>
             <UserCircle className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            Account &amp; password
+            Account
           </Link>
           <div className="my-1 border-t border-white/[0.06]" role="separator" />
           <button

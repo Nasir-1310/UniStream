@@ -56,8 +56,8 @@ export function UsersSection({ intent }: { intent?: UsersIntent }) {
 
   const query = useAdminQuery(
     `users|${status}|${q}|${page}|${pageSize}|${sortKey}|${revisions.users}|${revisions.settings}`,
-    secret =>
-      adminListUsers(secret, {
+    () =>
+      adminListUsers({
         status: status === 'all' ? undefined : status,
         q: q || undefined,
         page,
@@ -104,7 +104,7 @@ export function UsersSection({ intent }: { intent?: UsersIntent }) {
       <SectionHeader
         id="users"
         title="Users"
-        description="Approve access requests, issue passwords and set daily limits."
+        description="Approve access requests, send passwords and set daily limits."
         actions={
           <button type="button" onClick={addUser} className="btn-primary btn-sm">
             <UserPlus className="w-4 h-4" aria-hidden="true" />
@@ -327,7 +327,7 @@ export function UsersSection({ intent }: { intent?: UsersIntent }) {
             {selectedUsers.some(user => user.status === 'approved') && (
               <button type="button" disabled={bulkBusy} onClick={() => runBulk('pending')} className="btn-outline max-sm:hidden">
                 <Clock3 className="w-4 h-4" aria-hidden="true" />
-                Pending
+                Move to pending
               </button>
             )}
             <button type="button" disabled={bulkBusy} onClick={() => runBulk('delete')} className="btn-outline text-red-300 hover:text-red-200">
@@ -376,7 +376,7 @@ function UserIdentity({ user }: { user: AdminUser }) {
           type="button"
           onClick={() => editUser(user)}
           className="block max-w-full truncate text-left text-sm font-medium text-white hover:text-indigo-200 hover:underline underline-offset-2"
-          title="View & edit details"
+          title="View & edit"
         >
           {userLabel(user)}
         </button>
@@ -405,7 +405,7 @@ function StatusCell({ user }: { user: AdminUser }) {
         </Badge>
       )}
       {user.status === 'approved' && user.has_password && user.temp_password && (
-        <Badge title="Still using the temporary password from the admin">Temp password</Badge>
+        <Badge title="Still using the temporary password from the admin">Temporary password</Badge>
       )}
     </div>
   )
@@ -429,7 +429,7 @@ function UsageCell({ user }: { user: AdminUser }) {
         )}
       </span>
       {user.daily_limit !== null && (
-        <span className="block text-[11px] text-slate-500">{user.daily_limit < 0 ? 'Unlimited plan' : 'Custom limit'}</span>
+        <span className="block text-[11px] text-slate-500">{user.daily_limit < 0 ? 'Unlimited' : 'Custom limit'}</span>
       )}
     </div>
   )

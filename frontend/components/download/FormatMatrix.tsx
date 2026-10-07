@@ -1,8 +1,8 @@
 'use client'
 // components/download/FormatMatrix.tsx
 //
-// Every quality the analysis found, grouped by container (MP4, MP3, …) with a
-// filter. Each row downloads its format and shows live progress inline.
+// Every quality the server found, grouped into video and audio with a
+// filter. Each row downloads its quality and shows live progress inline.
 // Phones get one card per format with a full-size button; from `sm` up the
 // rows line up as a table.
 
@@ -22,7 +22,7 @@ import {
 import { Badge, EmptyState, Spinner, type BadgeTone } from '@/components/ui'
 import type { DownloadProgressEvent, VideoFormat } from '@/lib/api'
 import { pluralize } from '@/lib/format'
-import { IDLE, heightOf, isVideoExt, type RowState } from './types'
+import { IDLE, formatName, heightOf, isVideoExt, type RowState } from './types'
 
 type Filter = 'all' | 'audio' | string
 
@@ -65,7 +65,7 @@ function ExtTag({ ext, className = '' }: { ext: string; className?: string }) {
 }
 
 function sectionTitle(ext: string): string {
-  return isVideoExt(ext) ? 'Video with sound' : 'Audio only'
+  return isVideoExt(ext) ? `Video (${ext.toUpperCase()})` : `Audio only (${ext.toUpperCase()})`
 }
 
 /** "12.4 MB", or null when the API couldn't tell. */
@@ -218,7 +218,8 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
   const resolution = audio ? null : format.resolution
   const Icon = audio ? Music : Video
   const disabled = locked || Boolean(blockedReason)
-  const name = `${format.label}${size ? `, ${size}` : ''}`
+  const label = formatName(format)
+  const name = `${label}${size ? `, ${size}` : ''}`
 
   let action
   if (state.status === 'active') {
@@ -242,7 +243,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
         type="button"
         onClick={() => onDownload(format)}
         disabled={disabled}
-        aria-label={`Retry download: ${name}`}
+        aria-label={`Try again: download ${name}`}
         aria-describedby={blockedReason ? BLOCKED_ID : undefined}
         className="btn-outline btn-sm whitespace-nowrap text-red-200 border-red-500/30"
       >
@@ -301,7 +302,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
                 state.status === 'complete' ? 'text-emerald-200' : state.status === 'error' ? 'text-red-200' : 'text-white'
               }`}
             >
-              {format.label}
+              {label}
             </span>
             {badge && (
               <Badge tone={badge.tone} title={badge.hint}>
@@ -359,7 +360,12 @@ export function FormatMatrix({
 
   const tabs: { key: Filter; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: formats.length },
-    ...videoExts.map(ext => ({ key: ext, label: ext.toUpperCase(), count: groups[ext].length })),
+    // "Video" while there's one video type (always MP4 today); type names only when they differ.
+    ...videoExts.map(ext => ({
+      key: ext,
+      label: videoExts.length === 1 ? 'Video' : ext.toUpperCase(),
+      count: groups[ext].length,
+    })),
     ...(hasAudio
       ? [{ key: 'audio', label: 'Audio', count: exts.filter(e => !isVideoExt(e)).reduce((n, e) => n + groups[e].length, 0) }]
       : []),
@@ -389,7 +395,7 @@ export function FormatMatrix({
         {tabs.length > 2 && (
           <div
             role="group"
-            aria-label="Filter formats"
+            aria-label="Show"
             className="no-scrollbar -mx-1 px-1 flex gap-1.5 overflow-x-auto"
           >
             {tabs.map(tab => {
@@ -428,7 +434,7 @@ export function FormatMatrix({
       {activeId && (
         <p className="mb-3 flex items-start gap-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] px-3.5 py-2.5 text-[13px] leading-relaxed text-indigo-200">
           <Spinner size="sm" label={null} className="mt-0.5 text-indigo-300" />
-          <span>Downloading — keep this page open until it finishes. Other formats unlock when it&apos;s done.</span>
+          <span>Downloading. Keep this page open until it finishes; the other qualities unlock when it&apos;s done.</span>
         </p>
       )}
 
@@ -445,7 +451,6 @@ export function FormatMatrix({
           {visible.map(ext => (
             <div key={ext} className="sm:surface-card sm:overflow-hidden">
               <div className="flex items-center gap-2.5 mb-2 sm:mb-0 sm:px-4 sm:py-2.5 sm:bg-white/[0.02] sm:border-b sm:border-white/[0.06]">
-                <ExtTag ext={ext} className="text-[11px] px-2 py-0.5" />
                 <h3 className="text-[13px] font-medium text-slate-300" style={{ letterSpacing: 0 }}>
                   {sectionTitle(ext)}
                 </h3>
@@ -458,13 +463,13 @@ export function FormatMatrix({
                 aria-hidden="true"
               >
                 <span className="w-10" />
-                <span>Format</span>
                 <span>Quality</span>
+                <span>Detail</span>
                 <span>Size</span>
                 <span className="text-right">&nbsp;</span>
               </div>
 
-              <ul className="space-y-2 sm:space-y-0" aria-label={`${ext.toUpperCase()} formats`}>
+              <ul className="space-y-2 sm:space-y-0" aria-label={sectionTitle(ext)}>
                 {groups[ext].map(format => (
                   <FormatRow
                     key={format.format_id}

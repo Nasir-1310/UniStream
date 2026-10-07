@@ -27,7 +27,8 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
               </span>
             </Link>
             <p className="mt-3 text-[13px] leading-relaxed text-slate-500">
-              Save videos for study and offline viewing. Free for approved members, with a daily download allowance.
+              Save YouTube, Facebook and Instagram videos in up to 1080p HD. Free for approved students, with 4
+              downloads a day.
             </p>
           </div>
 
@@ -58,12 +59,12 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
               </li>
               <li>
                 <Link href="/terms" className={linkClass}>
-                  Terms of use
+                  Terms of Use
                 </Link>
               </li>
               <li>
                 <Link href="/privacy" className={linkClass}>
-                  Privacy policy
+                  Privacy Policy
                 </Link>
               </li>
             </ul>

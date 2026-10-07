@@ -7,10 +7,12 @@ tokens bound to the account's password version, so any password change ends
 every older session.
 
 Brute-force and enumeration rules:
-  * sign-in failures are limited per client IP and every attempt per login;
+  * sign-in failures are limited per client IP and every attempt per login
+    (for unknown logins too, so a lockout reveals nothing);
   * unknown accounts still cost one password hash, so timing reveals nothing;
   * forgot-password always answers the same way, and the email (if any) is
-    sent after the response so its latency cannot be measured either.
+    sent after the response so its latency cannot be measured either;
+  * every POST here also counts toward a per-IP cap (dependencies.auth_ip_cap).
 """
 
 import logging
@@ -19,26 +21,30 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 import email_service
 import security
 import storage
 from dependencies import (
+    PHONE_INPUT_MAX,
     SESSION_EXPIRED_MESSAGE,
+    TOKEN_MAX,
+    auth_ip_cap,
+    capped,
     clean_note,
     hash_password,
     issue_session,
+    limit_rule,
     public_user,
     require_user,
     status_error,
-    too_many_requests,
     user_lock,
     verify_password,
 )
 
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"], dependencies=[Depends(auth_ip_cap)])
 logger = logging.getLogger(__name__)
 
 INVALID_LOGIN_MESSAGE = "Incorrect email/phone or password."
@@ -53,7 +59,7 @@ DUPLICATE_MESSAGES = {
     "phone": "This phone number is already registered. Sign in or reset your password.",
 }
 
-# (limit, window seconds). The service launches at a university: a whole
+# (limit, window seconds). The service launches to students: a whole
 # campus Wi-Fi (or a mobile carrier's CGNAT) can share one public IP, so the
 # per-IP limits only stop floods, sized for a class signing up or mistyping
 # a temporary password at the same time. Sign-in failures are counted per IP
@@ -64,7 +70,11 @@ LOGIN_FAILURES_PER_IP = (30, 15 * 60)
 LOGIN_ATTEMPTS_PER_LOGIN = (10, 15 * 60)
 FORGOT_PER_IP = (10, 3600)
 FORGOT_PER_EMAIL = (3, 3600)
-CHANGE_PASSWORD_FAILURES = (10, 15 * 60)
+RESET_PER_IP = (20, 15 * 60)
+CHANGE_PASSWORD_PER_USER = (5, 15 * 60)
+
+LOGIN_MAX = 254
+PASSWORD_INPUT_MAX = security.PASSWORD_MAX
 
 
 def _now() -> datetime:
@@ -73,9 +83,23 @@ def _now() -> datetime:
 
 # ── Request bodies ────────────────────────────────────────────────────────────
 # Field validators reuse security.py so the API and the frontend (which
-# mirrors these messages) reject the same input with the same words.
+# mirrors these messages) reject the same input with the same words. Unknown
+# keys are rejected, and every field has a maximum length.
 
-class RegisterRequest(BaseModel):
+class StrictBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+def _password_input(value, empty_message: str):
+    """A password being checked (not chosen): only presence and length."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(empty_message)
+    if len(value) > PASSWORD_INPUT_MAX:
+        raise ValueError(f"Password must be at most {PASSWORD_INPUT_MAX} characters.")
+    return value
+
+
+class RegisterRequest(StrictBody):
     name: str
     email: str
     phone: str
@@ -94,7 +118,7 @@ class RegisterRequest(BaseModel):
     @field_validator("phone", mode="before")
     @classmethod
     def _phone(cls, value):
-        return security.validate_phone(value)
+        return security.validate_phone(capped(value, PHONE_INPUT_MAX, "Phone number"))
 
     @field_validator("note", mode="before")
     @classmethod
@@ -102,25 +126,23 @@ class RegisterRequest(BaseModel):
         return clean_note(value, label="Institution / department", max_length=120)
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(StrictBody):
     login: str
     password: str
 
     @field_validator("login", mode="before")
     @classmethod
     def _login(cls, value):
-        return security.classify_login(value)
+        return security.classify_login(capped(value, LOGIN_MAX, "Email or phone"))
 
     @field_validator("password", mode="before")
     @classmethod
     def _password(cls, value):
         # Only presence is checked: temporary and older passwords must still work.
-        if not isinstance(value, str) or not value:
-            raise ValueError("Please enter your password.")
-        return value
+        return _password_input(value, "Please enter your password.")
 
 
-class ForgotPasswordRequest(BaseModel):
+class ForgotPasswordRequest(StrictBody):
     email: str
 
     @field_validator("email", mode="before")
@@ -129,14 +151,14 @@ class ForgotPasswordRequest(BaseModel):
         return security.validate_email(value)
 
 
-class ResetPasswordRequest(BaseModel):
+class ResetPasswordRequest(StrictBody):
     token: str
     password: str
 
     @field_validator("token", mode="before")
     @classmethod
     def _token(cls, value):
-        if not isinstance(value, str) or not value.strip():
+        if not isinstance(value, str) or not value.strip() or len(value.strip()) > TOKEN_MAX:
             raise ValueError(INVALID_RESET_MESSAGE)
         return value.strip()
 
@@ -146,16 +168,14 @@ class ResetPasswordRequest(BaseModel):
         return security.validate_password(value)
 
 
-class ChangePasswordRequest(BaseModel):
+class ChangePasswordRequest(StrictBody):
     current_password: str
     new_password: str
 
     @field_validator("current_password", mode="before")
     @classmethod
     def _current(cls, value):
-        if not isinstance(value, str) or not value:
-            raise ValueError("Please enter your current password.")
-        return value
+        return _password_input(value, "Please enter your current password.")
 
     @field_validator("new_password", mode="before")
     @classmethod
@@ -164,15 +184,6 @@ class ChangePasswordRequest(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _limit(bucket: str, key: str, rule: tuple[int, int], message: str, *, record: bool = True) -> None:
-    """Raise 429 when `key` is over `rule`; with record=False nothing is counted."""
-    limit, window = rule
-    check = security.rate_limiter.hit if record else security.rate_limiter.check
-    allowed, retry_after = check(bucket, key, limit, window)
-    if not allowed:
-        raise too_many_requests(message, retry_after)
-
 
 def _forget_login_failures(user: dict) -> None:
     """A new password starts with a clean slate for every way of signing in."""
@@ -226,7 +237,7 @@ def _send_reset_link(email: str) -> None:
 @router.post("/register", status_code=201)
 def register(body: RegisterRequest, request: Request):
     """Request access: creates a pending account for the admin to approve."""
-    _limit(
+    limit_rule(
         "register_ip", security.client_ip(request), REGISTER_PER_IP,
         "Too many sign-up requests from your network. Try again in {wait}.",
     )
@@ -242,7 +253,7 @@ def register(body: RegisterRequest, request: Request):
     return {
         "message": (
             "Request received. An administrator will review it, and you'll get "
-            "your password by email once it's approved."
+            "your password by email once it's approved. Check your spam folder too."
         ),
     }
 
@@ -250,15 +261,15 @@ def register(body: RegisterRequest, request: Request):
 @router.post("/login")
 def login(body: LoginRequest, request: Request):
     ip = security.client_ip(request)
-    _limit(
+    limit_rule(
         "login_ip_failures", ip, LOGIN_FAILURES_PER_IP,
         "Too many failed sign-in attempts from your network. Try again in {wait}.",
         record=False,
     )
-    _limit(
+    limit_rule(
         "login_attempts", body.login, LOGIN_ATTEMPTS_PER_LOGIN,
-        "Too many sign-in attempts for this account. Try again in {wait}, "
-        "or reset your password.",
+        # Same words whether or not an account uses this login.
+        "Too many sign-in attempts. Try again in {wait}, or reset your password.",
     )
 
     user = storage.get_user_by_login(body.login)
@@ -292,7 +303,7 @@ def login(body: LoginRequest, request: Request):
 
 @router.post("/forgot-password")
 def forgot_password(body: ForgotPasswordRequest, request: Request, background: BackgroundTasks):
-    _limit(
+    limit_rule(
         "forgot_ip", security.client_ip(request), FORGOT_PER_IP,
         "Too many password reset requests. Try again in {wait}.",
     )
@@ -305,12 +316,16 @@ def forgot_password(body: ForgotPasswordRequest, request: Request, background: B
 
 
 @router.post("/reset-password")
-def reset_password(body: ResetPasswordRequest):
+def reset_password(body: ResetPasswordRequest, request: Request):
     """Set a new password from an emailed link, and sign in.
 
     The token carries the password version it was issued for, so it stops
     working once any password is set: links are single-use.
     """
+    limit_rule(
+        "reset_ip", security.client_ip(request), RESET_PER_IP,
+        "Too many password reset attempts. Try again in {wait}.",
+    )
     payload = security.verify_token(body.token, "reset")
     if payload is None:
         raise HTTPException(status_code=400, detail=INVALID_RESET_MESSAGE)
@@ -341,10 +356,11 @@ def me(user: dict = Depends(require_user)):
 
 @router.post("/change-password")
 def change_password(body: ChangePasswordRequest, user: dict = Depends(require_user)):
-    message = "Too many incorrect passwords. Try again in {wait}."
-    _limit("change_password_failures", user["id"], CHANGE_PASSWORD_FAILURES, message, record=False)
+    limit_rule(
+        "change_password", user["id"], CHANGE_PASSWORD_PER_USER,
+        "Too many password change attempts. Try again in {wait}.",
+    )
     if not verify_password(body.current_password, user.get("password_hash")):
-        _limit("change_password_failures", user["id"], CHANGE_PASSWORD_FAILURES, message)
         raise HTTPException(status_code=400, detail="Your current password is incorrect.")
     if body.new_password == body.current_password:
         raise HTTPException(

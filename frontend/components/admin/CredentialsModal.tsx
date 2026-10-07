@@ -133,7 +133,7 @@ export function CredentialsModal({
 
         {manual.length > 0 && (
           <p className="text-xs text-slate-500">
-            Fix email delivery under <span className="text-slate-300">Settings → Email</span> so future passwords are sent automatically.
+            Set up email under <span className="text-slate-300">Settings → Email delivery</span> so future passwords are sent automatically.
           </p>
         )}
       </div>

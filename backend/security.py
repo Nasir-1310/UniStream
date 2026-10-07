@@ -243,6 +243,11 @@ def _parse_hash(stored) -> tuple[int, int, int, bytes, bytes] | None:
     return n, r, p, salt, digest
 
 
+def is_password_hash(stored) -> bool:
+    """True for a well-formed hash from hash_password() (any password may still be wrong)."""
+    return _parse_hash(stored) is not None
+
+
 def verify_password(pw, stored) -> bool:
     """Constant-time check; False for a None/malformed hash or a non-string password.
 
@@ -348,36 +353,20 @@ def _sign(payload_b64: str) -> bytes:
     return hmac.new(_auth_secret(), payload_b64.encode("ascii"), hashlib.sha256).digest()
 
 
-def create_token(user_id: str, pv: str, purpose: str, ttl_seconds: int) -> str:
-    """Return "base64url(json payload).base64url(HMAC-SHA256)".
-
-    The payload is readable by its holder but cannot be altered; it carries
-    no secrets (pv is a fingerprint of the hash, not the hash).
-    """
-    if not isinstance(purpose, str) or not _PURPOSE_RE.fullmatch(purpose):
-        raise ValueError("Token purpose must be a short lowercase word.")
-    if not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
-        raise ValueError("Token lifetime must be a positive number of seconds.")
-    if user_id is None or str(user_id) == "":
-        raise ValueError("Token subject is required.")
-    now = int(time.time())
-    payload = {
-        "sub": str(user_id),
-        "pv": pv or "",
-        "purpose": purpose,
-        "iat": now,
-        "exp": now + ttl_seconds,
-    }
+def _encode_signed(payload: dict) -> str:
     payload_b64 = _b64url_encode(
         json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     )
     return f"{payload_b64}.{_b64url_encode(_sign(payload_b64))}"
 
 
-def verify_token(token, purpose: str) -> dict | None:
-    """Return {"sub","pv","exp","purpose","iat"} or None when the token is
-    malformed, forged, expired or issued for a different purpose."""
-    if not isinstance(token, str) or not token or len(token) > _MAX_TOKEN_LENGTH:
+def _decode_signed(token, max_length: int) -> dict | None:
+    """The payload of an untampered "payload.signature" token, else None.
+
+    The signature is checked (in constant time) before the payload is parsed,
+    so forged input never reaches the JSON decoder.
+    """
+    if not isinstance(token, str) or not token or len(token) > max_length:
         return None
     parts = token.strip().split(".")
     if len(parts) != 2 or not parts[0] or not parts[1]:
@@ -392,19 +381,243 @@ def verify_token(token, purpose: str) -> dict | None:
         payload = json.loads(_b64url_decode(payload_b64))
     except (ValueError, UnicodeDecodeError):
         return None
-    if not isinstance(payload, dict):
-        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _standard_claims(payload: dict, purpose: str) -> dict | None:
+    """{"sub","pv","exp","purpose","iat"} when the claims every token carries
+    are well-formed, unexpired and issued for `purpose`, else None."""
     sub, pv, exp = payload.get("sub"), payload.get("pv"), payload.get("exp")
     iat = payload.get("iat", 0)
     if not isinstance(sub, str) or not sub or not isinstance(pv, str):
         return None
-    if not isinstance(exp, int) or isinstance(exp, bool) or not isinstance(iat, int):
+    if not _is_int(exp) or not _is_int(iat):
         return None
     if payload.get("purpose") != purpose:
         return None
     if exp <= time.time():
         return None
     return {"sub": sub, "pv": pv, "exp": exp, "purpose": purpose, "iat": iat}
+
+
+def create_token(user_id: str, pv: str, purpose: str, ttl_seconds: int) -> str:
+    """Return "base64url(json payload).base64url(HMAC-SHA256)".
+
+    The payload is readable by its holder but cannot be altered; it carries
+    no secrets (pv is a fingerprint of the hash, not the hash). `purpose`
+    ("session", "reset", "admin", "download") keeps one kind of token from
+    being accepted where another is expected.
+    """
+    if not isinstance(purpose, str) or not _PURPOSE_RE.fullmatch(purpose):
+        raise ValueError("Token purpose must be a short lowercase word.")
+    if not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
+        raise ValueError("Token lifetime must be a positive number of seconds.")
+    if user_id is None or str(user_id) == "":
+        raise ValueError("Token subject is required.")
+    now = int(time.time())
+    return _encode_signed({
+        "sub": str(user_id),
+        "pv": pv or "",
+        "purpose": purpose,
+        "iat": now,
+        "exp": now + ttl_seconds,
+    })
+
+
+def verify_token(token, purpose: str) -> dict | None:
+    """Return {"sub","pv","exp","purpose","iat"} or None when the token is
+    malformed, forged, expired or issued for a different purpose."""
+    payload = _decode_signed(token, _MAX_TOKEN_LENGTH)
+    return None if payload is None else _standard_claims(payload, purpose)
+
+
+# ── Download tickets ──────────────────────────────────────────────────────────
+# EventSource cannot send an Authorization header, so the download stream
+# used to carry the 30-day session token in its URL, where proxies and access
+# logs keep it. Instead the page asks POST /download/ticket (Bearer session)
+# for a ticket: signed, valid for 60 seconds, usable once, and only for the
+# one download it names. Leaking it from a log is worthless.
+
+DOWNLOAD_TICKET_TTL_SECONDS = 60
+DOWNLOAD_TICKET_PURPOSE = "download"
+DOWNLOAD_EXTENSIONS = ("mp4", "mp3")
+URL_MAX = 2048
+FORMAT_ID_MAX = 200
+SOURCE_MAX = 32
+HEIGHT_MAX = 10_000
+# A ticket carries the URL (up to 2048 characters) in its payload.
+_MAX_TICKET_LENGTH = 8192
+
+
+def create_download_ticket(
+    user_id: str,
+    pv: str,
+    *,
+    url: str,
+    format_id: str,
+    ext: str,
+    height: int | None = None,
+    source: str | None = None,
+) -> str:
+    """A single-use ticket for GET /download/progress (see the section note)."""
+    if ext not in DOWNLOAD_EXTENSIONS:
+        raise ValueError("Unsupported file type.")
+    if user_id is None or str(user_id) == "":
+        raise ValueError("Ticket subject is required.")
+    now = int(time.time())
+    return _encode_signed({
+        "sub": str(user_id),
+        "pv": pv or "",
+        "purpose": DOWNLOAD_TICKET_PURPOSE,
+        "iat": now,
+        "exp": now + DOWNLOAD_TICKET_TTL_SECONDS,
+        # Random id that makes the ticket single-use (see UsedTickets).
+        "jti": secrets.token_urlsafe(16),
+        "url": url,
+        "format_id": format_id,
+        "ext": ext,
+        "height": height,
+        "source": source,
+    })
+
+
+def verify_download_ticket(ticket) -> dict | None:
+    """The ticket's claims, or None when it is forged, expired, malformed or
+    not a download ticket. Does not mark it used: see used_tickets.consume()."""
+    payload = _decode_signed(ticket, _MAX_TICKET_LENGTH)
+    if payload is None:
+        return None
+    claims = _standard_claims(payload, DOWNLOAD_TICKET_PURPOSE)
+    if claims is None:
+        return None
+    jti, url, format_id = payload.get("jti"), payload.get("url"), payload.get("format_id")
+    ext, height, source = payload.get("ext"), payload.get("height"), payload.get("source")
+    if not isinstance(jti, str) or not 8 <= len(jti) <= 64:
+        return None
+    if not isinstance(url, str) or not url or len(url) > URL_MAX:
+        return None
+    if not isinstance(format_id, str) or not format_id or len(format_id) > FORMAT_ID_MAX:
+        return None
+    if ext not in DOWNLOAD_EXTENSIONS:
+        return None
+    if height is not None and not (_is_int(height) and 1 <= height <= HEIGHT_MAX):
+        return None
+    if source is not None and not (isinstance(source, str) and len(source) <= SOURCE_MAX):
+        return None
+    return {
+        **claims, "jti": jti, "url": url, "format_id": format_id,
+        "ext": ext, "height": height, "source": source,
+    }
+
+
+class UsedTickets:
+    """Ids of spent tickets, kept until the ticket would have expired anyway.
+
+    Every ticket lives 60 seconds, so insertion order is expiry order and
+    expired ids are dropped from the front. Memory is bounded: when full (an
+    abnormal flood, since tickets are rate-limited per account) new tickets
+    are refused rather than an unexpired id forgotten, so a ticket can never
+    be replayed.
+    """
+
+    def __init__(self, max_entries: int = 50_000, clock=time.time):
+        self._lock = threading.Lock()
+        self._used: OrderedDict[str, float] = OrderedDict()
+        self._max_entries = max(1, max_entries)
+        self._clock = clock
+
+    def consume(self, jti: str, exp: float) -> bool:
+        """Mark a ticket used; False when it was already used (or no room)."""
+        now = self._clock()
+        with self._lock:
+            while self._used:
+                oldest_jti, oldest_exp = next(iter(self._used.items()))
+                if oldest_exp > now:
+                    break
+                del self._used[oldest_jti]
+            if jti in self._used or len(self._used) >= self._max_entries:
+                return False
+            self._used[jti] = exp
+            return True
+
+    def reset(self) -> None:
+        """Forget every spent ticket (tests)."""
+        with self._lock:
+            self._used.clear()
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._used)
+
+
+used_tickets = UsedTickets()
+
+
+# ── Admin account rules ───────────────────────────────────────────────────────
+
+ADMIN_USERNAME_MIN, ADMIN_USERNAME_MAX = 3, 32
+ADMIN_PASSWORD_MIN = 10
+_ADMIN_USERNAME_RE = re.compile(r"[a-z0-9._-]+")
+
+
+def validate_admin_username(s) -> str:
+    """Return the lowercased admin username or raise ValueError."""
+    if not isinstance(s, str) or not s.strip():
+        raise ValueError("Please enter a username.")
+    username = s.strip().lower()
+    if len(username) < ADMIN_USERNAME_MIN:
+        raise ValueError(f"Username must be at least {ADMIN_USERNAME_MIN} characters.")
+    if len(username) > ADMIN_USERNAME_MAX:
+        raise ValueError(f"Username must be at most {ADMIN_USERNAME_MAX} characters.")
+    if not _ADMIN_USERNAME_RE.fullmatch(username):
+        raise ValueError(
+            "Username can only contain letters, numbers, dots, dashes and underscores."
+        )
+    return username
+
+
+def validate_admin_password(s) -> str:
+    """Stricter than user passwords (10+ characters): this account controls everyone's."""
+    if not isinstance(s, str) or not s:
+        raise ValueError("Please enter a new password.")
+    if len(s) < ADMIN_PASSWORD_MIN:
+        raise ValueError(f"Admin password must be at least {ADMIN_PASSWORD_MIN} characters.")
+    if len(s) > PASSWORD_MAX:
+        raise ValueError(f"Admin password must be at most {PASSWORD_MAX} characters.")
+    if not any(ch.isalpha() for ch in s) or not any(ch.isdigit() for ch in s):
+        raise ValueError("Admin password must include at least one letter and one number.")
+    return s
+
+
+def secret_matches(given, expected) -> bool:
+    """Constant-time comparison of two secrets of any length.
+
+    Comparing digests keeps the time independent of where the strings
+    differ and of their lengths.
+    """
+    if not isinstance(given, str) or not isinstance(expected, str) or not expected:
+        return False
+    return hmac.compare_digest(
+        hashlib.sha256(given.encode("utf-8")).digest(),
+        hashlib.sha256(expected.encode("utf-8")).digest(),
+    )
+
+
+def bootstrap_version(secret: str, stored_hash: str | None) -> str:
+    """Token fingerprint for admin sessions opened with the bootstrap password.
+
+    Keyed with the signing secret, so a token's payload reveals nothing about
+    ADMIN_SECRET; it also covers the stored hash, so setting a new admin
+    password ends recovery-mode sessions too. Prefixed so it can never equal
+    a password_version().
+    """
+    material = "\x00".join(("admin-bootstrap-v1", secret or "", stored_hash or ""))
+    digest = hmac.new(_auth_secret(), material.encode("utf-8"), hashlib.sha256).hexdigest()
+    return "boot-" + digest[:16]
 
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -548,21 +761,48 @@ _PLATFORM_DOMAINS = {
 }
 
 
+# A DNS name: dot-separated ASCII labels. Rejects percent-encoding, IPv6
+# brackets and anything else a URL parser could read differently.
+_HOSTNAME_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
+
+
 def detect_platform(url) -> str | None:
-    """Return "youtube" | "facebook" | "instagram" for an http(s) link, else None."""
+    """Return "youtube" | "facebook" | "instagram" for an http(s) link, else None.
+
+    The link is handed to yt-dlp, which fetches it from the server, so this
+    check is also what keeps the server from being pointed at other hosts
+    (SSRF). It is deliberately strict about anything URL parsers disagree
+    on: credentials before the host ("https://youtube.com@evil.example"),
+    backslashes (browsers read them as "/"), IP literals, unusual ports,
+    percent-encoded or non-ASCII host names, whitespace and control characters.
+    """
     if not isinstance(url, str):
         return None
     url = url.strip()
-    if not url or len(url) > 4096 or any(ch.isspace() or ord(ch) < 32 for ch in url):
+    if not url or len(url) > URL_MAX or "\\" in url:
+        return None
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in url):
         return None
     try:
         parts = urlsplit(url)
         host = parts.hostname
+        port = parts.port  # raises ValueError for a malformed port
     except ValueError:
         return None
     if parts.scheme.lower() not in {"http", "https"} or not host:
         return None
+    if "@" in parts.netloc or parts.username is not None or parts.password is not None:
+        return None
+    if port is not None and port not in (80, 443):
+        return None
     host = host.rstrip(".").lower()
+    if not _HOSTNAME_RE.fullmatch(host):
+        return None
+    try:
+        ipaddress.ip_address(host)
+        return None  # e.g. 142.250.0.1: a platform is only ever reached by name
+    except ValueError:
+        pass
     for platform, domains in _PLATFORM_DOMAINS.items():
         for domain in domains:
             if host == domain or host.endswith("." + domain):

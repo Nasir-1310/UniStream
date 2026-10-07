@@ -1,14 +1,18 @@
 # backend/routers/download.py
 #
-# Provides two endpoints, mounted without a prefix (paths are explicit):
+# Provides three endpoints, mounted without a prefix (paths are explicit):
 #
-#   GET /download/progress   — SSE stream with real-time yt-dlp progress
-#   GET /download/file       — serve the finished file via a one-time token
+#   POST /download/ticket    — checks the link and today's limit, returns a
+#                              single-use ticket valid for 60 seconds
+#   GET  /download/progress  — SSE stream with real-time yt-dlp progress
+#   GET  /download/file      — serve the finished file via a one-time token
 #
-# A download needs a session (the `token` query parameter: EventSource cannot
-# send headers), a supported platform and room in the account's daily limit.
-# It counts toward the limit, and is written to the audit log, only once it
-# completes.
+# EventSource cannot send an Authorization header, and a session token in a
+# URL ends up in proxy and access logs, so the stream is opened with a ticket
+# instead: signed, bound to the account and to this one download, usable
+# once. A download needs a supported platform and room in the account's
+# daily limit. It counts toward the limit, and is written to the audit log,
+# only once it completes.
 #
 # Mount in main.py with:
 #   app.include_router(download_router)   # no prefix — paths are explicit
@@ -18,17 +22,20 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Literal, Optional
 from urllib.parse import quote
 
 import yt_dlp
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import dependencies
 import security
@@ -48,12 +55,22 @@ logger = logging.getLogger(__name__)
 
 # ── In-memory job registry ─────────────────────────────────────────────────────
 # Maps job_id  → progress dict
-# Maps "token:<uuid>" → {filename, expires}
+# Maps "token:<random>" → {filename, expires, job_id, user_id}
 _jobs: dict[str, dict] = {}
 
 # Server-wide cap on simultaneous downloads (each account may run two).
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "5"))
 _semaphore = threading.Semaphore(MAX_CONCURRENT)
+
+# Tickets per account and hour; each one is a pre-check against the database.
+TICKETS_PER_USER = (30, 3600)
+FILE_TOKEN_TTL_SECONDS = 300
+FILE_TOKEN_MAX = 128
+
+TICKET_EXPIRED_MESSAGE = "This download link has expired. Please start the download again."
+FILE_GONE_MESSAGE = (
+    "This download link has expired or was already used. Please download the video again."
+)
 
 
 # ── ffmpeg discovery ───────────────────────────────────────────────────────────
@@ -345,6 +362,30 @@ def _sse_refusal(message: str, code: str | None) -> StreamingResponse:
     return StreamingResponse(_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
+class TicketRequest(BaseModel):
+    """What to download; everything the stream needs travels in the ticket."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=security.URL_MAX)
+    format_id: str = Field(min_length=1, max_length=security.FORMAT_ID_MAX)
+    ext: Literal["mp4", "mp3"]
+    height: Optional[int] = Field(None, ge=1, le=security.HEIGHT_MAX)
+    source: Optional[str] = Field(None, max_length=security.SOURCE_MAX)
+
+    @field_validator("url", "format_id", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("format_id", "source")
+    @classmethod
+    def _printable(cls, value):
+        if value is not None and not value.isprintable():
+            raise ValueError("Choose a quality from the list.")
+        return value
+
+
 def _quality_label(ext: str, height: int | None) -> str:
     """Audit-log quality, e.g. "1080p MP4" or "MP3"."""
     if ext == "mp3":
@@ -352,32 +393,60 @@ def _quality_label(ext: str, height: int | None) -> str:
     return f"{height}p MP4" if height else "MP4"
 
 
+@router.post("/download/ticket")
+def create_download_ticket(body: TicketRequest, user: dict = Depends(dependencies.require_user)):
+    """Step 1 of a download: {"ticket", "expires_in": 60}.
+
+    Runs the same checks as the stream start (platform, account, today's
+    limit) so the page can show a refusal as a normal error. It reserves
+    nothing: the stream start does, and only a completed download counts.
+    """
+    try:
+        security.ensure_supported_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    dependencies.limit_rule(
+        "download_tickets", user["id"], TICKETS_PER_USER,
+        "Too many download attempts. Try again in {wait}.",
+    )
+    dependencies.check_download_room(user)
+    ticket = security.create_download_ticket(
+        user["id"],
+        security.password_version(user.get("password_hash")),
+        url=body.url,
+        format_id=body.format_id,
+        ext=body.ext,
+        height=body.height,
+        source=body.source,
+    )
+    return {"ticket": ticket, "expires_in": security.DOWNLOAD_TICKET_TTL_SECONDS}
+
+
 @router.get("/download/progress")
-async def download_with_progress(
-    url:        str = Query(..., max_length=4096),
-    format_id:  str = Query(..., max_length=200),
-    ext:        str = Query(..., max_length=10),
-    height:     int | None = Query(None, ge=1, le=10000),
-    source:     str | None = Query(None, max_length=32),
-    token:      str | None = Query(None, max_length=2048),
-):
+async def download_with_progress(ticket: str | None = Query(None)):
     """
     SSE stream that drives the rich progress UI in the frontend.
 
     Flow:
-      1. Checks the session, the platform and the daily limit, and reserves
-         one of the account's download slots (refusals arrive as one SSE
-         error event with a `code`).
+      1. Spends the ticket (forged, expired or reused -> code "auth"), then
+         checks the account, the platform and the daily limit again, and
+         reserves one of the account's download slots (refusals arrive as
+         one SSE error event with a `code`). What to download comes only
+         from the ticket.
       2. Starts yt-dlp in a thread pool, reporting progress via a hook.
       3. Polls the shared job dict every 250 ms and yields SSE events.
       4. On completion counts the download, writes the audit log and emits a
          one-time `token` (plus the account's updated `usage`).
       5. Browser calls GET /download/file?token=<token> to trigger the save.
     """
+    claims = security.verify_download_ticket(ticket) if ticket else None
+    if claims is None or not security.used_tickets.consume(claims["jti"], claims["exp"]):
+        return _sse_refusal(TICKET_EXPIRED_MESSAGE, "auth")
+    url, format_id, ext = claims["url"], claims["format_id"], claims["ext"]
+    height, source = claims["height"], claims["source"]
+
     try:
-        user, platform, limit = await asyncio.to_thread(
-            dependencies.reserve_download, token, url,
-        )
+        user, platform, limit = await asyncio.to_thread(dependencies.reserve_download, claims)
     except dependencies.DownloadRefused as refusal:
         return _sse_refusal(refusal.message, refusal.code)
     except storage.StorageUnavailableError as exc:
@@ -461,7 +530,7 @@ async def download_with_progress(
                 timeout=30,
             )
             if not acquired:
-                raise _ServerBusy("Server is busy. Try again shortly.")
+                raise _ServerBusy("The server is busy right now. Please try again in a minute.")
 
             def _blocking():
                 return _download_with_fallback(
@@ -509,10 +578,13 @@ async def download_with_progress(
                 # user, but keep an actionable server-side audit failure.
                 logger.exception("Completed download could not be written to the audit log")
 
-            token = str(uuid.uuid4())
+            # Unguessable, single-use and tied to this job and account.
+            token = secrets.token_urlsafe(32)
             _jobs[f"token:{token}"] = {
                 "filename": str(out_file),
-                "expires": time.time() + 300,
+                "expires": time.time() + FILE_TOKEN_TTL_SECONDS,
+                "job_id": job_id,
+                "user_id": user_id,
             }
             job.update({
                 "status":   "complete",
@@ -524,7 +596,7 @@ async def download_with_progress(
             })
 
             async def _expire_unclaimed_file():
-                await asyncio.sleep(300)
+                await asyncio.sleep(FILE_TOKEN_TTL_SECONDS)
                 entry = _jobs.pop(f"token:{token}", None)
                 _jobs.pop(job_id, None)
                 if entry:
@@ -617,7 +689,7 @@ async def download_with_progress(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/download/file")
-async def serve_download_file(token: str = Query(...)):
+async def serve_download_file(token: str = Query(..., min_length=1, max_length=FILE_TOKEN_MAX)):
     """
     Called by the browser immediately after the SSE stream emits 'complete'.
     Serves the temp file once, then schedules deletion.
@@ -625,16 +697,17 @@ async def serve_download_file(token: str = Query(...)):
     entry = _jobs.get(f"token:{token}")
 
     if not entry:
-        raise HTTPException(status_code=404, detail="Token not found or already used.")
+        raise HTTPException(status_code=404, detail=FILE_GONE_MESSAGE)
 
     if time.time() > entry["expires"]:
         _jobs.pop(f"token:{token}", None)
         shutil.rmtree(Path(entry["filename"]).parent, ignore_errors=True)
-        raise HTTPException(status_code=410, detail="Download token has expired.")
+        raise HTTPException(status_code=410, detail=FILE_GONE_MESSAGE)
 
     filepath = Path(entry["filename"])
     if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found on server.")
+        _jobs.pop(f"token:{token}", None)
+        raise HTTPException(status_code=404, detail=FILE_GONE_MESSAGE)
 
     # One-time use: remove token immediately
     _jobs.pop(f"token:{token}", None)

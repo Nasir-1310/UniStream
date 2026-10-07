@@ -18,11 +18,12 @@ import { DetailList } from './parts'
 type FieldName = 'name' | 'email' | 'phone' | 'note' | 'limit'
 type Errors = Partial<Record<FieldName, string>>
 
-const NOTE_MAX = 500
+/** Same limit as the API (300). */
+const NOTE_MAX = 300
 
 export function passwordState(user: AdminUser): string {
   if (!user.has_password) return 'Not set yet'
-  return user.temp_password ? 'Temporary (issued by admin)' : 'Set by the user'
+  return user.temp_password ? 'Temporary (sent by admin)' : 'Set by the user'
 }
 
 const FORM_ID = 'admin-edit-user-form'
@@ -36,7 +37,7 @@ export function UserEditModal({ user, onClose }: { user: AdminUser | null; onClo
       dismissible={!busy}
       size="xl"
       title={user ? userLabel(user) : ''}
-      description={user ? 'Account details and access settings' : undefined}
+      description={user ? 'Account details and daily limit' : undefined}
       icon={
         <div className="w-10 h-10 rounded-xl border border-indigo-500/25 bg-indigo-500/10 text-indigo-300 flex items-center justify-center">
           <UserCog className="w-5 h-5" aria-hidden="true" />
@@ -60,7 +61,7 @@ export function UserEditModal({ user, onClose }: { user: AdminUser | null; onClo
 }
 
 function EditForm({ user, onClose, onBusyChange }: { user: AdminUser; onClose: () => void; onBusyChange: (busy: boolean) => void }) {
-  const { secret, handleAuthError, invalidate, overview } = useAdmin()
+  const { handleAuthError, invalidate, overview } = useAdmin()
   const toast = useToast()
   const defaultLimit = overview?.settings.default_daily_limit
   const [name, setName] = useState(user.name ?? '')
@@ -103,7 +104,7 @@ function EditForm({ user, onClose, onBusyChange }: { user: AdminUser; onClose: (
       else if (v.value !== user.phone) body.phone = v.value
     }
     const cleanNote = note.trim()
-    if (cleanNote.length > NOTE_MAX) next.note = `Keep the note under ${NOTE_MAX} characters.`
+    if (cleanNote.length > NOTE_MAX) next.note = `Note must be at most ${NOTE_MAX} characters.`
     else if ((cleanNote || null) !== (user.note || null)) body.note = cleanNote || null
 
     const limitResult = limitToApi(limit)
@@ -119,7 +120,7 @@ function EditForm({ user, onClose, onBusyChange }: { user: AdminUser; onClose: (
 
     setBusy(true)
     try {
-      const { user: updated } = await adminUpdateUser(secret, user.id, body)
+      const { user: updated } = await adminUpdateUser(user.id, body)
       invalidate('users')
       toast.success('Changes saved', { description: userLabel(updated) })
       setBusy(false)

@@ -2,15 +2,16 @@
 // components/admin/AdminShell.tsx
 //
 // Dashboard frame: top bar, section navigation (sidebar from lg, bottom tab
-// bar on phones and tablets), the shared dialogs, and the AdminContext every
-// section reads. Sections mount on first visit and then stay mounted (hidden)
-// so their filters and page survive switching back and forth.
+// bar on phones and tablets), the recovery-mode warning, the shared dialogs,
+// and the AdminContext every section reads. Sections mount on first visit and
+// then stay mounted (hidden) so their filters and page survive switching back
+// and forth.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { LayoutDashboard, LogOut, RefreshCw, ScrollText, Server, Settings, Users, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, LogOut, RefreshCw, ScrollText, Server, Settings, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
 import Navbar from '@/components/Navbar'
-import { Spinner, useToast } from '@/components/ui'
-import { adminOverview, apiErrorMessage, apiErrorStatus, type AdminUser } from '@/lib/api'
+import { Alert, Spinner, useToast } from '@/components/ui'
+import { adminOverview, apiErrorMessage, type AdminSession, type AdminUser } from '@/lib/api'
 import { formatCompact } from '@/lib/format'
 import {
   AdminContext,
@@ -24,7 +25,7 @@ import {
 } from './AdminContext'
 import { AddUserModal } from './AddUserModal'
 import { CredentialsModal } from './CredentialsModal'
-import { useSecretQuery } from './hooks'
+import { isAdminSessionEnded, useAdminQuery } from './hooks'
 import { LogsSection } from './LogsSection'
 import { OverviewSection } from './OverviewSection'
 import { SettingsSection } from './SettingsSection'
@@ -32,12 +33,13 @@ import { SystemSection } from './SystemSection'
 import { UserEditModal } from './UserEditModal'
 import { UsersSection } from './UsersSection'
 
-const NAV: { id: SectionId; label: string; icon: LucideIcon }[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'users', label: 'Users', icon: Users },
-  { id: 'logs', label: 'Logs', icon: ScrollText },
-  { id: 'settings', label: 'Settings', icon: Settings },
-  { id: 'system', label: 'System', icon: Server },
+/** `short` is the label in the phone tab bar (five tabs at 320px). */
+const NAV: { id: SectionId; label: string; short: string; icon: LucideIcon }[] = [
+  { id: 'overview', label: 'Overview', short: 'Overview', icon: LayoutDashboard },
+  { id: 'users', label: 'Users', short: 'Users', icon: Users },
+  { id: 'logs', label: 'Download history', short: 'History', icon: ScrollText },
+  { id: 'settings', label: 'Settings', short: 'Settings', icon: Settings },
+  { id: 'system', label: 'System', short: 'System', icon: Server },
 ]
 
 function sectionFromHash(hash: string): SectionId | null {
@@ -48,7 +50,15 @@ function sectionFromHash(hash: string): SectionId | null {
 /** Refresh the overview (pending count, charts) this often while the tab is visible. */
 const OVERVIEW_POLL_MS = 60_000
 
-export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (expired: boolean) => void }) {
+export function AdminShell({
+  session,
+  recoveryMode,
+  onSignOut,
+}: {
+  session: AdminSession
+  recoveryMode: boolean
+  onSignOut: () => void
+}) {
   const toast = useToast()
   const [section, setSection] = useState<SectionId>(() => sectionFromHash(window.location.hash) ?? 'overview')
   const [visited, setVisited] = useState<SectionId[]>(() => [sectionFromHash(window.location.hash) ?? 'overview'])
@@ -58,23 +68,15 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
   const [editing, setEditing] = useState<AdminUser | null>(null)
   const [adding, setAdding] = useState(false)
 
-  const signOut = useCallback((options: { expired?: boolean } = {}) => onSignOut(Boolean(options.expired)), [onSignOut])
-
-  const handleAuthError = useCallback(
-    (err: unknown) => {
-      if (apiErrorStatus(err) !== 401) return false
-      onSignOut(true)
-      return true
-    },
-    [onSignOut],
-  )
+  // A 401 has already ended the session in lib/api; AdminApp shows the sign-in screen.
+  const handleAuthError = isAdminSessionEnded
 
   const reportError = useCallback(
     (err: unknown, title = 'Something went wrong') => {
-      if (handleAuthError(err)) return
+      if (isAdminSessionEnded(err)) return
       toast.error(title, { description: apiErrorMessage(err) })
     },
-    [handleAuthError, toast],
+    [toast],
   )
 
   const invalidate = useCallback((...scopes: Scope[]) => {
@@ -149,9 +151,7 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
   )
 
   // ── Overview: counts for the nav badges, settings and system status ──────────
-  const overviewQuery = useSecretQuery(
-    secret,
-    handleAuthError,
+  const overviewQuery = useAdminQuery(
     `overview|${revisions.users}|${revisions.logs}|${revisions.settings}|${revisions.system}`,
     adminOverview,
   )
@@ -171,8 +171,9 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
 
   const context = useMemo<AdminContextValue>(
     () => ({
-      secret,
-      signOut,
+      session,
+      recoveryMode,
+      signOut: onSignOut,
       handleAuthError,
       reportError,
       revisions,
@@ -183,7 +184,7 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
       editUser: setEditing,
       addUser: () => setAdding(true),
     }),
-    [secret, signOut, handleAuthError, reportError, revisions, invalidate, overview, navigate, presentCredentials],
+    [session, recoveryMode, onSignOut, handleAuthError, reportError, revisions, invalidate, overview, navigate, presentCredentials],
   )
 
   const sections: Record<SectionId, ReactNode> = {
@@ -207,8 +208,13 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
           homeHref="/"
           rightSlot={
             <>
-              <span className="hidden sm:inline-flex items-center rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-indigo-300">
-                Admin
+              <span
+                className="hidden sm:inline-flex max-w-[11rem] items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-200"
+                title={`Signed in as ${session.username}`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-indigo-300" aria-hidden="true" />
+                <span className="sr-only">Signed in as </span>
+                <span className="truncate">{session.username}</span>
               </span>
               <button
                 type="button"
@@ -221,7 +227,7 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
                 {refreshing ? <Spinner size="sm" label={null} /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
                 <span className="hidden md:inline">Refresh</span>
               </button>
-              <button type="button" onClick={() => signOut()} className="btn-outline" aria-label="Sign out of admin" title="Sign out">
+              <button type="button" onClick={onSignOut} className="btn-outline" aria-label="Sign out" title="Sign out">
                 <LogOut className="w-4 h-4" aria-hidden="true" />
                 <span className="hidden md:inline">Sign out</span>
               </button>
@@ -267,6 +273,7 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
           </aside>
 
           <main id="main" className="min-w-0 pt-5 sm:pt-8 pb-28 lg:pb-12">
+            {recoveryMode && <RecoveryBanner onOpenSettings={() => navigate('settings')} showLink={section !== 'settings'} />}
             {SECTION_IDS.filter(id => visited.includes(id)).map(id => (
               <div key={id} hidden={id !== section}>
                 {sections[id]}
@@ -307,7 +314,7 @@ export function AdminShell({ secret, onSignOut }: { secret: string; onSignOut: (
                         </span>
                       )}
                     </span>
-                    {item.label}
+                    {item.short}
                   </a>
                 </li>
               )
@@ -328,7 +335,7 @@ function SidebarStatus({ overview }: { overview: NonNullable<AdminContextValue['
   const rows: [string, boolean, string][] = [
     ['Database', system.schema_ready && system.persistent, system.storage === 'supabase' ? (system.schema_ready ? 'Supabase' : 'Upgrade needed') : 'SQLite (local)'],
     ['Email', system.email.configured, system.email.configured ? system.email.provider ?? 'On' : 'Not set up'],
-    ['Sessions', system.auth_secret_configured, system.auth_secret_configured ? 'Secured' : 'Fallback key'],
+    ['Sign-ins', system.auth_secret_configured, system.auth_secret_configured ? 'Secure' : 'Set AUTH_SECRET'],
   ]
   return (
     <div className="mt-6 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
@@ -343,5 +350,27 @@ function SidebarStatus({ overview }: { overview: NonNullable<AdminContextValue['
         ))}
       </ul>
     </div>
+  )
+}
+
+/** ADMIN_RESET_PASSWORD is still set: the setup password signs in too until it is removed. */
+function RecoveryBanner({ onOpenSettings, showLink }: { onOpenSettings: () => void; showLink: boolean }) {
+  return (
+    <Alert
+      tone="warning"
+      title="Password recovery is still on"
+      className="mb-5"
+      action={
+        showLink ? (
+          <button type="button" onClick={onOpenSettings} className="btn-outline btn-sm">
+            Check your admin account
+          </button>
+        ) : undefined
+      }
+    >
+      While <code className="text-slate-100">ADMIN_RESET_PASSWORD</code> is set on the server, the setup password from your
+      server settings also signs in to this dashboard. Now that you have your own password, remove{' '}
+      <code className="text-slate-100">ADMIN_RESET_PASSWORD</code> and redeploy.
+    </Alert>
   )
 }

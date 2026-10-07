@@ -71,16 +71,35 @@ analysing a video is free but limited to 40 per hour per user. Each account
 can run 2 downloads at once, and in-progress downloads are reserved against the
 limit, so starting several at once never goes over it.
 
+### The admin account
+
+The dashboard at `/admin` has one admin account with a username and password,
+stored in the database (`app_settings`: `admin_username` and an scrypt
+`admin_password_hash`; no extra table).
+
+| Situation | How to sign in |
+|---|---|
+| **First sign-in** (no admin password saved yet) | Username `admin` (or `ADMIN_USERNAME`) and your `ADMIN_SECRET` as the password (or `ADMIN_PASSWORD`, if you set it). The dashboard then asks you to choose your own username and password before anything else. |
+| **Database not upgraded yet** | The same first sign-in works, so you can open **System**, copy the upgrade SQL and run it. Saving your own password works once the upgrade has run. |
+| **Normal use** | Your own username and password. "Keep me signed in on this device" keeps you signed in for 7 days instead of 12 hours. Changing the password signs out every other admin session. |
+| **Forgot the admin password** | Set `ADMIN_RESET_PASSWORD=true` on Render and redeploy. Sign in with username `admin` (or your current username) and `ADMIN_SECRET` / `ADMIN_PASSWORD`, choose a new password, then **remove `ADMIN_RESET_PASSWORD`** from Render. The dashboard shows a warning while it is set. |
+| **Scripts** | Send `x-admin-secret: <ADMIN_SECRET>` with any `/admin/*` request. It works as an API key regardless of the dashboard password, so keep `ADMIN_SECRET` long, random and private. |
+
 **Rate limits** (per server process, in memory):
 
 | Action | Limit |
 |---|---|
 | Request access | 20 per hour per IP |
-| Sign in | 30 failed attempts per 15 min per IP; 10 attempts per 15 min per email/phone |
+| Sign in | 30 failed attempts per 15 min per IP; 10 attempts per 15 min per email/phone (also for addresses with no account, so a lockout reveals nothing) |
 | Forgot password | 10 per hour per IP; 3 emails per hour per address (further requests get the same answer, but no email) |
-| Change password | 10 wrong current passwords per 15 min per user |
+| Reset password | 20 attempts per 15 min per IP |
+| Change password | 5 attempts per 15 min per user |
 | Analyse a video | 40 per hour per user |
-| Admin secret | 10 different wrong secrets per 15 min per IP |
+| Start a download (ticket) | 30 per hour per user |
+| All sign-in style requests (`POST /auth/*`, admin sign-in) | 300 per 15 min per IP |
+| Admin sign-in | 5 failed attempts per 15 min per IP; 5 attempts per 15 min per username |
+| Admin change password | 5 wrong current passwords per 15 min |
+| Admin API key (`x-admin-secret`) | 10 different wrong keys per 15 min per IP |
 
 The per-IP limits are generous on purpose: a whole campus Wi-Fi or a mobile
 carrier can share one public IP, so they only stop floods. The per-account
@@ -140,18 +159,27 @@ service with root directory `backend`, build command
 `pip install -r requirements.txt` and start command
 `uvicorn main:app --host 0.0.0.0 --port $PORT`.
 
-| Key | Value |
-|---|---|
-| `SUPABASE_URL` | `https://xxxx.supabase.co` |
-| `SUPABASE_SERVICE_KEY` | the `service_role` key |
-| `ADMIN_SECRET` | a long random password for `/admin` |
-| `AUTH_SECRET` | 32+ random characters that sign sessions and reset links (the blueprint generates one). If it is missing, a key derived from `ADMIN_SECRET` and `SUPABASE_SERVICE_KEY` is used, and changing either one then signs every user out. |
-| `FRONTEND_URL` | `https://your-app.vercel.app` (used in email links and for CORS; separate several with commas) |
-| `APP_TIMEZONE` | `Asia/Dhaka` (when daily limits reset) |
-| `EMAIL_PROVIDER` | `auto` (or `brevo`, `resend`, `smtp`, `none`) |
-| `BREVO_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME` | see Step 2 |
-| `YOUTUBE_COOKIES_BASE64`, `YOUTUBE_USER_AGENT`, `YOUTUBE_PROXY` | optional, see below |
-| `MAX_CONCURRENT_DOWNLOADS` | `5` (server-wide) |
+| Key | Secret? | Value |
+|---|---|---|
+| `SUPABASE_URL` | no | `https://xxxx.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | **yes** | the `service_role` key |
+| `ADMIN_SECRET` | **yes** | a long random value (32+ characters). It is the password for your first admin sign-in (username `admin`) and, for scripts, an API key in the `x-admin-secret` header. |
+| `ADMIN_USERNAME` | no | optional: the admin username before you choose your own (default `admin`) |
+| `ADMIN_PASSWORD` | **yes** | optional: a first-sign-in password other than `ADMIN_SECRET`. Remove it once you have chosen your own password. |
+| `ADMIN_RESET_PASSWORD` | no | only to recover a forgotten admin password: `true` lets `ADMIN_SECRET` / `ADMIN_PASSWORD` sign in again. Remove it after choosing a new password. |
+| `AUTH_SECRET` | **yes** | 32+ random characters that sign sessions, reset links, admin sessions and download tickets (the blueprint generates one). If it is missing, a key derived from `ADMIN_SECRET` and `SUPABASE_SERVICE_KEY` is used, and changing either one then signs everyone out. |
+| `FRONTEND_URL` | no | `https://your-app.vercel.app` (used in email links and for CORS; separate several with commas) |
+| `APP_TIMEZONE` | no | `Asia/Dhaka` (when daily limits reset) |
+| `EMAIL_PROVIDER` | no | `auto` (or `brevo`, `resend`, `smtp`, `none`) |
+| `BREVO_API_KEY` / `RESEND_API_KEY` / `SMTP_PASSWORD` | **yes** | see Step 2 |
+| `EMAIL_FROM`, `EMAIL_FROM_NAME`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_SSL` | no | see Step 2 |
+| `YOUTUBE_COOKIES_BASE64` | **yes** | optional, see below |
+| `YOUTUBE_PROXY` | **yes** (may contain a password) | optional, see below |
+| `YOUTUBE_USER_AGENT` | no | optional, see below |
+| `MAX_CONCURRENT_DOWNLOADS` | no | `5` (server-wide) |
+
+None of these values is ever sent to the browser: the admin panel only shows
+whether each one is set.
 
 > Render's free tier sleeps after 15 idle minutes, and the first request then
 > takes 30–60 seconds. See *Keeping analysis fast* below.
@@ -227,7 +255,9 @@ API, and may refuse them entirely. If the YouTube check lists no heights for
 
 ### Step 5 — First launch checklist
 
-1. Open `/admin`, sign in with `ADMIN_SECRET`.
+1. Open `/admin` and sign in with username `admin` and your `ADMIN_SECRET`.
+   If the database still needs its upgrade, run the SQL shown under **System**
+   first. Then choose your own admin username and password when asked.
 2. **Overview → system warnings** must be clear: database ready, email
    configured, `AUTH_SECRET` set.
 3. **Settings → Send test email** to your own address.
@@ -246,13 +276,16 @@ API, and may refuse them entirely. If the YouTube check lists no heights for
 | `/account` | Profile, today's usage, change password |
 | `/forgot-password`, `/reset-password` | Reset a forgotten password by email |
 | `/terms`, `/privacy` | Terms of use and privacy policy |
-| `/admin` | Admin panel (`ADMIN_SECRET`) |
+| `/admin` | Admin dashboard (admin username and password) |
 
 ---
 
 ## API
 
 All error bodies are `{"detail": "<message>"}`, ready to show to the user.
+User endpoints take `Authorization: Bearer <session token>`. Admin endpoints
+take `Authorization: Bearer <admin token>` from `/admin/auth/login`, or the
+`x-admin-secret: <ADMIN_SECRET>` API key.
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -263,8 +296,12 @@ All error bodies are `{"detail": "<message>"}`, ready to show to the user.
 | `GET` | `/auth/me` | Current user and today's usage |
 | `POST` | `/auth/change-password` | Change password (signs out other devices) |
 | `POST` | `/video-info` | List a video's formats (YouTube, Facebook, Instagram only) |
-| `GET` | `/download/progress` | SSE download progress (`token` query parameter); refusals arrive as an `error` event with `code` = `auth`, `limit`, `platform` or `busy` |
+| `POST` | `/download/ticket` | Step 1 of a download (`url`, `format_id`, `ext`, `height?`, `source?`): checks the link and today's limit and returns `{"ticket", "expires_in": 60}`, a single-use ticket |
+| `GET` | `/download/progress?ticket=` | SSE download progress; refusals arrive as an `error` event with `code` = `auth`, `limit`, `platform` or `busy` |
 | `GET` | `/download/file` | Fetch the finished file once (one-time token) |
+| `POST` | `/admin/auth/login` | Admin sign-in (`username`, `password`, `remember?`) → `{"token", "username", "must_change_password", "expires_at"}` |
+| `GET` | `/admin/auth/me` | Signed-in admin, whether a new password is required, recovery mode |
+| `POST` | `/admin/auth/change-credentials` | New admin password (and optionally username); other admin sessions end |
 | `GET` | `/admin/overview` | Counters, 14-day chart, platform split, system status |
 | `GET`/`POST` | `/admin/users` | List (search, filter, sort, paginate) / add a user |
 | `PATCH`/`DELETE` | `/admin/users/{id}` | Edit (name, email, phone, note, daily limit) / delete |
@@ -289,20 +326,46 @@ Interactive docs: `http://localhost:8000/docs`.
 
 ## Security
 
-- Passwords are hashed with scrypt; plain passwords are never stored or logged.
-  The admin sees a password only when its email could not be sent.
-- Sessions and reset links are HMAC-signed with `AUTH_SECRET` and tied to the
-  current password, so a password change ends every old session and each reset
-  link works once. Sessions last 30 days.
+- Passwords (users and admin) are hashed with scrypt; plain passwords are
+  never stored or logged. The admin sees a user's password only when its email
+  could not be sent.
+- Sessions, reset links, admin sessions and download tickets are HMAC-SHA256
+  signed with `AUTH_SECRET`, checked in constant time, expire, and carry a
+  purpose, so one kind can never be used as another. Each is tied to the
+  current password: any password change (or reset, or new password from the
+  admin) ends every older session, and each reset link works once. User
+  sessions last 30 days; admin sessions 12 hours (7 days with "Keep me signed
+  in").
+- No long-lived token ever appears in a URL. Sessions travel only in the
+  `Authorization` header. The download stream, which a browser opens without
+  headers, uses a ticket from `POST /download/ticket` instead: valid for 60
+  seconds, usable once, and only for the one download it names. The finished
+  file is fetched once with a random 5-minute token. Both are also blanked in
+  the server's access log.
 - Sign-in answers the same for unknown accounts and wrong passwords (and takes
-  the same time); forgot-password never reveals whether an email is registered.
-- Tokens are removed from the server's access log.
-- Admin endpoints need the `x-admin-secret` header; wrong secrets are rate
-  limited per IP.
+  the same time); lockouts look the same whether or not the account exists;
+  forgot-password never reveals whether an email is registered.
+- Every `/admin` route requires an admin (a test checks each one); nothing is
+  deleted by a `GET`.
+- Links must be `http(s)` and the host must be YouTube, Facebook or Instagram,
+  checked on the parsed host name: credentials before the host
+  (`https://youtube.com@evil.example`), backslashes, IP addresses, unusual
+  ports and encoded host names are refused. This also keeps the server from
+  being pointed at other hosts through yt-dlp.
+- Every request field has a maximum length (name 80, email 254, phone 20,
+  note 300, link 2048, passwords 128, ids 64, lists bounded), unknown fields
+  are refused, and request bodies over 1 MB are rejected.
+- Responses carry `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. CORS allows
+  only `FRONTEND_URL` (and `http://localhost:3000`), without credentials.
+- Unexpected errors answer with a generic message; details go to the server
+  log only.
+- Emails go to one validated address; subjects cannot add headers, and every
+  value in an email is HTML-escaped.
 - Supabase Row Level Security is enabled with no policies: only the backend's
   service key can read or write.
-- Only `http(s)` links to YouTube, Facebook and Instagram are accepted.
-- CSV exports neutralise cells that spreadsheet apps would run as formulas.
+- CSV exports neutralise cells that spreadsheet apps would run as formulas
+  (starting with `=`, `+`, `-`, `@`, tab or carriage return).
 
 ---
 
@@ -320,6 +383,8 @@ AUTH_SECRET=change-me-to-32-or-more-random-characters
 EMAIL_PROVIDER=none
 EOF
 uvicorn main:app --reload
+# Admin dashboard: http://localhost:3000/admin, username "admin",
+# password "local-admin-secret", then choose your own.
 
 # Tests (offline: email and yt-dlp are faked)
 for t in tests/test_*.py; do PYTHONPATH=. python $t || echo FAIL $t; done

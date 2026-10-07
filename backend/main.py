@@ -2,10 +2,12 @@
 #
 # Application entry point: the FastAPI app, CORS, error handlers, the health
 # check and video analysis (/video-info).
-#   Accounts:   backend/routers/auth.py      (/auth/*)
-#   Admin:      backend/routers/admin.py     (/admin/*)
-#   Downloads:  backend/routers/download.py  (/download/*)
-#   Guards:     backend/dependencies.py      (sessions, admin secret, quotas)
+#   Accounts:   backend/routers/auth.py        (/auth/*)
+#   Admin:      backend/routers/admin_auth.py  (/admin/auth/*: sign-in)
+#               backend/routers/admin.py       (/admin/*)
+#   Downloads:  backend/routers/download.py    (/download/*)
+#   Guards:     backend/dependencies.py        (sessions, quotas)
+#               backend/admin_account.py       (admin account, require_admin)
 
 import asyncio
 import logging
@@ -20,12 +22,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
+from starlette.datastructures import MutableHeaders
 
 import extraction_cache
 import security
 from dependencies import require_user, too_many_requests
 from routers.admin import router as admin_router
+from routers.admin_auth import router as admin_auth_router
 from routers.auth import router as auth_router
 from routers.download import router as download_router
 from storage import SchemaOutdatedError, StorageUnavailableError
@@ -58,15 +62,15 @@ logger.setLevel(logging.INFO)
 
 
 class RedactTokens(logging.Filter):
-    """Blank `token=` query values in uvicorn's access log.
+    """Blank `ticket=` and `token=` query values in uvicorn's access log.
 
-    EventSource cannot send headers, so the session token travels in the
-    /download/progress URL (and the one-time file token in /download/file);
-    without this every request line would write a live credential to the
-    host's logs.
+    EventSource cannot send headers, so the download stream is opened with a
+    ticket in its URL (and the file with a one-time token). Both are
+    short-lived and single-use, but a live credential still has no place in
+    the host's logs.
     """
 
-    _PATTERN = re.compile(r"((?:^|[?&])token=)[^&\s\"]+")
+    _PATTERN = re.compile(r"((?:^|[?&])(?:token|ticket)=)[^&\s\"]+")
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
@@ -82,6 +86,11 @@ logging.getLogger("uvicorn.access").addFilter(RedactTokens())
 # Analysing a video costs the server a watch-page fetch and a JS challenge
 # run; it does not count toward the daily limit, so it is capped separately.
 VIDEO_INFO_PER_USER = (40, 3600)
+
+INTERNAL_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a moment."
+# No request this API accepts is anywhere near this size.
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
+BODY_TOO_LARGE_MESSAGE = "This request is too large."
 
 
 # ── Error handlers ────────────────────────────────────────────────────────────
@@ -105,6 +114,9 @@ async def storage_unavailable_handler(_request: Request, exc: StorageUnavailable
 
 _FIELD_LABELS = {
     "login": "Email or phone",
+    "username": "Username",
+    "new_username": "Username",
+    "ticket": "Download ticket",
     "current_password": "Current password",
     "new_password": "New password",
     "daily_limit": "Daily limit",
@@ -141,6 +153,8 @@ def validation_message(errors) -> str:
         label = _field_label(error.get("loc", ()))
         if kind == "missing":
             text = f"{label} is required."
+        elif kind == "extra_forbidden":
+            text = f"Unexpected field: {label}."
         elif kind == "json_invalid":
             text = "The request body is not valid JSON."
         elif kind == "value_error":
@@ -159,10 +173,104 @@ async def validation_error_handler(_request: Request, exc: RequestValidationErro
     return JSONResponse(status_code=422, content={"detail": validation_message(exc.errors())})
 
 
+# ── Security headers, body size cap and the last-resort error handler ─────────
+
+_SECURITY_HEADERS = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Referrer-Policy", "no-referrer"),
+)
+
+
+class _BodyTooLarge(HTTPException):
+    """Raised while the body is read. An HTTPException, so FastAPI's body
+    parsing passes it on (it turns other errors into a 400)."""
+
+    def __init__(self):
+        super().__init__(status_code=413, detail=BODY_TOO_LARGE_MESSAGE)
+
+
+class SecurityMiddleware:
+    """Hardening for every response, as plain ASGI so SSE streams pass through
+    untouched:
+
+    * nosniff / DENY / no-referrer headers, and `Cache-Control: no-store`
+      unless the route set its own (user, admin and auth data must not sit
+      in a shared or browser cache);
+    * request bodies over 1 MiB are refused with 413 before anything parses
+      them;
+    * an unexpected exception becomes a generic 500 JSON answer: stack traces
+      and internal error text go to the server log only.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started = False
+
+        async def send_with_headers(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+                headers = MutableHeaders(scope=message)
+                for name, value in _SECURITY_HEADERS:
+                    headers.setdefault(name, value)
+                headers.setdefault("Cache-Control", "no-store")
+            await send(message)
+
+        for name, value in scope.get("headers") or ():
+            if name == b"content-length":
+                try:
+                    too_large = int(value) > MAX_REQUEST_BODY_BYTES
+                except ValueError:
+                    too_large = True
+                if too_large:
+                    await self._reject_too_large(scope, receive, send_with_headers)
+                    return
+
+        received = 0
+
+        async def receive_capped():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > MAX_REQUEST_BODY_BYTES:
+                    raise _BodyTooLarge()
+            return message
+
+        try:
+            await self.app(scope, receive_capped, send_with_headers)
+        except _BodyTooLarge:
+            if started:
+                raise
+            await self._reject_too_large(scope, receive, send_with_headers)
+        except Exception:
+            logger.exception("Unhandled error in %s %s", scope.get("method"), scope.get("path"))
+            if started:
+                raise
+            response = JSONResponse(status_code=500, content={"detail": INTERNAL_ERROR_MESSAGE})
+            await response(scope, receive, send_with_headers)
+
+    @staticmethod
+    async def _reject_too_large(scope, receive, send):
+        response = JSONResponse(status_code=413, content={"detail": BODY_TOO_LARGE_MESSAGE})
+        await response(scope, receive, send)
+
+
+app.add_middleware(SecurityMiddleware)
+
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # FRONTEND_URL may list several origins separated by commas (e.g. the Vercel
 # production and preview domains). The browser reaches the API directly for
 # the SSE progress stream and the YouTube check, so those origins need CORS.
+# Authentication is by Bearer token, never cookies, so credentials stay off.
 
 def _allowed_origins() -> list[str]:
     origins = ["http://localhost:3000"]
@@ -180,15 +288,17 @@ def _allowed_origins() -> list[str]:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "x-admin-secret"],
     expose_headers=["Content-Disposition", "Retry-After", "Server-Timing"],
+    max_age=600,
 )
 
 # ── Mount routers ─────────────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(download_router)
+app.include_router(admin_auth_router)
 app.include_router(admin_router)
 
 
@@ -196,11 +306,13 @@ app.include_router(admin_router)
 
 RequestedUrl = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=8, max_length=4096),
+    StringConstraints(strip_whitespace=True, min_length=8, max_length=security.URL_MAX),
 ]
 
 
 class VideoInfoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     url: RequestedUrl
 
 

@@ -3,8 +3,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Download videos',
-  description: 'Analyze a YouTube, Facebook or Instagram link and download it in the quality you need.',
+  title: 'Download a video',
+  description: 'Paste a YouTube, Facebook or Instagram link, choose a quality and download the video or just the audio (MP3).',
   robots: { index: false, follow: false },
 }
 

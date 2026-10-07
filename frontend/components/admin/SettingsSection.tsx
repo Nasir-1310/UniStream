@@ -1,19 +1,21 @@
 'use client'
 // components/admin/SettingsSection.tsx
 //
-// Default daily limit, email delivery (status + test message), security and
-// app configuration. Everything except the limit is read-only here: those
-// values are environment variables on the server, and the cards say which.
+// Default daily limit, email delivery (status + test message), the admin
+// account (change username/password, sign out), security status and app
+// configuration. Email, security and app values are environment variables on
+// the server; the cards say which.
 
 import { useState, useSyncExternalStore, type FormEvent } from 'react'
-import { Clock, Gauge, Globe, LogOut, Mail, Send, ShieldCheck } from 'lucide-react'
+import { Clock, Gauge, Globe, LogOut, Mail, Send, ShieldCheck, UserCog } from 'lucide-react'
 import { Alert, Badge, Field, Spinner, describedBy, useConfirm, useToast } from '@/components/ui'
 import { adminGetSettings, adminSendTestEmail, adminUpdateSettings, apiErrorMessage, type Settings } from '@/lib/api'
-import { formatLimit, formatTime } from '@/lib/format'
+import { formatDate, formatLimit, formatTime } from '@/lib/format'
 import { DAILY_LIMIT_MAX, validateDailyLimit, validateEmail } from '@/lib/validation'
 import { useAdmin } from './AdminContext'
+import { AdminCredentialsForm } from './AdminCredentialsForm'
 import { useAdminQuery, useClock } from './hooks'
-import { Card, CheckRow, QueryError, SectionHeader, SkeletonRows } from './parts'
+import { Card, CheckRow, DetailList, QueryError, SectionHeader, SkeletonRows } from './parts'
 
 const LIMIT_PRESETS = [2, 4, 6, 10]
 
@@ -28,7 +30,7 @@ export function SettingsSection() {
 
   return (
     <section aria-labelledby="admin-h-settings">
-      <SectionHeader id="settings" title="Settings" description="Download limits, email delivery and security." />
+      <SectionHeader id="settings" title="Settings" description="Daily limit, email, your admin account and security." />
 
       {query.error && (
         <div className="mb-4">
@@ -36,21 +38,29 @@ export function SettingsSection() {
         </div>
       )}
 
-      {!settings ? (
-        !query.error && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <SkeletonRows count={1} className="h-64" />
-            <SkeletonRows count={1} className="h-64" />
-          </div>
-        )
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
-          <LimitCard key={settings.default_daily_limit} settings={settings} onSaved={next => query.mutate(() => next)} />
-          <EmailCard settings={settings} />
-          <SecurityCard settings={settings} />
-          <AppCard settings={settings} />
-        </div>
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
+        {settings ? (
+          <>
+            <LimitCard key={settings.default_daily_limit} settings={settings} onSaved={next => query.mutate(() => next)} />
+            <EmailCard settings={settings} />
+          </>
+        ) : (
+          !query.error && (
+            <>
+              <SkeletonRows count={1} className="h-64" />
+              <SkeletonRows count={1} className="h-64" />
+            </>
+          )
+        )}
+        {/* Doesn't depend on the settings request: always reachable. */}
+        <AdminAccountCard />
+        {settings && (
+          <>
+            <SecurityCard settings={settings} />
+            <AppCard settings={settings} />
+          </>
+        )}
+      </div>
     </section>
   )
 }
@@ -58,7 +68,7 @@ export function SettingsSection() {
 // ── Default daily limit ───────────────────────────────────────────────────────
 
 function LimitCard({ settings, onSaved }: { settings: Settings; onSaved: (settings: Settings) => void }) {
-  const { secret, invalidate, handleAuthError } = useAdmin()
+  const { invalidate, handleAuthError } = useAdmin()
   const toast = useToast()
   const confirm = useConfirm()
   const [value, setValue] = useState(String(settings.default_daily_limit))
@@ -77,7 +87,7 @@ function LimitCard({ settings, onSaved }: { settings: Settings; onSaved: (settin
     if (parsed.value === 0) {
       const ok = await confirm({
         title: 'Pause downloads for most users?',
-        message: 'Everyone on the default limit will be unable to download until you raise it again. Custom and unlimited users are not affected.',
+        message: 'Everyone on the default daily limit won’t be able to download until you raise it again. Users with a custom or unlimited limit are not affected.',
         confirmLabel: 'Set limit to 0',
         tone: 'warning',
       })
@@ -85,8 +95,8 @@ function LimitCard({ settings, onSaved }: { settings: Settings; onSaved: (settin
     }
     setSaving(true)
     try {
-      const next = await adminUpdateSettings(secret, { default_daily_limit: parsed.value })
-      toast.success(`Default limit set to ${formatLimit(next.default_daily_limit)}`, {
+      const next = await adminUpdateSettings({ default_daily_limit: parsed.value })
+      toast.success(`Daily limit set to ${formatLimit(next.default_daily_limit)}`, {
         description: 'Applies right away to everyone on the default limit.',
       })
       onSaved(next)
@@ -99,11 +109,11 @@ function LimitCard({ settings, onSaved }: { settings: Settings; onSaved: (settin
   }
 
   return (
-    <Card title="Daily download limit" description="How many videos each user can download per day" icon={Gauge}>
+    <Card title="Daily limit" description="How many videos each user can download per day" icon={Gauge}>
       <form onSubmit={onSubmit} noValidate>
         <Field
           htmlFor="settings-limit"
-          label="Default limit per user"
+          label="Default daily limit"
           error={error}
           hint={`Whole number from 0 to ${DAILY_LIMIT_MAX.toLocaleString('en-US')}.`}
         >
@@ -151,9 +161,9 @@ function LimitCard({ settings, onSaved }: { settings: Settings; onSaved: (settin
         </div>
 
         <ul className="mt-4 space-y-1.5 text-xs text-slate-400 list-disc pl-4">
-          <li>Applies to every user set to “Default”. Users with a custom limit or Unlimited keep theirs (edit them under Users).</li>
-          <li>Counts reset at midnight, {settings.timezone.replace(/_/g, ' ')} time.</li>
-          <li>Only finished downloads count — analysing a link or a failed download doesn’t.</li>
+          <li>Applies to every user set to “Default”. Users with a custom or unlimited limit keep theirs (change them under Users).</li>
+          <li>Resets at midnight, {settings.timezone.replace(/_/g, ' ')} time.</li>
+          <li>Only completed downloads count. Checking a link or a failed download doesn’t.</li>
         </ul>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -175,7 +185,7 @@ function LimitCard({ settings, onSaved }: { settings: Settings; onSaved: (settin
 const PROVIDER_NAMES: Record<string, string> = { brevo: 'Brevo', resend: 'Resend', smtp: 'SMTP' }
 
 function EmailCard({ settings }: { settings: Settings }) {
-  const { secret, handleAuthError } = useAdmin()
+  const { handleAuthError } = useAdmin()
   const toast = useToast()
   const { email } = settings
   const [to, setTo] = useState('')
@@ -193,7 +203,7 @@ function EmailCard({ settings }: { settings: Settings }) {
     }
     setSending(true)
     try {
-      await adminSendTestEmail(secret, address.value)
+      await adminSendTestEmail(address.value)
       setResult({ ok: true, message: `Sent to ${address.value}. Check the inbox and the spam folder.` })
       toast.success('Test email sent')
     } catch (err) {
@@ -206,7 +216,7 @@ function EmailCard({ settings }: { settings: Settings }) {
   return (
     <Card
       title="Email delivery"
-      description="Approval passwords and password-reset links"
+      description="Passwords for approved users and password reset links"
       icon={Mail}
       actions={
         <Badge tone={email.configured ? 'success' : 'warning'} dot>
@@ -286,49 +296,100 @@ EMAIL_FROM_NAME=UniStream Saver`}
   )
 }
 
+// ── Admin account ─────────────────────────────────────────────────────────────
+
+function AdminAccountCard() {
+  const { session, signOut } = useAdmin()
+  const toast = useToast()
+  const expires = Date.parse(session.expires_at)
+
+  return (
+    <Card title="Admin account" description="Your sign-in details for this dashboard" icon={UserCog}>
+      <DetailList
+        items={[
+          ['Username', <span key="u" className="font-medium text-white">{session.username}</span>],
+          [
+            'This device',
+            session.remember
+              ? `Kept signed in${Number.isFinite(expires) ? ` until ${formatDate(expires)}` : ''}`
+              : 'Signed in for this tab only',
+          ],
+        ]}
+      />
+
+      <h3 className="mt-5 mb-3 text-[13px] font-semibold text-white">Change username or password</h3>
+      {/* Remount after a change so the form starts from the new username. */}
+      <AdminCredentialsForm
+        key={session.token}
+        mode="settings"
+        session={session}
+        onSaved={auth =>
+          toast.success('Sign-in details updated', {
+            description:
+              auth.username !== session.username
+                ? `Sign in as ${auth.username} from now on. Other devices were signed out.`
+                : 'Other devices were signed out.',
+          })
+        }
+      />
+
+      <div className="mt-5 border-t border-white/[0.06] pt-4">
+        <button type="button" onClick={signOut} className="btn-outline">
+          <LogOut className="w-4 h-4" aria-hidden="true" />
+          Sign out
+        </button>
+      </div>
+    </Card>
+  )
+}
+
 // ── Security ──────────────────────────────────────────────────────────────────
 
 function SecurityCard({ settings }: { settings: Settings }) {
-  const { signOut, navigate } = useAdmin()
+  const { navigate, recoveryMode } = useAdmin()
   return (
-    <Card title="Security" description="Sessions, passwords and admin access" icon={ShieldCheck}>
+    <Card title="Security" description="How accounts and sign-ins are protected" icon={ShieldCheck}>
       <ul className="divide-y divide-white/[0.05] -mt-2">
         <CheckRow
           ok={settings.auth_secret_configured}
           warn
-          label={settings.auth_secret_configured ? 'AUTH_SECRET is set — user sessions are signed securely' : 'AUTH_SECRET is not set'}
+          label={settings.auth_secret_configured ? 'Sign-ins are protected by AUTH_SECRET' : 'AUTH_SECRET is not set'}
           detail={
             settings.auth_secret_configured
-              ? 'Sessions last 30 days and end immediately when a password changes or the user is blocked.'
-              : 'Set AUTH_SECRET to a random value of at least 32 characters on the server, then redeploy.'
+              ? 'User sessions last 30 days and end right away when a password changes or the user is blocked.'
+              : 'Set AUTH_SECRET on the server to a random value of at least 32 characters, then redeploy.'
           }
+        />
+        {recoveryMode && (
+          <CheckRow
+            ok={false}
+            warn
+            label="Password recovery is on (ADMIN_RESET_PASSWORD)"
+            detail="The setup password also signs in to this dashboard. Remove ADMIN_RESET_PASSWORD from the server and redeploy."
+          />
+        )}
+        <CheckRow
+          ok
+          label="Admin sign-in uses your username and password"
+          detail="After 5 wrong attempts, sign-in is paused for 15 minutes. ADMIN_SECRET still works as an API key for scripts (x-admin-secret header)."
+        />
+        <CheckRow
+          ok
+          label="Passwords are stored securely"
+          detail="Passwords are hashed, so nobody can read them, including admins. If someone is locked out, use “Send new password”."
         />
         <CheckRow
           ok={settings.schema.ready}
-          label={settings.schema.ready ? 'Database schema is up to date' : 'Database upgrade required'}
+          label={settings.schema.ready ? 'Database is up to date' : 'Database upgrade needed'}
           detail={
             settings.schema.ready ? undefined : (
-              <button type="button" onClick={() => navigate('system')} className="text-indigo-300 hover:text-indigo-200">
-                Open System to run the migration →
+              <button type="button" onClick={() => navigate('system')} className="min-h-8 text-indigo-300 hover:text-indigo-200">
+                Open System to run the upgrade →
               </button>
             )
           }
         />
-        <CheckRow
-          ok
-          label="Passwords are stored as salted scrypt hashes"
-          detail="Nobody, including admins, can read a user’s password. Use “Send new password” if someone is locked out."
-        />
-        <CheckRow
-          ok
-          label="Admin secret"
-          detail="Kept only in this browser tab. Wrong attempts are limited to 10 per 15 minutes. Change ADMIN_SECRET on the server to revoke access."
-        />
       </ul>
-      <button type="button" onClick={() => signOut()} className="btn-outline mt-4">
-        <LogOut className="w-4 h-4" aria-hidden="true" />
-        Sign out of admin
-      </button>
     </Card>
   )
 }

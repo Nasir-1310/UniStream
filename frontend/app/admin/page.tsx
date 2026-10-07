@@ -8,7 +8,7 @@ import AdminApp from '@/components/admin/AdminApp'
 
 export const metadata: Metadata = {
   title: 'Admin',
-  description: 'UniStream Saver administration: access requests, users, limits and download logs.',
+  description: 'Manage access requests, users, daily limits and download history for UniStream Saver.',
   robots: { index: false, follow: false },
 }
 

@@ -1,5 +1,5 @@
 // components/download/types.ts
-import type { DownloadProgressEvent } from '@/lib/api'
+import type { DownloadProgressEvent, VideoFormat } from '@/lib/api'
 
 /** What one format row shows: its download, if any. */
 export type RowState =
@@ -16,6 +16,18 @@ export const VIDEO_EXTS = ['mp4', 'webm', 'mkv', 'mov', 'avi'] as const
 
 export function isVideoExt(ext: string): boolean {
   return (VIDEO_EXTS as readonly string[]).includes(ext.toLowerCase())
+}
+
+/**
+ * What people see for a quality: "1080p Full HD", or "Audio only (MP3)".
+ * The API's labels also name the video codec ("1080p Full HD · H.264") and
+ * the audio bitrate; neither helps anyone choose, so they're left out here
+ * (the bitrate still shows in the details).
+ */
+export function formatName(format: VideoFormat): string {
+  if (format.type === 'audio' || !isVideoExt(format.ext)) return `Audio only (${format.ext.toUpperCase()})`
+  const label = format.label.replace(/\s*·\s*(?:H\.?264|H\.?265|HEVC|VP0?9|AV0?1)\s*$/i, '').trim()
+  return label || format.resolution || format.ext.toUpperCase()
 }
 
 /** Height in pixels from a video resolution like "1080p"; null when unknown. Video formats only ("128kbps" is audio). */

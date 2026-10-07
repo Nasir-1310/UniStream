@@ -10,6 +10,7 @@ import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
   title: 'Page not found',
+  description: 'This page doesn’t exist. Go to the UniStream Saver homepage or download a video.',
   robots: { index: false, follow: false },
 }
 
@@ -41,15 +42,15 @@ export default function NotFound() {
             </Link>
             <Link href="/download" className="btn-secondary">
               <Download className="w-4 h-4" aria-hidden="true" />
-              Download videos
+              Download a video
             </Link>
           </div>
 
           <ul className="mt-10 grid gap-2 text-left sm:grid-cols-2">
             {[
               { href: '/#faq', label: 'Help & FAQ' },
-              { href: '/forgot-password', label: 'Reset your password' },
-              { href: '/account', label: 'Your account' },
+              { href: '/forgot-password', label: 'Forgot password?' },
+              { href: '/account', label: 'Account' },
               { href: '/terms', label: 'Terms of Use' },
             ].map(link => (
               <li key={link.href}>

@@ -8,6 +8,9 @@
 // hydration pass) sees "unknown", the browser then switches to the stored
 // session without a hydration mismatch, and every component using the hook
 // (Navbar, the page) updates together — including across tabs.
+//
+// The admin dashboard has its own, separate session (lib/adminAuth.ts, its own
+// storage key and token purpose); signing out here does not touch it.
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
@@ -218,7 +221,10 @@ export interface UseSessionOptions {
 export interface SessionState {
   /** The signed-in user (cached instantly, then refreshed), or null. */
   user: PublicUser | null
-  /** The raw session token (for the SSE `token` query parameter). */
+  /**
+   * The raw session token, or null. lib/api.ts sends it as a Bearer header;
+   * never put it in a URL (the download stream uses createDownloadTicket()).
+   */
   token: string | null
   /**
    * True until we know whether someone is signed in: during hydration, and

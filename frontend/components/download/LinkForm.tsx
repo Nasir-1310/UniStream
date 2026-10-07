@@ -2,8 +2,9 @@
 // components/download/LinkForm.tsx
 //
 // The link box: paste or type a video URL, see straight away whether it is a
-// supported platform (the matching chip lights up), then analyze it. The same
-// check runs again on submit, so unsupported sites never reach the API.
+// supported platform (the matching chip lights up), then get the video's
+// qualities. The same check runs again on submit, so unsupported sites never
+// reach the API.
 
 import { forwardRef, type FormEvent } from 'react'
 import { Check, ClipboardPaste, Link2, Search, X } from 'lucide-react'
@@ -14,7 +15,7 @@ import { extractLink } from './types'
 export interface LinkFormProps {
   value: string
   onChange: (value: string) => void
-  /** Analyze the current value (the page validates it again). */
+  /** Look up the current value (the page validates it again). */
   onSubmit: () => void
   /** Read the clipboard into the box. */
   onPaste: () => void
@@ -23,7 +24,7 @@ export interface LinkFormProps {
   /** Validation or API error to show under the box. */
   error: string | null
   analyzing: boolean
-  /** Why analyzing is not possible right now (download running, offline); null when it is. */
+  /** Why looking up a link is not possible right now (download running, offline); null when it is. */
   lockedReason: string | null
 }
 
@@ -49,7 +50,7 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
   const describedBy = error ? `${INPUT_ID}-error` : `${INPUT_ID}-hint`
 
   return (
-    <form onSubmit={submit} noValidate className="surface-card p-3.5 sm:p-5" aria-label="Analyze a video link">
+    <form onSubmit={submit} noValidate className="surface-card p-3.5 sm:p-5" aria-label="Get a video from its link">
       <label htmlFor={INPUT_ID} className="block text-[13px] font-medium text-slate-300 mb-2">
         Video link
       </label>
@@ -108,7 +109,7 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
             className="btn-primary h-12 px-5 flex-1 sm:flex-none sm:min-w-[132px]"
           >
             {analyzing ? <Spinner size="sm" label={null} /> : <Search className="w-4 h-4" aria-hidden="true" />}
-            {analyzing ? 'Analyzing…' : 'Analyze'}
+            {analyzing ? 'Getting video…' : 'Get video'}
           </button>
         </div>
       </div>

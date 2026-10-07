@@ -1,8 +1,10 @@
 # backend/routers/admin.py
 """Admin endpoints: dashboard, users, credentials, download logs, settings.
 
-Every route requires the x-admin-secret header (dependencies.require_admin).
-Routes are plain functions, so FastAPI runs them in its thread pool and the
+Every route requires an admin: a dashboard session (Authorization: Bearer,
+from POST /admin/auth/login) or the ADMIN_SECRET API key in x-admin-secret
+(admin_account.require_admin). Nothing here deletes on GET: deletions take a
+DELETE or a POST with an explicit body. Routes are plain functions, so FastAPI runs them in its thread pool and the
 blocking storage and email calls never stall the event loop.
 
 Passwords: approving an account (or "send password") generates a temporary
@@ -22,25 +24,30 @@ import os
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 import email_service
 import security
 import storage
+from admin_account import require_admin
 from dependencies import (
     DEFAULT_DAILY_LIMIT,
+    ID_MAX,
     MAX_DAILY_LIMIT,
+    NOTE_MAX,
+    PHONE_INPUT_MAX,
     admin_user,
+    capped,
     check_daily_limit,
+    clean_id,
     clean_note,
     default_daily_limit,
     effective_limit,
     hash_password,
-    require_admin,
 )
 from yt_dlp_config import (
     js_runtime_options,
@@ -67,6 +74,9 @@ DUPLICATE_MESSAGES = {
 }
 NO_EMAIL_ERROR = "This account has no email address. Share the password with the user yourself."
 
+UserId = Annotated[str, Path(min_length=1, max_length=ID_MAX)]
+LogId = Annotated[str, Path(min_length=1, max_length=ID_MAX)]
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -74,7 +84,13 @@ def _now() -> datetime:
 
 # ── Request bodies ────────────────────────────────────────────────────────────
 
-class UserFields(BaseModel):
+class StrictBody(BaseModel):
+    """Request bodies reject unknown keys: a typo must not be silently ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UserFields(StrictBody):
     """Profile fields shared by create and edit; validators reuse security.py
     so the panel shows the same messages as the sign-up form."""
 
@@ -99,12 +115,12 @@ class UserFields(BaseModel):
     @field_validator("phone", mode="before")
     @classmethod
     def _phone(cls, value):
-        return security.validate_phone(value)
+        return security.validate_phone(capped(value, PHONE_INPUT_MAX, "Phone number"))
 
     @field_validator("note", mode="before")
     @classmethod
     def _note(cls, value):
-        return clean_note(value, label="Note", max_length=500, multiline=True)
+        return clean_note(value, label="Note", max_length=NOTE_MAX, multiline=True)
 
     @field_validator("daily_limit", mode="before")
     @classmethod
@@ -124,15 +140,15 @@ class UpdateUserRequest(UserFields):
     """Only the keys sent are changed; "daily_limit": null restores the default."""
 
 
-class ApproveRequest(BaseModel):
+class ApproveRequest(StrictBody):
     send_credentials: bool = True
 
 
-class StatusRequest(BaseModel):
+class StatusRequest(StrictBody):
     status: Literal["approved", "pending", "blocked"]
 
 
-class BulkUsersRequest(BaseModel):
+class BulkUsersRequest(StrictBody):
     ids: List[str] = Field(min_length=1, max_length=MAX_BULK_USERS)
     action: Literal["approve", "block", "pending", "delete"]
     send_credentials: bool = True
@@ -141,17 +157,22 @@ class BulkUsersRequest(BaseModel):
     @classmethod
     def _ids(cls, value):
         # Keep the first occurrence of each id, in order.
-        ids = list(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
+        ids = list(dict.fromkeys(clean_id(item, "User ID") for item in value if str(item).strip()))
         if not ids:
             raise ValueError("Select at least one user.")
         return ids
 
 
-class DeleteLogsRequest(BaseModel):
+class DeleteLogsRequest(StrictBody):
     ids: List[str] = Field(min_length=1, max_length=MAX_BULK_LOGS)
 
+    @field_validator("ids")
+    @classmethod
+    def _ids(cls, value):
+        return [clean_id(item, "Log ID") for item in value]
 
-class PurgeLogsRequest(BaseModel):
+
+class PurgeLogsRequest(StrictBody):
     """Exactly one of older_than_days, before (YYYY-MM-DD) or all=true."""
 
     older_than_days: Optional[int] = Field(None, ge=1, le=36500)
@@ -168,7 +189,7 @@ class PurgeLogsRequest(BaseModel):
         return self
 
 
-class SettingsUpdate(BaseModel):
+class SettingsUpdate(StrictBody):
     default_daily_limit: int
 
     @field_validator("default_daily_limit", mode="before")
@@ -184,7 +205,7 @@ class SettingsUpdate(BaseModel):
         return number
 
 
-class TestEmailRequest(BaseModel):
+class TestEmailRequest(StrictBody):
     to: str
 
     @field_validator("to", mode="before")
@@ -439,7 +460,7 @@ def create_user(body: CreateUserRequest):
 
 
 @router.patch("/users/{user_id}")
-def update_user(user_id: str, body: UpdateUserRequest):
+def update_user(user_id: UserId, body: UpdateUserRequest):
     fields = {key: getattr(body, key) for key in body.model_fields_set}
     try:
         user = storage.update_user(user_id, fields) if fields else storage.get_user_by_id(user_id)
@@ -449,7 +470,7 @@ def update_user(user_id: str, body: UpdateUserRequest):
 
 
 @router.post("/users/{user_id}/approve")
-def approve_user(user_id: str, body: Optional[ApproveRequest] = None):
+def approve_user(user_id: UserId, body: Optional[ApproveRequest] = None):
     body = body or ApproveRequest()
     default_limit = default_daily_limit()
     user, credentials = _approve(_user_or_404(user_id), body.send_credentials, default_limit)
@@ -457,13 +478,13 @@ def approve_user(user_id: str, body: Optional[ApproveRequest] = None):
 
 
 @router.post("/users/{user_id}/status")
-def set_user_status(user_id: str, body: StatusRequest):
+def set_user_status(user_id: UserId, body: StatusRequest):
     user = _set_status(_user_or_404(user_id), body.status)
     return {"user": admin_user(user, default_daily_limit())}
 
 
 @router.post("/users/{user_id}/send-password")
-def send_password(user_id: str):
+def send_password(user_id: UserId):
     """Replace the password with a new temporary one (signs out every session)."""
     user = _user_or_404(user_id)
     if user.get("status") != "approved":
@@ -477,7 +498,7 @@ def send_password(user_id: str):
 
 
 @router.post("/users/{user_id}/reset-usage")
-def reset_usage(user_id: str):
+def reset_usage(user_id: UserId):
     _user_or_404(user_id)
     user = storage.update_user(user_id, {
         "downloads_today": 0,
@@ -487,7 +508,7 @@ def reset_usage(user_id: str):
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: str):
+def delete_user(user_id: UserId):
     if not storage.delete_user(user_id):
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
     return {"deleted": True}
@@ -624,7 +645,7 @@ def purge_logs(body: PurgeLogsRequest):
 
 
 @router.delete("/logs/{log_id}")
-def delete_log(log_id: str):
+def delete_log(log_id: LogId):
     return {"deleted": storage.delete_download_logs([log_id])}
 
 
@@ -682,7 +703,9 @@ def storage_health():
 
 
 @router.get("/youtube-check")
-def youtube_check(url: str = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"):
+def youtube_check(
+    url: str = Query("https://www.youtube.com/watch?v=aqz-KE-bpKQ", max_length=security.URL_MAX),
+):
     """
     Lists which YouTube clients return which resolutions from this server's IP.
     YouTube treats data-centre IPs differently, so a video that lists every
@@ -690,6 +713,10 @@ def youtube_check(url: str = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"):
     Takes a minute or two: each client is probed separately.
     """
     import yt_dlp
+
+    # The server fetches this link: only YouTube, never an arbitrary host.
+    if security.detect_platform(url) != "youtube":
+        raise HTTPException(status_code=400, detail="Enter a YouTube video link to check.")
 
     return {
         "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",

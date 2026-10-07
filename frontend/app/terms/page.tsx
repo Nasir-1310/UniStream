@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     'The rules for using UniStream Saver: personal and educational use, respecting copyright, daily download limits and account rules.',
 }
 
-const LAST_UPDATED = '6 October 2026'
+const LAST_UPDATED = '7 October 2026'
 
 const P = 'mt-3 text-[15px] leading-7 text-slate-300'
 const UL = 'mt-3 space-y-2 pl-5 list-disc marker:text-slate-600 text-[15px] leading-7 text-slate-300'
@@ -28,9 +28,9 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <>
         <p className={P}>
-          UniStream Saver (&ldquo;the service&rdquo;, &ldquo;we&rdquo;) is a small, independently run project that lets
+          UniStream Saver (&ldquo;the service&rdquo;, &ldquo;we&rdquo;) is an independently run service that lets
           approved members save videos from YouTube, Facebook and Instagram for personal study and offline viewing. It
-          started as a university project and is currently free to use.
+          is free for approved students, with a daily download limit.
         </p>
         <p className={P}>
           By requesting access or using the service, you agree to these terms and to our{' '}
@@ -114,14 +114,17 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
       <ul className={UL}>
         <li>
           Each account can complete <strong className="text-white">4 downloads per day</strong> by default. The count
-          resets at midnight Bangladesh time (Asia/Dhaka).
+          resets at midnight Bangladesh time.
         </li>
-        <li>Only completed downloads count. Checking a link or a download that fails doesn&apos;t use your allowance.</li>
+        <li>
+          Only finished downloads count. Looking up a link, cancelling or a download that fails doesn&apos;t use your
+          allowance.
+        </li>
         <li>
           The administrator may set a different limit for individual accounts, change the default for everyone, or pause
           downloads to keep the service running smoothly.
         </li>
-        <li>Your remaining downloads are always shown in the app.</li>
+        <li>The downloads you have left today are always shown in the app.</li>
       </ul>
     ),
   },
@@ -130,9 +133,9 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Future paid plans',
     body: (
       <p className={P}>
-        We may later offer an optional paid plan, for example with unlimited downloads. If we do, its price and terms
-        will be published here before it launches. You will never be charged without clearly agreeing to it first, and
-        using the free plan doesn&apos;t sign you up for anything.
+        A premium plan with unlimited downloads is coming soon. It will be optional, and its price and terms will be
+        published here before it launches. You will never be charged without clearly agreeing to it first, and using
+        the free plan doesn&apos;t sign you up for anything.
       </p>
     ),
   },

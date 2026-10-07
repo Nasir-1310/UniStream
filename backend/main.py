@@ -1,27 +1,34 @@
 # backend/main.py
 #
-# Application entry point.
-# Download logic lives in  backend/routers/download.py
-# Auth dependency lives in backend/dependencies.py
-# DB helpers live in       backend/database.py
+# Application entry point: the FastAPI app, CORS, error handlers, the health
+# check and video analysis (/video-info).
+#   Accounts:   backend/routers/auth.py      (/auth/*)
+#   Admin:      backend/routers/admin.py     (/admin/*)
+#   Downloads:  backend/routers/download.py  (/download/*)
+#   Guards:     backend/dependencies.py      (sessions, admin secret, quotas)
 
 import asyncio
-import os
-import time
-import hmac
 import logging
+import os
+import re
+import time
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, StringConstraints
 
 import extraction_cache
+import security
+from dependencies import require_user, too_many_requests
+from routers.admin import router as admin_router
+from routers.auth import router as auth_router
 from routers.download import router as download_router
-from dependencies import get_user
+from storage import SchemaOutdatedError, StorageUnavailableError
 from yt_dlp_config import (
     format_ladder_score,
     is_healthy_listing,
@@ -32,36 +39,59 @@ from yt_dlp_config import (
     youtube_video_key,
     private_cookiefile,
     YtDlpLog,
-    youtube_auth_mode,
-    youtube_client_report,
     youtube_error_message,
     youtube_ydl_attempts,
     youtube_failure_message,
-    youtube_proxy,
     youtube_quality_notice,
     youtube_resolution_cap_notice,
-    js_runtime_options,
-)
-from storage import (
-    delete_user,
-    list_download_logs,
-    list_users,
-    set_user_status,
-    StorageUnavailableError,
-    storage_diagnostics,
-    upsert_pending_user,
-    upsert_user,
 )
 
 backend_dir = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=backend_dir / ".env")
 
-app = FastAPI(title="UniStream Saver API", version="1.0.0")
+app = FastAPI(title="UniStream Saver API", version="2.0.0")
 logger = logging.getLogger(__name__)
 # uvicorn configures only its own loggers; without this the app's INFO lines
 # (analysis timings) never reach the host's logs.
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 logger.setLevel(logging.INFO)
+
+
+class RedactTokens(logging.Filter):
+    """Blank `token=` query values in uvicorn's access log.
+
+    EventSource cannot send headers, so the session token travels in the
+    /download/progress URL (and the one-time file token in /download/file);
+    without this every request line would write a live credential to the
+    host's logs.
+    """
+
+    _PATTERN = re.compile(r"((?:^|[?&])token=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                self._PATTERN.sub(r"\1[redacted]", arg) if isinstance(arg, str) else arg
+                for arg in record.args
+            )
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(RedactTokens())
+
+# Analysing a video costs the server a watch-page fetch and a JS challenge
+# run; it does not count toward the daily limit, so it is capped separately.
+VIDEO_INFO_PER_USER = (40, 3600)
+
+
+# ── Error handlers ────────────────────────────────────────────────────────────
+# Every error body is {"detail": "<human readable string>"}: the frontend shows
+# `detail` as is.
+
+@app.exception_handler(SchemaOutdatedError)
+async def schema_outdated_handler(_request: Request, exc: SchemaOutdatedError):
+    # Retrying cannot help until the admin runs the migration script.
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 @app.exception_handler(StorageUnavailableError)
@@ -72,56 +102,106 @@ async def storage_unavailable_handler(_request: Request, exc: StorageUnavailable
         headers={"Retry-After": "3"},
     )
 
+
+_FIELD_LABELS = {
+    "login": "Email or phone",
+    "current_password": "Current password",
+    "new_password": "New password",
+    "daily_limit": "Daily limit",
+    "default_daily_limit": "Default daily limit",
+    "older_than_days": "Days",
+    "page_size": "Page size",
+    "format_id": "Format",
+    "url": "Link",
+    "to": "Email",
+    "ids": "Selection",
+}
+
+
+def _field_label(loc) -> str:
+    names = [str(part) for part in loc if part not in ("body", "query", "path", "header")]
+    names = [name for name in names if not name.isdigit()]
+    if not names:
+        return "Request body"
+    name = names[-1]
+    return _FIELD_LABELS.get(name, name.replace("_", " ").capitalize())
+
+
+def validation_message(errors) -> str:
+    """One readable sentence (or a few) from pydantic's error list.
+
+    Our own validators raise complete sentences ("Please enter your email
+    address."), which are used as they are; pydantic's generic messages get
+    the field's name in front.
+    """
+    messages: list[str] = []
+    for error in errors:
+        kind = error.get("type", "")
+        message = str(error.get("msg", "")).strip()
+        label = _field_label(error.get("loc", ()))
+        if kind == "missing":
+            text = f"{label} is required."
+        elif kind == "json_invalid":
+            text = "The request body is not valid JSON."
+        elif kind == "value_error":
+            text = message.removeprefix("Value error, ")
+        else:
+            text = f"{label}: {message[:1].lower()}{message[1:]}"
+            if not text.endswith((".", "?", "!")):
+                text += "."
+        if text not in messages:
+            messages.append(text)
+    return " ".join(messages) or "Please check the details and try again."
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": validation_message(exc.errors())})
+
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+# FRONTEND_URL may list several origins separated by commas (e.g. the Vercel
+# production and preview domains). The browser reaches the API directly for
+# the SSE progress stream and the YouTube check, so those origins need CORS.
+
+def _allowed_origins() -> list[str]:
+    origins = ["http://localhost:3000"]
+    for raw in os.getenv("FRONTEND_URL", "").split(","):
+        origin = raw.strip().rstrip("/")
+        if not origin:
+            continue
+        if "://" not in origin:
+            origin = f"https://{origin}"
+        if origin not in origins:
+            origins.append(origin)
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://localhost:3000"],
+    allow_origins=_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Retry-After", "Server-Timing"],
 )
 
 # ── Mount routers ─────────────────────────────────────────────────────────────
+app.include_router(auth_router)
 app.include_router(download_router)
-
-# ── Admin secret ──────────────────────────────────────────────────────────────
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
-
-
-def require_admin(x_admin_secret: str = Header(...)):
-    if not ADMIN_SECRET:
-        raise HTTPException(status_code=503, detail="Admin access is not configured")
-    if not hmac.compare_digest(x_admin_secret, ADMIN_SECRET):
-        raise HTTPException(status_code=401, detail="Invalid admin secret")
+app.include_router(admin_router)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
-Identifier = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=320),
-]
 RequestedUrl = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=8, max_length=4096),
 ]
 
 
-class AccessCheckRequest(BaseModel):
-    identifier: Identifier
-
 class VideoInfoRequest(BaseModel):
     url: RequestedUrl
-    identifier: Identifier
-
-class AdminAddUserRequest(BaseModel):
-    identifier: Identifier
-    note: Annotated[Optional[str], StringConstraints(strip_whitespace=True, max_length=500)] = None
-
-class AdminUpdateStatusRequest(BaseModel):
-    identifier: Identifier
-    status: Literal["approved", "pending", "blocked"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -264,34 +344,26 @@ def health():
     # Render sets RENDER_GIT_COMMIT, which shows whether a push is live yet.
     return {
         "status": "ok",
-        "service": "UniStream Saver API v1",
+        "service": "UniStream Saver API v2",
         "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
     }
 
 
-@app.post("/check-access")
-def check_access(body: AccessCheckRequest):
-    user = get_user(body.identifier)
-    if not user:
-        upsert_pending_user(body.identifier)
-        return {"access": False, "message": "Access not granted. Please contact the admin."}
-
-    if user["status"] == "approved":
-        return {"access": True, "name": user.get("name", ""), "message": "Welcome!"}
-
-    return {"access": False, "message": "Your account has not been approved yet. Please contact the admin."}
-
-
 @app.post("/video-info")
-async def video_info(body: VideoInfoRequest, response: Response):
+async def video_info(body: VideoInfoRequest, response: Response, user: dict = Depends(require_user)):
+    """List a video's formats. Analysis does not count toward the daily limit."""
     import yt_dlp
 
-    started = time.monotonic()
-    # get_user may query Supabase; keep that network call off the event loop.
-    user = await asyncio.to_thread(get_user, body.identifier)
-    if not user or user["status"] != "approved":
-        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        security.ensure_supported_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    limit, window = VIDEO_INFO_PER_USER
+    allowed, retry_after = security.rate_limiter.hit("video_info", user["id"], limit, window)
+    if not allowed:
+        raise too_many_requests("Too many requests, try again in {wait}.", retry_after)
 
+    started = time.monotonic()
     cache_key = video_cache_key(body.url)
     cached = extraction_cache.payload(cache_key)
     if cached is not None:
@@ -428,82 +500,3 @@ async def video_info(body: VideoInfoRequest, response: Response):
             yt_dlp.YoutubeDL.sanitize_info(info, remove_private_keys=True),
         )
     return payload
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ADMIN ENDPOINTS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/admin/users", dependencies=[Depends(require_admin)])
-def admin_list_users(status: Optional[str] = None):
-    users = list_users(status)
-    return {"users": users, "total": len(users)}
-
-
-@app.post("/admin/users", dependencies=[Depends(require_admin)])
-def admin_add_user(body: AdminAddUserRequest):
-    user = upsert_user(body.identifier, "approved", note=body.note)
-    return {
-        "message": "User saved and approved",
-        "identifier": body.identifier,
-        "user": user,
-    }
-
-
-@app.patch("/admin/users/status", dependencies=[Depends(require_admin)])
-def admin_update_status(body: AdminUpdateStatusRequest):
-    user = set_user_status(body.identifier, body.status)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": f"Status updated to '{body.status}'", "user": user}
-
-
-@app.delete("/admin/users/{identifier}", dependencies=[Depends(require_admin)])
-def admin_delete_user(identifier: str):
-    delete_user(identifier)
-    return {"message": "User deleted successfully"}
-
-
-@app.get("/admin/logs", dependencies=[Depends(require_admin)])
-def admin_download_logs(limit: int = 50):
-    return {"logs": list_download_logs(limit)}
-
-
-@app.get("/admin/storage", dependencies=[Depends(require_admin)])
-def admin_storage_health():
-    """
-    Reports which store is live, where the SQLite file ended up, and the
-    versions of the two tools a download depends on.  Without it a deployment
-    that answers "/" fine but 500s on every database call can only be diagnosed
-    from the host's own logs.
-    """
-    import yt_dlp
-    from routers.download import FFMPEG_LOCATION
-
-    info = storage_diagnostics()
-    info["yt_dlp_version"] = yt_dlp.version.__version__
-    info["ffmpeg_location"] = FFMPEG_LOCATION
-    info["youtube_auth"] = youtube_auth_mode()
-    info["youtube_proxy"] = "configured" if youtube_proxy() else "not configured"
-    info["js_runtime"] = js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path")
-    return info
-
-
-@app.get("/admin/youtube-check", dependencies=[Depends(require_admin)])
-def admin_youtube_check(url: str = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"):
-    """
-    Lists which YouTube clients return which resolutions from this server's IP.
-    YouTube treats data-centre IPs differently, so a video that lists every
-    resolution locally can list only 360p here; this shows which client to use.
-    Takes a minute or two: each client is probed separately.
-    """
-    import yt_dlp
-
-    return {
-        "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
-        "yt_dlp_version": yt_dlp.version.__version__,
-        "youtube_auth": youtube_auth_mode(),
-        "youtube_proxy": "configured" if youtube_proxy() else "not configured",
-        "js_runtime": js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path"),
-        "clients": youtube_client_report(url),
-    }

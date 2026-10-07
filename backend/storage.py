@@ -1315,9 +1315,10 @@ def update_user(user_id: str, fields: dict) -> dict | None:
             current = get_user_by_id(remote_id)
             if current is None:
                 return None
-        conflict = find_conflicts(changes.get("email"), changes.get("phone"), exclude_id=remote_id)
-        if conflict:
-            raise DuplicateUserError(conflict)
+        if changes.get("email") or changes.get("phone"):
+            conflict = find_conflicts(changes.get("email"), changes.get("phone"), exclude_id=remote_id)
+            if conflict:
+                raise DuplicateUserError(conflict)
         payload = {key: _remote_value(value) for key, value in changes.items()}
         identifier = _new_identifier(changes, current)
         if identifier:
@@ -1614,11 +1615,20 @@ def add_download_log(
 
     if SUPABASE_CONFIGURED:
         payload = {**record, "user_id": _uuid_or_none(user_id) if user_id else None}
-        _remote(
-            "record download log",
-            lambda client: client.table("download_logs").insert(payload, returning="minimal").execute(),
-            idempotent=False,
-        )
+
+        def operation(client: Client):
+            try:
+                client.table("download_logs").insert(payload, returning="minimal").execute()
+            except APIError as exc:
+                # The account was deleted while its download ran (foreign key
+                # violation): keep the audit row, detached like older logs.
+                if _error_code(exc) != "23503" or payload["user_id"] is None:
+                    raise
+                client.table("download_logs").insert(
+                    {**payload, "user_id": None}, returning="minimal"
+                ).execute()
+
+        _remote("record download log", operation, idempotent=False)
         return
 
     with _local_transaction() as conn:
@@ -1626,7 +1636,7 @@ def add_download_log(
             """
             INSERT INTO download_logs (
                 user_id, identifier, url, title, platform, quality, file_size, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ((SELECT id FROM users WHERE id = ?), ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 _local_id_or_none(user_id) if user_id else None,
@@ -1709,6 +1719,24 @@ def _local_log_batch(flt: _LogFilter, after: tuple[str, int] | None, size: int) 
     return [dict(row) for row in rows]
 
 
+def _log_batch(flt: _LogFilter, after: tuple | None, size: int) -> list[dict]:
+    if SUPABASE_CONFIGURED:
+        return _remote_log_batch(flt, after, size)
+    return _local_log_batch(flt, after, size)
+
+
+def _continue_logs(flt: _LogFilter, rows: list[dict], remaining: int) -> Iterator[dict]:
+    while True:
+        for row in rows:
+            yield _log_from_row(row)
+        size = min(REMOTE_PAGE_SIZE, remaining)
+        remaining -= len(rows)
+        if len(rows) < size or remaining <= 0:
+            return
+        after = (rows[-1]["created_at"], rows[-1]["id"])
+        rows = _log_batch(flt, after, min(REMOTE_PAGE_SIZE, remaining))
+
+
 def iter_download_logs(
     *,
     q: str | None = None,
@@ -1718,28 +1746,19 @@ def iter_download_logs(
     date_to: datetime | None = None,
     limit: int = 50000,
 ) -> Iterator[dict]:
-    """Yield matching logs newest first (for CSV export), at most ``limit``.
+    """Matching logs newest first (for CSV export), at most ``limit``.
 
-    Walks the table with a (created_at, id) cursor rather than offsets, so
-    downloads completing during the export neither repeat nor skip rows.
+    The first batch is read before this returns, so storage errors surface
+    while the caller can still answer with an error status instead of a
+    half-written file. Later batches follow a (created_at, id) cursor rather
+    than offsets, so downloads completing mid-export neither repeat nor skip.
     """
     flt = _log_filter(q, platform, user_id, date_from, date_to)
-    if flt is None:
-        return
     remaining = max(0, int(limit))
-    after = None
-    while remaining > 0:
-        size = min(REMOTE_PAGE_SIZE, remaining)
-        if SUPABASE_CONFIGURED:
-            rows = _remote_log_batch(flt, after, size)
-        else:
-            rows = _local_log_batch(flt, after, size)
-        for row in rows:
-            yield _log_from_row(row)
-        remaining -= len(rows)
-        if len(rows) < size:
-            return
-        after = (rows[-1]["created_at"], rows[-1]["id"])
+    if flt is None or remaining == 0:
+        return iter(())
+    first = _log_batch(flt, None, min(REMOTE_PAGE_SIZE, remaining))
+    return _continue_logs(flt, first, remaining)
 
 
 def delete_download_logs(ids: list[str]) -> int:

@@ -515,7 +515,8 @@ export function apiErrorMessage(err: unknown, fallback = 'Something went wrong. 
  * still typing, so the request that matters isn't the one paying the cold start.
  */
 export function warmBackend(): void {
-  API.get('/', { timeout: 120000 }).catch(() => { /* best effort */ })
+  // '' resolves to '/api' itself; '/api/' would first bounce off a 308 redirect.
+  API.get('', { timeout: 120000 }).catch(() => { /* best effort */ })
 }
 
 /** POST /auth/register — request access; the account starts as pending. */
@@ -855,8 +856,7 @@ export async function adminGetStorage(secret: string): Promise<StorageHealth> {
 // it goes straight to the API rather than through the /api rewrite proxy.
 /** GET /admin/youtube-check — which YouTube clients list which resolutions from the server. */
 export async function adminYoutubeCheck(secret: string, url?: string): Promise<YoutubeCheckResult> {
-  const origin = process.env.NEXT_PUBLIC_BACKEND_ORIGIN || ''
-  const { data } = await axios.get<YoutubeCheckResult>(`${origin}/admin/youtube-check`, {
+  const { data } = await axios.get<YoutubeCheckResult>(`${BACKEND_ORIGIN}/admin/youtube-check`, {
     headers: adminHeaders(secret),
     params: url ? { url } : undefined,
     timeout: 300000,

@@ -48,7 +48,9 @@ export function formatDate(value: DateInput, options: DateFormatOptions = {}): s
       year: 'numeric',
       ...(time ? { hour: 'numeric', minute: '2-digit', hour12: true } : {}),
       ...(timeZone ? { timeZone } : {}),
-    }).format(date)
+    })
+      .format(date)
+      .replace('Sept', 'Sep') // newer ICU data abbreviates September as "Sept"
   } catch {
     return date.toLocaleString()
   }

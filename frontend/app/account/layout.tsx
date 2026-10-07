@@ -1,0 +1,13 @@
+// frontend/app/account/layout.tsx
+// Tab title for the client-rendered account page; private, so not indexed.
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Your account',
+  description: 'Your UniStream Saver profile, daily downloads and password.',
+  robots: { index: false, follow: false },
+}
+
+export default function AccountLayout({ children }: { children: React.ReactNode }) {
+  return children
+}

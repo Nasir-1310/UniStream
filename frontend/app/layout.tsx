@@ -1,22 +1,33 @@
 // frontend/app/layout.tsx
 import type { Metadata, Viewport } from 'next'
+import { ToastProvider } from '@/components/ui/Toast'
+import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import './globals.css'
+
+const description =
+  'Save YouTube, Facebook and Instagram videos in HD or data-saving quality. Free for approved members, with a daily download allowance.'
 
 export const metadata: Metadata = {
   title: {
-    default: 'UniStream Saver — University Video Downloader',
+    default: 'UniStream Saver — Video Downloader for Students',
     template: '%s · UniStream Saver',
   },
-  description:
-    'Download videos from YouTube, Facebook, Instagram, and TikTok in HD or data-saving quality. Exclusively for approved university students.',
+  description,
+  applicationName: 'UniStream Saver',
+  keywords: ['video downloader', 'YouTube', 'Facebook', 'Instagram', 'students', 'Bangladesh'],
   manifest: '/manifest.json',
   icons: {
     icon: '/unistream-icon.svg',
   },
   openGraph: {
     title: 'UniStream Saver',
-    description: 'University-exclusive video downloader for YouTube, Facebook, Instagram & TikTok.',
+    description: 'Save YouTube, Facebook and Instagram videos for study and offline viewing.',
     type: 'website',
+    siteName: 'UniStream Saver',
+  },
+  formatDetection: {
+    // Stop iOS turning phone numbers in the admin panel into call links.
+    telephone: false,
   },
 }
 
@@ -54,7 +65,13 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-[#0a0d14] text-slate-200 antialiased min-h-svh">
-        {children}
+        {/* Pages render <main id="main">; keyboard users can jump past the navbar. */}
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
+        <ToastProvider>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </ToastProvider>
       </body>
     </html>
   )

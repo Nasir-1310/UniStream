@@ -201,6 +201,16 @@ class StorageContract:
         self.assertIsNone(logs[0]["user_id"])
         self.assertEqual(logs[0]["identifier"], "student1@example.com")
 
+    def test_log_for_an_account_deleted_mid_download_is_kept_detached(self):
+        user = self.make_user(1)
+        self.assertTrue(storage.delete_user(user["id"]))
+
+        storage.add_download_log(user_id=user["id"], identifier=user["email"],
+                                 url="https://youtu.be/a", title="Late")
+
+        log = storage.list_download_logs()["items"][0]
+        self.assertEqual((log["title"], log["user_id"]), ("Late", None))
+
     def test_list_users_search_filters_sorts_and_pages(self):
         people = [
             self.make_user(1, name="Charlie", note="100% sure"),
@@ -784,6 +794,13 @@ class RemoteRetryTests(StorageStateMixin, unittest.TestCase):
         self.assertTrue(storage.SUPABASE_CONFIGURED)
         self.assertIsNone(storage._local_conn)
         self.assertFalse(storage.LOCAL_DB_PATH.exists())
+
+    def test_export_errors_surface_before_streaming_starts(self):
+        with (
+            patch.object(storage, "_get_supabase", side_effect=httpx.ConnectError("down")),
+            self.assertRaises(storage.StorageUnavailableError),
+        ):
+            storage.iter_download_logs()  # no next(): the first batch is eager
 
     def test_transient_failures_are_retried(self):
         callback, calls = self.failing(httpx.ConnectError("x"), api_error("57014"), None)

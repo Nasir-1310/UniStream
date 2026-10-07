@@ -24,6 +24,9 @@ function resolveBackendOrigin() {
 }
 
 const nextConfig = {
+  // The dev-only route badge sits bottom-left, on top of the admin panel's
+  // mobile tab bar. Compile and runtime errors are still shown without it.
+  devIndicators: false,
   // EventSource must connect straight to FastAPI. Next's rewrite proxy can
   // buffer text/event-stream responses and deliver all progress events only
   // after the download has completed.

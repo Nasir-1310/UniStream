@@ -1,10 +1,14 @@
 # backend/routers/download.py
 #
-# Provides three endpoints, all mounted under the prefix "/download":
+# Provides two endpoints, mounted without a prefix (paths are explicit):
 #
 #   GET /download/progress   — SSE stream with real-time yt-dlp progress
 #   GET /download/file       — serve the finished file via a one-time token
-#   GET /download            — legacy direct-stream (kept for compatibility)
+#
+# A download needs a session (the `token` query parameter: EventSource cannot
+# send headers), a supported platform and room in the account's daily limit.
+# It counts toward the limit, and is written to the audit log, only once it
+# completes.
 #
 # Mount in main.py with:
 #   app.include_router(download_router)   # no prefix — paths are explicit
@@ -23,11 +27,12 @@ from pathlib import Path
 from urllib.parse import quote
 
 import yt_dlp
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
-from dependencies import require_approved_user
-from database import log_download, record_download
+import dependencies
+import security
+import storage
 import extraction_cache
 from yt_dlp_config import (
     is_youtube_url,
@@ -46,7 +51,7 @@ logger = logging.getLogger(__name__)
 # Maps "token:<uuid>" → {filename, expires}
 _jobs: dict[str, dict] = {}
 
-# Semaphore shared with the legacy /download endpoint
+# Server-wide cap on simultaneous downloads (each account may run two).
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "5"))
 _semaphore = threading.Semaphore(MAX_CONCURRENT)
 
@@ -304,28 +309,90 @@ def _download_with_fallback(
 # SSE progress endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 
+_SSE_HEADERS = {
+    "Cache-Control":     "no-cache, no-transform",
+    "Connection":        "keep-alive",
+    "X-Accel-Buffering": "no",   # disable nginx buffering
+}
+
+_UNAVAILABLE_MESSAGE = (
+    "Downloads are temporarily unavailable. Please try again in a minute."
+)
+
+
+class _ServerBusy(RuntimeError):
+    """Every server-wide download slot stayed taken for 30 seconds."""
+
+
+def _sse_refusal(message: str, code: str | None) -> StreamingResponse:
+    """A download refused before it started, as a single SSE error event.
+
+    EventSource cannot read an HTTP error status or body, so the reason
+    travels as an event; `code` ("auth" | "limit" | "platform" | "busy")
+    tells the page how to react.
+    """
+    event = {
+        "status": "error", "error": message, "percent": 0,
+        "speed": "0 KB/s", "eta": "--:--", "downloaded_fmt": "0 KB",
+        "total_fmt": "?", "downloaded": 0, "total": None,
+    }
+    if code:
+        event["code"] = code
+
+    async def _stream():
+        yield _sse(event)
+
+    return StreamingResponse(_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+def _quality_label(ext: str, height: int | None) -> str:
+    """Audit-log quality, e.g. "1080p MP4" or "MP3"."""
+    if ext == "mp3":
+        return "MP3"
+    return f"{height}p MP4" if height else "MP4"
+
+
 @router.get("/download/progress")
 async def download_with_progress(
-    url:        str = Query(...),
-    format_id:  str = Query(...),
-    ext:        str = Query(...),
-    identifier: str = Query(...),
+    url:        str = Query(..., max_length=4096),
+    format_id:  str = Query(..., max_length=200),
+    ext:        str = Query(..., max_length=10),
     height:     int | None = Query(None, ge=1, le=10000),
     source:     str | None = Query(None, max_length=32),
-    _user           = Depends(require_approved_user),
+    token:      str | None = Query(None, max_length=2048),
 ):
     """
     SSE stream that drives the rich progress UI in the frontend.
 
     Flow:
-      1. Opens an SSE connection.
+      1. Checks the session, the platform and the daily limit, and reserves
+         one of the account's download slots (refusals arrive as one SSE
+         error event with a `code`).
       2. Starts yt-dlp in a thread pool, reporting progress via a hook.
       3. Polls the shared job dict every 250 ms and yields SSE events.
-      4. On completion emits a one-time `token` the browser uses to fetch the file.
+      4. On completion counts the download, writes the audit log and emits a
+         one-time `token` (plus the account's updated `usage`).
       5. Browser calls GET /download/file?token=<token> to trigger the save.
     """
+    try:
+        user, platform, limit = await asyncio.to_thread(
+            dependencies.reserve_download, token, url,
+        )
+    except dependencies.DownloadRefused as refusal:
+        return _sse_refusal(refusal.message, refusal.code)
+    except storage.StorageUnavailableError as exc:
+        logger.warning("Download refused, storage unavailable: %s", exc)
+        return _sse_refusal(_UNAVAILABLE_MESSAGE, None)
+
+    user_id = user["id"]
     job_id  = str(uuid.uuid4())
-    tmp_dir = tempfile.mkdtemp(prefix="unistream_")
+    try:
+        tmp_dir = tempfile.mkdtemp(prefix="unistream_")
+    except OSError:
+        # e.g. a full disk: give the slot back, or the account stays "busy".
+        dependencies.release_download(user_id)
+        logger.exception("Could not create a download folder")
+        return _sse_refusal(_UNAVAILABLE_MESSAGE, None)
 
     _jobs[job_id] = {
         "status":         "starting",
@@ -384,6 +451,8 @@ async def download_with_progress(
     async def _run_download():
         loop = asyncio.get_running_loop()
         acquired = False
+        # The account's slot is held until the download is counted or fails.
+        reserved = True
 
         try:
             acquired = await asyncio.to_thread(
@@ -392,7 +461,7 @@ async def download_with_progress(
                 timeout=30,
             )
             if not acquired:
-                raise RuntimeError("Server is busy. Try again shortly.")
+                raise _ServerBusy("Server is busy. Try again shortly.")
 
             def _blocking():
                 return _download_with_fallback(
@@ -408,15 +477,32 @@ async def download_with_progress(
             out_file = max(files, key=lambda f: f.stat().st_size)
             job = _jobs.get(job_id)
             if not job:
+                # The browser left before the end: nobody holds a way to fetch
+                # this file, so it is neither kept nor counted.
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return
 
+            # Counting and releasing the slot happen together (see
+            # dependencies.DownloadSlots), so a parallel start never slips
+            # past the limit in between.
+            reserved = False
             try:
-                await log_download(
-                    identifier=identifier,
+                used = await asyncio.to_thread(dependencies.complete_download, user_id)
+            except Exception:
+                logger.exception("Completed download could not be counted toward the daily limit")
+                used = dependencies.used_today(user) + 1
+            usage = dependencies.usage_payload(used, limit)
+
+            try:
+                await asyncio.to_thread(
+                    storage.add_download_log,
+                    user_id=user_id,
+                    identifier=user.get("identifier") or user.get("email") or "",
                     url=url,
-                    title=info.get("title", ""),
-                    platform=info.get("extractor_key", ""),
+                    title=info.get("title") or "",
+                    platform=security.platform_label(platform),
+                    quality=_quality_label(ext, height),
+                    file_size=out_file.stat().st_size,
                 )
             except Exception:
                 # The media is already complete; do not take it away from the
@@ -433,6 +519,7 @@ async def download_with_progress(
                 "percent":  100,
                 "filename": str(out_file),
                 "token":    token,
+                "usage":    usage,
                 "done":     True,
             })
 
@@ -446,6 +533,8 @@ async def download_with_progress(
             asyncio.create_task(_expire_unclaimed_file())
 
         except Exception as exc:
+            # A failed download is never served, so its partial files go now.
+            shutil.rmtree(tmp_dir, ignore_errors=True)
             job = _jobs.get(job_id)
             if job:
                 job.update({
@@ -453,69 +542,73 @@ async def download_with_progress(
                     "error":  youtube_error_message(url, exc),
                     "done":   True,
                 })
-            else:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+                if isinstance(exc, _ServerBusy):
+                    job["code"] = "busy"
         finally:
             if acquired:
                 _semaphore.release()
+            if reserved:
+                dependencies.release_download(user_id)
 
     asyncio.create_task(_run_download())
 
     # ── SSE generator ─────────────────────────────────────────────────────────
     async def _event_stream():
-        # A leading SSE comment makes even small-response-buffering proxies
-        # flush their headers immediately. EventSource ignores comment lines.
-        yield ":" + (" " * 2048) + "\n\n"
-        yield _sse({"status": "starting", "percent": 0, "job_id": job_id,
-                    "speed": "0 KB/s", "eta": "--:--",
-                    "downloaded_fmt": "0 KB", "total_fmt": "?",
-                    "downloaded": 0, "total": None})
+        try:
+            # A leading SSE comment makes even small-response-buffering proxies
+            # flush their headers immediately. EventSource ignores comment lines.
+            yield ":" + (" " * 2048) + "\n\n"
+            yield _sse({"status": "starting", "percent": 0, "job_id": job_id,
+                        "speed": "0 KB/s", "eta": "--:--",
+                        "downloaded_fmt": "0 KB", "total_fmt": "?",
+                        "downloaded": 0, "total": None})
 
-        POLL  = 0.25    # seconds
-        LIMIT = 3600    # 1-hour safety cap
-        elapsed = 0.0
+            POLL  = 0.25    # seconds
+            LIMIT = 3600    # 1-hour safety cap
+            elapsed = 0.0
 
-        while elapsed < LIMIT:
-            await asyncio.sleep(POLL)
-            elapsed += POLL
+            while elapsed < LIMIT:
+                await asyncio.sleep(POLL)
+                elapsed += POLL
 
-            job    = _jobs.get(job_id, {})
-            status = job.get("status", "starting")
+                job    = _jobs.get(job_id, {})
+                status = job.get("status", "starting")
 
-            payload = {
-                "status":         status,
-                "percent":        job.get("percent", 0),
-                "speed":          job.get("speed", "0 KB/s"),
-                "eta":            job.get("eta", "--:--"),
-                "downloaded_fmt": job.get("downloaded_fmt", "0 KB"),
-                "total_fmt":      job.get("total_fmt", "?"),
-                "downloaded":     job.get("downloaded", 0),
-                "total":          job.get("total"),
-            }
+                payload = {
+                    "status":         status,
+                    "percent":        job.get("percent", 0),
+                    "speed":          job.get("speed", "0 KB/s"),
+                    "eta":            job.get("eta", "--:--"),
+                    "downloaded_fmt": job.get("downloaded_fmt", "0 KB"),
+                    "total_fmt":      job.get("total_fmt", "?"),
+                    "downloaded":     job.get("downloaded", 0),
+                    "total":          job.get("total"),
+                }
 
-            if status == "complete":
-                payload["token"] = job["token"]
-                yield _sse(payload)
-                break
+                if status == "complete":
+                    payload["token"] = job["token"]
+                    payload["usage"] = job.get("usage")
+                    yield _sse(payload)
+                    break
 
-            elif status == "error":
-                payload["error"] = job.get("error", "Unknown error")
-                yield _sse(payload)
-                break
+                elif status == "error":
+                    payload["error"] = job.get("error", "Unknown error")
+                    if job.get("code"):
+                        payload["code"] = job["code"]
+                    yield _sse(payload)
+                    break
 
-            else:
-                yield _sse(payload)
-
-        _jobs.pop(job_id, None)
+                else:
+                    yield _sse(payload)
+        finally:
+            # Also runs when the browser disconnects mid-download: the job is
+            # then dropped, and _run_download discards its file uncounted.
+            _jobs.pop(job_id, None)
 
     return StreamingResponse(
         _event_stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control":     "no-cache, no-transform",
-            "Connection":        "keep-alive",
-            "X-Accel-Buffering": "no",   # disable nginx buffering
-        },
+        headers=_SSE_HEADERS,
     )
 
 
@@ -565,86 +658,3 @@ async def serve_download_file(token: str = Query(...)):
             "Content-Disposition": f"attachment; filename*=UTF-8''{quote(clean_name)}",
         },
     )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Legacy direct-stream endpoint  (kept for backward compat)
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.get("/download")
-def get_download(
-    url:        str = Query(...),
-    format_id:  str = Query(...),
-    identifier: str = Query(...),
-    ext:        str = Query("mp4"),
-    height:     int | None = Query(None, ge=1, le=10000),
-    source:     str | None = Query(None, max_length=32),
-    _user           = Depends(require_approved_user),
-):
-    """
-    Synchronous streaming download — no progress events.
-    Kept so any client that still calls /download directly doesn't break.
-    """
-    acquired = _semaphore.acquire(blocking=True, timeout=30)
-    if not acquired:
-        raise HTTPException(status_code=503, detail="Server busy. Try again shortly.")
-
-    tmp_dir = tempfile.mkdtemp()
-
-    try:
-        info      = _download_with_fallback(
-            url, format_id, ext, tmp_dir, height=height, source=source
-        )
-        raw_title = info.get("title", "unistream_video")
-
-        output_candidates = [
-            Path(tmp_dir) / filename for filename in os.listdir(tmp_dir)
-        ]
-        if not output_candidates:
-            raise HTTPException(status_code=500, detail="File could not be created.")
-        output_file = max(output_candidates, key=lambda path: path.stat().st_size)
-
-        file_size  = output_file.stat().st_size
-        actual_ext = "mp3" if ext == "mp3" else "mp4"
-        filename   = f"{_clean_filename(raw_title)}.{actual_ext}"
-
-        try:
-            record_download(
-                identifier=identifier,
-                url=url,
-                title=raw_title,
-                platform=info.get("extractor_key", ""),
-            )
-        except Exception:
-            logger.exception("Legacy completed download could not be written to the audit log")
-
-        def _iter_and_cleanup():
-            try:
-                with output_file.open("rb") as f:
-                    while chunk := f.read(1024 * 1024):
-                        yield chunk
-            finally:
-                _semaphore.release()
-                try:
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
-                except Exception:
-                    pass
-
-        return StreamingResponse(
-            _iter_and_cleanup(),
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
-                "Content-Length":      str(file_size),
-                "Access-Control-Expose-Headers": "Content-Disposition, Content-Length",
-            },
-        )
-
-    except HTTPException:
-        _semaphore.release()
-        raise
-    except Exception as exc:
-        _semaphore.release()
-        import shutil
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=youtube_error_message(url, exc))

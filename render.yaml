@@ -6,15 +6,51 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
+    # One worker: daily-limit reservations and rate limits live in memory.
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
+      # Password for the /admin panel. Use a long random value.
       - key: ADMIN_SECRET
         sync: false
+      # Signs user sessions and password-reset links. Render generates a
+      # random value once; changing it signs every user out.
+      - key: AUTH_SECRET
+        generateValue: true
+      # Public URL of the Next.js site (used in emails and for CORS). Several
+      # origins may be separated by commas; the first one is used in emails.
       - key: FRONTEND_URL
+        sync: false
+      # Daily download limits reset at local midnight in this zone.
+      - key: APP_TIMEZONE
+        value: Asia/Dhaka
+      # Email for approvals and password resets: auto | brevo | resend | smtp | none.
+      # Render's free instances block outbound SMTP ports, so use an HTTP
+      # provider: Brevo's free plan sends 300 emails/day from a verified sender.
+      - key: EMAIL_PROVIDER
+        value: auto
+      - key: BREVO_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      # Sender address, e.g. unistream.saver@gmail.com (verified with the provider).
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: UniStream Saver
+      # SMTP is only for hosts that allow outbound SMTP (not Render's free plan).
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_SSL
         sync: false
       # Base64-encoded Netscape cookies.txt export for youtube.com. Configure
       # this as a secret in Render; never commit the cookie file itself.

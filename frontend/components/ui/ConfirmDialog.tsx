@@ -262,8 +262,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       <ConfirmDialog
         open={request !== null}
-        title={request?.options.title ?? ''}
-        {...(request?.options ?? {})}
+        {...(request?.options ?? { title: '' })}
         onConfirm={() => settle(true)}
         onCancel={() => settle(false)}
       />

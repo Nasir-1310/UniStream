@@ -1,396 +1,1318 @@
 'use client'
 // frontend/app/page.tsx
-import { useState, useMemo, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { checkAccess, warmBackend } from '@/lib/api'
+//
+// Landing page: what UniStream Saver is, the three supported platforms, how
+// access works, and the auth card (Sign in / Request access). Signed-in
+// visitors are sent straight to /download unless they followed an in-page
+// link (e.g. /#faq from the footer), so the FAQ stays readable for them.
+
+import {
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardPaste,
+  Download,
+  Facebook,
+  Gauge,
+  GraduationCap,
+  Instagram,
+  KeyRound,
+  LogIn,
+  MailCheck,
+  MonitorSmartphone,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserPlus,
+  Youtube,
+  type LucideIcon,
+} from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
-import {
-  Youtube, Facebook, Instagram, Music2,
-  AlertCircle, CheckCircle2, Loader2,
-  Lock, ArrowRight, Mail, Phone, X, ChevronRight,
-} from 'lucide-react'
+import { Alert, Field, PasswordInput, Spinner, describedBy, useToast } from '@/components/ui'
+import { apiErrorMessage, apiErrorStatus, login, register, warmBackend, type PublicUser } from '@/lib/api'
+import { useSession } from '@/lib/auth'
+import { formatPhone } from '@/lib/format'
+import { classifyLogin, errorOf, validateEmail, validateName, validatePhone, NAME_MAX } from '@/lib/validation'
 
-// ── Validation ────────────────────────────────────────────────────────────────
-const EMAIL_RE =
-  /^[a-zA-Z0-9][a-zA-Z0-9._%+\-]{0,63}@[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,24}$/
-const BD_PHONE_RE = /^(?:\+?880)?01[3-9]\d{8}$/
+type AuthTab = 'signin' | 'request'
 
-type FieldType = 'email' | 'phone' | null
-interface ValidationResult { type: FieldType; valid: boolean; hint: string }
+/** Longest "Institution / department" we accept (the API allows more; this keeps rows tidy). */
+const NOTE_MAX = 120
+/** After this long, tell the user the free-tier server is probably waking up. */
+const SLOW_REQUEST_MS = 8000
 
-function validate(raw: string): ValidationResult {
-  const v = raw.trim()
-  if (!v) return { type: null, valid: false, hint: '' }
-  if (v.includes('@')) {
-    if (EMAIL_RE.test(v)) return { type: 'email', valid: true, hint: '' }
-    const parts = v.split('@')
-    if (parts.length > 2)          return { type: 'email', valid: false, hint: 'Only one @ symbol allowed.' }
-    if (!parts[0])                 return { type: 'email', valid: false, hint: 'Enter a username before @.' }
-    if (!parts[1]?.includes('.'))  return { type: 'email', valid: false, hint: 'Missing domain — e.g. @gmail.com' }
-    return { type: 'email', valid: false, hint: 'Invalid email — check the format.' }
-  }
-  if (/^[\d+]/.test(v)) {
-    const digits = v.replace(/\D/g, '')
-    if (BD_PHONE_RE.test(v))                          return { type: 'phone', valid: true, hint: '' }
-    if (digits.length < 11)                           return { type: 'phone', valid: false, hint: 'Too short — needs 11 digits, e.g. 017XXXXXXXX.' }
-    if (digits.length > 13)                           return { type: 'phone', valid: false, hint: 'Too long — check your number.' }
-    if (!/^(?:\+?880)?01/.test(v))                    return { type: 'phone', valid: false, hint: 'Must start with 01, e.g. 017XXXXXXXX.' }
-    const op = parseInt(digits.replace(/^(?:880)?0?1/, '').charAt(0))
-    if (isNaN(op) || op < 3 || op > 9)               return { type: 'phone', valid: false, hint: 'Unrecognised operator — valid: 013–019.' }
-    return { type: 'phone', valid: false, hint: 'Invalid number — use 01XXXXXXXXX.' }
-  }
-  return { type: null, valid: false, hint: 'Enter a valid email address or Bangladeshi phone number.' }
+// ── URL hash as an external store ─────────────────────────────────────────────
+// Read through useSyncExternalStore so the server render ('') and the browser
+// agree during hydration, then the real hash takes over.
+
+function subscribeHash(callback: () => void): () => void {
+  window.addEventListener('hashchange', callback)
+  return () => window.removeEventListener('hashchange', callback)
+}
+const getHash = () => window.location.hash
+const getServerHash = () => ''
+
+function firstName(name: string | null | undefined): string {
+  return (name ?? '').trim().split(/\s+/)[0] ?? ''
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+/**
+ * Set `.current` to an element in a submit handler; it gets focus once `busy`
+ * is false again. Inputs are disabled while a request runs, and a disabled
+ * element can't take focus, so focusing straight from the catch block fails.
+ */
+function useFocusWhenIdle(busy: boolean) {
+  const target = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (busy || !target.current) return
+    target.current.focus()
+    target.current = null
+  }, [busy])
+  return target
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Page
+// ═════════════════════════════════════════════════════════════════════════════
+
 export default function HomePage() {
   const router = useRouter()
-  const [identifier, setIdentifier] = useState('')
-  const [touched, setTouched]       = useState(false)
-  const [loading, setLoading]       = useState(false)
-  const [serverError, setServerError] = useState('')
+  const { user, loading } = useSession()
+  const hash = useSyncExternalStore(subscribeHash, getHash, getServerHash)
+  const [tabChoice, setTabChoice] = useState<AuthTab | null>(null)
+  const [loginValue, setLoginValue] = useState('')
+  const tab: AuthTab = tabChoice ?? (hash === '#request' ? 'request' : 'signin')
 
-  // Start waking the free-tier backend immediately, so the ~50s cold start
-  // overlaps with the user typing instead of stalling their first login.
-  useEffect(() => { warmBackend() }, [])
+  // Start waking the free-tier backend right away, so its ~50 s cold start
+  // overlaps with the visitor reading and typing instead of their first submit.
+  useEffect(() => {
+    warmBackend()
+  }, [])
 
-  const validation = useMemo(() => validate(identifier), [identifier])
-  const showHint = touched && identifier.trim().length > 0 && !validation.valid && validation.hint
+  // Signed-in visitors belong on the downloader, unless they came for a section.
+  const redirecting = !loading && Boolean(user) && !hash
+  useEffect(() => {
+    if (redirecting) router.replace('/download')
+  }, [redirecting, router])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setTouched(true)
-    if (!validation.valid) return
-    setLoading(true)
-    setServerError('')
+  /** Switch the auth card's tab, scroll it into view and move focus to the tab. */
+  function openAuth(next: AuthTab, prefillLogin?: string) {
+    setTabChoice(next)
+    if (prefillLogin !== undefined) setLoginValue(prefillLogin)
+    const card = document.getElementById('auth')
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    card?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    window.requestAnimationFrame(() => {
+      document.getElementById(`auth-tab-${next}`)?.focus({ preventScroll: true })
+    })
+  }
+
+  return (
+    <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
+      <AmbientGlow />
+      <Navbar />
+
+      <main id="main" className="relative z-10 flex-1">
+        {/* ── Hero + auth card ─────────────────────────────────────────── */}
+        <section
+          aria-labelledby="hero-title"
+          className="max-w-7xl mx-auto w-full px-4 sm:px-8 pt-6 pb-14 sm:pt-12 sm:pb-20 lg:pt-20 lg:pb-24"
+        >
+          <div className="grid gap-6 sm:gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:gap-x-16 lg:gap-y-8">
+            <div className="lg:col-start-1 lg:row-start-1 lg:self-end">
+              <p className="eyebrow-badge mb-4 sm:mb-6">
+                <GraduationCap className="w-3.5 h-3.5" aria-hidden="true" />
+                Free for students · Early access
+              </p>
+              <h1
+                id="hero-title"
+                className="text-[1.875rem] leading-[1.1] sm:text-5xl lg:text-[3.4rem] font-extrabold text-white max-w-2xl"
+                style={{ letterSpacing: '-0.025em' }}
+              >
+                Save study videos.{' '}
+                <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-violet-400 bg-clip-text text-transparent">
+                  Watch them anywhere, even offline.
+                </span>
+              </h1>
+              <p className="mt-3 sm:mt-5 text-[15px] sm:text-base leading-relaxed text-slate-400 max-w-xl">
+                Download lectures, tutorials and clips from YouTube, Facebook and Instagram in the quality you choose.
+                <span className="hidden sm:inline">
+                  {' '}
+                  HD for your laptop, small files for your phone&apos;s data plan, or audio only.
+                </span>
+              </p>
+            </div>
+
+            <div id="auth" className="relative lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-center scroll-mt-20">
+              {/* Target for /#request links (that hash also opens the Request access tab). */}
+              <span id="request" className="absolute top-0 scroll-mt-20" aria-hidden="true" />
+              <AuthCard
+                tab={tab}
+                onTabChange={setTabChoice}
+                loginValue={loginValue}
+                onLoginValueChange={setLoginValue}
+                user={user}
+                redirecting={redirecting}
+                onOpenAuth={openAuth}
+              />
+            </div>
+
+            <div className="lg:col-start-1 lg:row-start-2 lg:self-start">
+              <ul className="grid gap-2.5 sm:grid-cols-2 max-w-xl text-[14px] text-slate-300">
+                {[
+                  '4 free downloads a day',
+                  'HD, data-saver or audio-only',
+                  'Works in your phone’s browser',
+                  'No ads, no app to install',
+                ].map(item => (
+                  <li key={item} className="flex items-start gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 mt-[3px] flex-shrink-0 text-emerald-400" aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 flex flex-wrap items-center gap-2">
+                <span className="text-[12px] text-slate-500 mr-1">Works with</span>
+                <span className="platform-pill">
+                  <Youtube className="w-3.5 h-3.5 text-red-400" aria-hidden="true" /> YouTube
+                </span>
+                <span className="platform-pill">
+                  <Facebook className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" /> Facebook
+                </span>
+                <span className="platform-pill">
+                  <Instagram className="w-3.5 h-3.5 text-pink-400" aria-hidden="true" /> Instagram
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <PlatformsSection />
+        <HowItWorksSection onRequestAccess={() => openAuth('request')} />
+        <FeaturesSection />
+        <FaqSection onOpenAuth={openAuth} />
+        <CtaSection onOpenAuth={openAuth} />
+      </main>
+
+      <Footer showAdminLink />
+    </div>
+  )
+}
+
+function AmbientGlow() {
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+      <div
+        className="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[480px] rounded-full"
+        style={{ background: 'radial-gradient(ellipse, rgba(79,70,229,0.13) 0%, transparent 65%)' }}
+      />
+      <div
+        className="absolute top-[12%] -right-24 w-[420px] h-[420px] rounded-full"
+        style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.07) 0%, transparent 65%)' }}
+      />
+    </div>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Auth card
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface AuthCardProps {
+  tab: AuthTab
+  onTabChange: (tab: AuthTab) => void
+  loginValue: string
+  onLoginValueChange: (value: string) => void
+  user: PublicUser | null
+  redirecting: boolean
+  onOpenAuth: (tab: AuthTab, prefillLogin?: string) => void
+}
+
+const TABS: { id: AuthTab; label: string; Icon: LucideIcon }[] = [
+  { id: 'signin', label: 'Sign in', Icon: LogIn },
+  { id: 'request', label: 'Request access', Icon: UserPlus },
+]
+
+function AuthCard({ tab, onTabChange, loginValue, onLoginValueChange, user, redirecting, onOpenAuth }: AuthCardProps) {
+  if (user) {
+    return (
+      <div className="portal-card p-6 sm:p-8">
+        <SignedInPanel user={user} redirecting={redirecting} />
+      </div>
+    )
+  }
+
+  function onTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    const index = TABS.findIndex(t => t.id === tab)
+    let next = -1
+    if (event.key === 'ArrowRight') next = (index + 1) % TABS.length
+    else if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = TABS.length - 1
+    if (next < 0) return
+    event.preventDefault()
+    onTabChange(TABS[next].id)
+    document.getElementById(`auth-tab-${TABS[next].id}`)?.focus()
+  }
+
+  return (
+    <div className="portal-card p-4 sm:p-7 shadow-2xl shadow-black/30">
+      <div
+        role="tablist"
+        aria-label="Sign in or request access"
+        className="relative grid grid-cols-2 gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]"
+      >
+        {TABS.map(({ id, label, Icon }) => {
+          const selected = tab === id
+          return (
+            <button
+              key={id}
+              id={`auth-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`auth-panel-${id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onTabChange(id)}
+              onKeyDown={onTabKeyDown}
+              className={`inline-flex items-center justify-center gap-2 min-h-11 px-2 rounded-lg text-[13px] sm:text-sm font-semibold transition-colors ${
+                selected
+                  ? 'bg-indigo-500/90 text-white shadow-sm shadow-indigo-900/40'
+                  : 'text-slate-400 hover:text-white hover:bg-white/[0.05]'
+              }`}
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0 max-[359px]:hidden" aria-hidden="true" />
+              <span className="whitespace-nowrap">{label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Both panels stay mounted so typed values survive switching tabs. */}
+      <div
+        id="auth-panel-signin"
+        role="tabpanel"
+        aria-labelledby="auth-tab-signin"
+        hidden={tab !== 'signin'}
+        className="relative pt-5 sm:pt-6"
+      >
+        <Suspense fallback={null}>
+          <SessionExpiredNotice />
+        </Suspense>
+        <SignInForm value={loginValue} onValueChange={onLoginValueChange} onRequestAccess={() => onOpenAuth('request')} />
+      </div>
+
+      <div
+        id="auth-panel-request"
+        role="tabpanel"
+        aria-labelledby="auth-tab-request"
+        hidden={tab !== 'request'}
+        className="relative pt-5 sm:pt-6"
+      >
+        <RequestAccessForm onSignIn={prefill => onOpenAuth('signin', prefill)} />
+      </div>
+    </div>
+  )
+}
+
+/** Explains why a visitor landed here after their session ended (`/?session=expired`). */
+function SessionExpiredNotice() {
+  const params = useSearchParams()
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed || params.get('session') !== 'expired') return null
+  return (
+    <Alert tone="warning" title="Your session has ended" onDismiss={() => setDismissed(true)} className="mb-5">
+      For your security you&apos;ve been signed out. Please sign in again to continue.
+    </Alert>
+  )
+}
+
+function SignedInPanel({ user, redirecting }: { user: PublicUser; redirecting: boolean }) {
+  const name = firstName(user.name)
+  if (redirecting) {
+    return (
+      <div className="flex flex-col items-center text-center py-6 gap-3" role="status">
+        <Spinner size="lg" label={null} className="text-indigo-400" />
+        <p className="text-sm text-slate-300">Signed in — taking you to your downloads…</p>
+        <Link href="/download" className="text-[13px] text-indigo-300 hover:text-indigo-200 underline underline-offset-4">
+          Continue now
+        </Link>
+      </div>
+    )
+  }
+  return (
+    <div className="relative">
+      <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mb-4">
+        <CheckCircle2 className="w-5 h-5 text-emerald-400" aria-hidden="true" />
+      </div>
+      <h2 className="text-xl font-bold text-white">{name ? `Welcome back, ${name}` : 'You’re signed in'}</h2>
+      <p className="mt-1.5 text-sm text-slate-400">
+        Signed in as <span className="text-slate-200">{user.email || formatPhone(user.phone)}</span>.
+      </p>
+      <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
+        <Link href="/download" className="btn-primary">
+          <Download className="w-4 h-4" aria-hidden="true" />
+          Download videos
+        </Link>
+        <Link href="/account" className="btn-secondary">
+          Your account
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+// ── Sign in ───────────────────────────────────────────────────────────────────
+
+interface FormMessage {
+  message: string
+  status?: number
+}
+
+interface SignInFormProps {
+  value: string
+  onValueChange: (value: string) => void
+  onRequestAccess: () => void
+}
+
+function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) {
+  const router = useRouter()
+  const toast = useToast()
+  const [password, setPassword] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [loginTouched, setLoginTouched] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [slow, setSlow] = useState(false)
+  const [formError, setFormError] = useState<FormMessage | null>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+  const submitRef = useRef<HTMLButtonElement>(null)
+  const focusAfterRef = useFocusWhenIdle(submitting)
+
+  const loginCheck = classifyLogin(value)
+  const loginError = (submitted || (loginTouched && value.trim())) && !loginCheck.ok ? loginCheck.error : null
+  const passwordError = submitted && !password ? 'Please enter your password.' : null
+  const forgotHref =
+    loginCheck.ok && loginCheck.kind === 'email'
+      ? `/forgot-password?email=${encodeURIComponent(loginCheck.value)}`
+      : '/forgot-password'
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSubmitted(true)
+    setFormError(null)
+    if (!loginCheck.ok) {
+      document.getElementById('signin-login')?.focus()
+      return
+    }
+    if (!password) {
+      passwordRef.current?.focus()
+      return
+    }
+
+    setSubmitting(true)
+    const slowTimer = window.setTimeout(() => setSlow(true), SLOW_REQUEST_MS)
     try {
-      const res = await checkAccess(identifier.trim())
-      if (res.access) {
-        sessionStorage.setItem('us_identifier', identifier.trim())
-        sessionStorage.setItem('us_name', res.name || '')
-        router.push('/download')
+      const { user } = await login(loginCheck.value, password)
+      const name = firstName(user.name)
+      if (user.temp_password) {
+        toast.warning('You’re using a temporary password', {
+          description: 'Set your own password to keep your account safe.',
+          duration: 12000,
+          action: { label: 'Change now', onClick: () => router.push('/account#password') },
+        })
       } else {
-        setServerError(res.message)
+        toast.success(name ? `Welcome back, ${name}!` : 'Welcome back!')
       }
-    } catch (error: any) {
-      const detail = error?.response?.data?.detail
-      if (error?.response?.status === 503) {
-        setServerError('The access database is temporarily unavailable. Please contact the administrator.')
-      } else {
-        setServerError(detail || 'Unable to reach the server. Please try again.')
-      }
+      router.replace('/download')
+    } catch (err) {
+      const status = apiErrorStatus(err)
+      setFormError({ message: apiErrorMessage(err, 'Sign in failed. Please try again.'), status })
+      if (status === 401) setPassword('')
+      focusAfterRef.current = status === 401 ? passwordRef.current : submitRef.current
     } finally {
-      setLoading(false)
+      window.clearTimeout(slowTimer)
+      setSlow(false)
+      setSubmitting(false)
     }
   }
 
-  function handleChange(v: string) {
-    setIdentifier(v)
-    setServerError('')
-  }
+  // 403 covers "waiting for approval", "blocked" and "no password yet": not
+  // the visitor's mistake, so it's shown as a notice rather than an error.
+  const needsPassword = formError ? /password yet|forgot password/i.test(formError.message) : false
+  const errorTone = formError?.status === 403 || formError?.status === 429 ? 'warning' : 'danger'
 
-  const inputBorderClass =
-    !touched || !identifier.trim()
-      ? 'input-field'
-      : validation.valid
-      ? 'input-field input-valid'
-      : 'input-field input-error'
-
-  // ── Data ──────────────────────────────────────────────────────────────────
-  const platforms = [
-    { icon: <Youtube  className="w-3.5 h-3.5" />, name: 'YouTube',   color: 'text-red-400'  },
-    { icon: <Facebook className="w-3.5 h-3.5" />, name: 'Facebook',  color: 'text-blue-400' },
-    { icon: <Instagram className="w-3.5 h-3.5" />, name: 'Instagram', color: 'text-pink-400' },
-    { icon: <Music2   className="w-3.5 h-3.5" />, name: 'TikTok',    color: 'text-cyan-400' },
-  ]
-
-  const stats = [
-    { value: '12,400+', label: 'Active Students' },
-    { value: '340+',    label: 'Universities'    },
-    { value: '98K+',    label: 'Downloads / Day' },
-    { value: '99.97%',  label: 'Uptime'          },
-  ]
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col bg-[#0d0f1a]">
+    <form onSubmit={onSubmit} noValidate className="relative" aria-describedby="signin-intro">
+      <h2 className="text-lg sm:text-xl font-bold text-white">Welcome back</h2>
+      <p id="signin-intro" className="mt-1 mb-5 text-[13px] sm:text-sm text-slate-400">
+        Sign in with the email or phone number you registered with.
+      </p>
 
-      {/* Ambient glows — match image: top-center indigo blob, right-mid purple blob */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute top-[-120px] left-1/2 -translate-x-1/2 w-[900px] h-[480px] rounded-full"
-          style={{ background: 'radial-gradient(ellipse, rgba(79,70,229,0.12) 0%, transparent 65%)' }} />
-        <div className="absolute top-[10%] right-[-80px] w-[420px] h-[420px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 65%)' }} />
-        <div className="absolute bottom-0 left-[-60px] w-[300px] h-[300px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(79,70,229,0.07) 0%, transparent 65%)' }} />
+      {formError && (
+        <Alert
+          tone={errorTone}
+          className="mb-4"
+          onDismiss={() => setFormError(null)}
+          action={
+            needsPassword ? (
+              <Link href={forgotHref} className="btn-outline btn-sm">
+                <KeyRound className="w-4 h-4" aria-hidden="true" />
+                Set a password
+              </Link>
+            ) : undefined
+          }
+        >
+          {formError.message}
+        </Alert>
+      )}
+
+      <div className="space-y-4">
+        <Field htmlFor="signin-login" label="Email or phone number" error={loginError}>
+          <input
+            id="signin-login"
+            name="login"
+            type="text"
+            inputMode="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="you@example.com or 01XXXXXXXXX"
+            value={value}
+            onChange={e => {
+              onValueChange(e.target.value)
+              setFormError(null)
+            }}
+            onBlur={() => setLoginTouched(true)}
+            disabled={submitting}
+            aria-invalid={loginError ? true : undefined}
+            aria-describedby={describedBy('signin-login', loginError)}
+            className="input-field"
+          />
+        </Field>
+
+        <PasswordInput
+          ref={passwordRef}
+          id="signin-password"
+          name="password"
+          label="Password"
+          labelAside={
+            <Link
+              href={forgotHref}
+              className="text-[13px] font-medium text-indigo-300 hover:text-indigo-200 rounded py-1"
+            >
+              Forgot password?
+            </Link>
+          }
+          autoComplete="current-password"
+          value={password}
+          onChange={e => {
+            setPassword(e.target.value)
+            setFormError(null)
+          }}
+          disabled={submitting}
+          error={passwordError}
+        />
       </div>
 
-      <Navbar />
+      <button ref={submitRef} type="submit" className="btn-primary w-full mt-5" disabled={submitting}>
+        {submitting ? (
+          <>
+            <Spinner size="sm" label={null} /> Signing in…
+          </>
+        ) : (
+          <>
+            Sign in <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </>
+        )}
+      </button>
+      <p aria-live="polite" className="empty:hidden mt-3 text-center text-xs text-slate-400">
+        {slow ? 'The server is waking up. The first sign-in of the day can take up to a minute.' : ''}
+      </p>
 
-      <main className="relative z-10 flex-1 flex flex-col">
+      <p className="mt-5 pt-4 border-t border-white/[0.06] text-center text-[13px] text-slate-400">
+        New here?{' '}
+        <button
+          type="button"
+          onClick={onRequestAccess}
+          className="font-semibold text-indigo-300 hover:text-indigo-200 underline-offset-4 hover:underline py-2"
+        >
+          Request access — it&apos;s free
+        </button>
+      </p>
+    </form>
+  )
+}
 
-        {/* ── Hero — two-column, matching image exactly ── */}
-        <section className="flex flex-col lg:flex-row items-start lg:items-center
-                            gap-10 lg:gap-8 max-w-7xl mx-auto w-full
-                            px-5 sm:px-10 pt-14 pb-16 sm:pt-20 sm:pb-20">
+// ── Request access ────────────────────────────────────────────────────────────
 
-          {/* ── LEFT: Copy + stats ── */}
-          <div className="flex-1 min-w-20">
+type RequestField = 'name' | 'email' | 'phone'
 
-            {/* Eyebrow */}
-            <div className="eyebrow-badge mb-7">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0" />
-               Video Platform
-            </div>
+interface RequestSuccess {
+  name: string
+  email: string
+  phone: string
+  message: string
+}
 
-            {/* Headline — Space Grotesk, very large */}
-            <h1
-              className="text-[2.75rem] sm:text-[3.25rem] lg:text-[3.6rem]
-                         font-extrabold text-white mb-5 max-w-xl"
-              style={{ lineHeight: 1.06, letterSpacing: '-0.025em' }}
-            >
-              Your academic{' '}
-              <span
-                style={{
-                  background: 'linear-gradient(90deg, #60a5fa 0%, #818cf8 50%, #a78bfa 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                }}
-              >
-                video library
-              </span>  unlocked.
-             
-            </h1>
+function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [note, setNote] = useState('')
+  const [agreed, setAgreed] = useState(false)
+  const [touched, setTouched] = useState<Record<RequestField, boolean>>({ name: false, email: false, phone: false })
+  const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [slow, setSlow] = useState(false)
+  const [formError, setFormError] = useState<FormMessage | null>(null)
+  const [success, setSuccess] = useState<RequestSuccess | null>(null)
+  const agreeId = useId()
+  const submitRef = useRef<HTMLButtonElement>(null)
+  const focusAfterRef = useFocusWhenIdle(submitting)
 
-            {/* Body */}
-            <p className="text-slate-400 text-[15px] leading-relaxed max-w-[650px] mb-2">
-              UniStreamSaver is a gated-access video management engine for university students.
-              Paste any lecture URL — receive a full resolution matrix, metadata analysis, and instant download.
-            </p>
-            <p className="text-slate-500 text-[13px] leading-relaxed max-w-[440px] mb-8">
-              <span className="text-indigo-400 font-medium">Free for verified university students</span> — expanding to everyone soon.
-            </p>
+  const checks = {
+    name: validateName(name),
+    email: validateEmail(email),
+    phone: validatePhone(phone),
+  }
+  const show = (field: RequestField) => submitted || (touched[field] && (field === 'name' ? name : field === 'email' ? email : phone).trim() !== '')
+  const errors: Record<RequestField, string | null> = {
+    name: show('name') ? errorOf(checks.name) : null,
+    email: show('email') ? errorOf(checks.email) : null,
+    phone: show('phone') ? errorOf(checks.phone) : null,
+  }
+  const agreeError = submitted && !agreed ? 'Please accept the Terms of Use and Privacy Policy to continue.' : null
+  const phoneHint = checks.phone.ok
+    ? `We'll save it as ${formatPhone(checks.phone.value)}.`
+    : 'Bangladeshi mobile, e.g. 01712-345678. Outside Bangladesh? Start with + and your country code.'
 
-            {/* Stats in bordered cards — matching image row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-7 max-w-[500px]">
-              {stats.map(s => (
-                <div key={s.label} className="stat-card">
-                  <span className="font-bold text-white text-[1.125rem] leading-none"
-                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                    {s.value}
-                  </span>
-                  <span className="text-slate-500 text-[11px] leading-snug mt-1">{s.label}</span>
-                </div>
-              ))}
-            </div>
+  const touch = (field: RequestField) => setTouched(t => (t[field] ? t : { ...t, [field]: true }))
 
-            {/* Platform pills */}
-            <div className="flex flex-wrap gap-2">
-              {platforms.map(p => (
-                <div key={p.name} className="platform-pill">
-                  <span className={p.color}>{p.icon}</span>
-                  {p.name}
-                </div>
-              ))}
-            </div>
-          </div>
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSubmitted(true)
+    setFormError(null)
+    const firstInvalid = (['name', 'email', 'phone'] as const).find(field => !checks[field].ok)
+    if (firstInvalid) {
+      document.getElementById(`request-${firstInvalid}`)?.focus()
+      return
+    }
+    if (!agreed) {
+      document.getElementById(agreeId)?.focus()
+      return
+    }
+    if (!checks.name.ok || !checks.email.ok || !checks.phone.ok) return
 
-          {/* ── RIGHT: Access Portal card ── */}
-          <div className="w-full max-w-[360px] lg:max-w-[330px] flex-shrink-0 self-start lg:self-center ">
-            <div className="portal-card p-10 pt-12">
+    setSubmitting(true)
+    const slowTimer = window.setTimeout(() => setSlow(true), SLOW_REQUEST_MS)
+    try {
+      const body = {
+        name: checks.name.value,
+        email: checks.email.value,
+        phone: checks.phone.value,
+        note: note.trim() || null,
+      }
+      const { message } = await register(body)
+      setSuccess({ name: body.name, email: body.email, phone: body.phone, message })
+    } catch (err) {
+      setFormError({
+        message: apiErrorMessage(err, 'We couldn’t send your request. Please try again.'),
+        status: apiErrorStatus(err),
+      })
+      focusAfterRef.current = submitRef.current
+    } finally {
+      window.clearTimeout(slowTimer)
+      setSlow(false)
+      setSubmitting(false)
+    }
+  }
 
-              {/* Card header */}
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 "
-                  style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.2)' }}>
-                  <Lock className="w-3.5 h-3.5 text-indigo-400" />
-                </div>
-                <div>
-                  <p className="text-white font-semibold text-[13px] leading-none mb-1">Access Portal</p>
-                  <p className="text-slate-500 text-[11px] leading-none">University credentials required</p>
-                </div>
-              </div>
+  function startOver() {
+    setSuccess(null)
+    setSubmitted(false)
+    setTouched({ name: false, email: false, phone: false })
+    setName('')
+    setEmail('')
+    setPhone('')
+    setNote('')
+    setAgreed(false)
+  }
 
-              <form onSubmit={handleSubmit} noValidate className="space-y-4">
+  if (success) {
+    return <RequestSuccessPanel success={success} onSignIn={() => onSignIn(success.email)} onStartOver={startOver} />
+  }
 
-                {/* Email / phone field */}
-                <div>
-                  <label
-                    htmlFor="identifier"
-                    className="block text-[11px]  font-semibold tracking-widest uppercase mb-2 "
-                    style={{ color: '#64748b', letterSpacing: '0.08em' }}
-                  >
-                    University Email
-                  </label>
+  const isDuplicate = formError?.status === 409
+  // Prefill the sign-in form with whichever value is already registered.
+  const duplicatePrefill =
+    /phone/i.test(formError?.message ?? '') && checks.phone.ok
+      ? checks.phone.value
+      : checks.email.ok
+      ? checks.email.value
+      : ''
 
-                  <div className="relative xl:pb-4 sm:pb-3 pb-2">
-                    {/* Left icon */}
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none xl:pb-4 sm:pb-3 pb-2">
-                      {validation.type === 'email'
-                        ? <Mail  className="w-3.5 h-3.5 text-indigo-400 " />
-                        : validation.type === 'phone'
-                        ? <Phone className="w-3.5 h-3.5 text-indigo-400 " />
-                        : <Mail  className="w-3.5 h-3.5 text-slate-600"  />
-                      }
-                    </div>
+  return (
+    <form onSubmit={onSubmit} noValidate className="relative" aria-describedby="request-intro">
+      <h2 className="text-lg sm:text-xl font-bold text-white">Request access</h2>
+      <p id="request-intro" className="mt-1 mb-5 text-[13px] sm:text-sm text-slate-400">
+        Free for students. An admin reviews every request, then we email you a password.
+      </p>
 
-                    <input
-                      id="identifier"
-                      type="text"
-                      inputMode={validation.type === 'phone' ? 'tel' : 'email'}
-                      value={identifier}
-                      onChange={e => handleChange(e.target.value)}
-                      onBlur={() => setTouched(true)}
-                      placeholder="student@university.edu"
-                      className={`${inputBorderClass} pl-9 pr-16`}
-                      style={{ paddingTop: '0.6875rem', paddingBottom: '0.6875rem' }}
-                      disabled={loading}
-                      autoComplete="email"
-                      aria-describedby={showHint ? 'field-hint' : undefined}
-                      aria-invalid={touched && !validation.valid && identifier.trim().length > 0}
-                    />
-
-                    {/* Right: clear + validity icon */}
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 xl:pb-4 sm:pb-3 pb-2">
-                      {identifier.length > 0 && !loading && (
-                        <button
-                          type="button"
-                          onClick={() => { setIdentifier(''); setTouched(false); setServerError('') }}
-                          className="rounded-full text-slate-600 hover:text-slate-300 transition-colors p-0.5 "
-                          aria-label="Clear"
-                          tabIndex={-1}
-                        >
-                          <X className="w-3 h-3 " />
-                        </button>
-                      )}
-                      {touched && identifier.trim().length > 0 && (
-                        validation.valid
-                          ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 " />
-                          : <AlertCircle  className="w-3.5 h-3.5 text-red-400 flex-shrink-0 "    />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Hint text */}
-                  {showHint && (
-                    <p id="field-hint" role="alert"
-                      className="mt-1.5 text-[11px] text-red-400 flex items-start gap-1 fade-up ">
-                      <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                      {validation.hint}
-                    </p>
-                  )}
-                  {touched && validation.valid && (
-                    <p className="mt-1.5 text-[11px] text-emerald-400 flex items-center gap-1 fade-up">
-                      <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
-                      {validation.type === 'email' ? 'Valid email address' : 'Valid Bangladeshi phone number'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Server error */}
-                {serverError && (
-                  <div className="flex items-start gap-2 rounded-lg px-3.5 py-3 text-[12px] text-red-300 fade-up"
-                    style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)' }}>
-                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                    <span>{serverError}</span>
-                  </div>
-                )}
-
-                {/* Submit button */}
+      {formError && (
+        <Alert
+          tone={isDuplicate || formError.status === 429 ? 'warning' : 'danger'}
+          className="mb-4"
+          onDismiss={() => setFormError(null)}
+          action={
+            isDuplicate ? (
+              <>
                 <button
-                  type="submit"
-                  className="btn-primary w-full"
-                  style={{ marginTop: '0.25rem' }}
-                  disabled={loading || (touched && !validation.valid)}
+                  type="button"
+                  className="btn-outline btn-sm"
+                  onClick={() => onSignIn(duplicatePrefill)}
                 >
-                  {loading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
-                  ) : (
-                    <>Verify & Enter <ArrowRight className="w-4 h-4" /></>
-                  )}
+                  <LogIn className="w-4 h-4" aria-hidden="true" />
+                  Sign in
                 </button>
-              </form>
+                <Link
+                  href={
+                    checks.email.ok
+                      ? `/forgot-password?email=${encodeURIComponent(checks.email.value)}`
+                      : '/forgot-password'
+                  }
+                  className="btn-outline btn-sm"
+                >
+                  <KeyRound className="w-4 h-4" aria-hidden="true" />
+                  Reset password
+                </Link>
+              </>
+            ) : undefined
+          }
+        >
+          {formError.message}
+        </Alert>
+      )}
 
-              {/* Disclaimer */}
-              <p className="mt-4 text-center text-[11px] text-slate-600 leading-relaxed">
-                By accessing UniStreamSaver, you agree to the Academic Use Policy.
-              </p>
+      <div className="space-y-4">
+        <Field htmlFor="request-name" label="Full name" error={errors.name}>
+          <input
+            id="request-name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            autoCapitalize="words"
+            maxLength={NAME_MAX + 20}
+            placeholder="e.g. Nusrat Jahan"
+            value={name}
+            onChange={e => {
+              setName(e.target.value)
+              setFormError(null)
+            }}
+            onBlur={() => touch('name')}
+            disabled={submitting}
+            aria-invalid={errors.name ? true : undefined}
+            aria-describedby={describedBy('request-name', errors.name)}
+            className="input-field"
+          />
+        </Field>
 
-              {/* Skip link */}
-              <div className="mt-3 pt-3 border-t border-white/5 flex justify-center">
-                <button className="flex items-center gap-1 text-[11px] text-slate-600 hover:text-slate-400 transition-colors">
-                  <ChevronRight className="w-3 h-3" />
-                  Skip verification — Preview the engine
-                </button>
-              </div>
+        <Field
+          htmlFor="request-email"
+          label="Email"
+          error={errors.email}
+          hint="Your approval and password are sent here, so use an inbox you check."
+        >
+          <input
+            id="request-email"
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={254}
+            placeholder="you@example.com"
+            value={email}
+            onChange={e => {
+              setEmail(e.target.value)
+              setFormError(null)
+            }}
+            onBlur={() => touch('email')}
+            disabled={submitting}
+            aria-invalid={errors.email ? true : undefined}
+            aria-describedby={describedBy(
+              'request-email',
+              errors.email,
+              'Your approval and password are sent here, so use an inbox you check.',
+            )}
+            className="input-field"
+          />
+        </Field>
+
+        <Field htmlFor="request-phone" label="Mobile number" error={errors.phone} hint={phoneHint}>
+          <input
+            id="request-phone"
+            name="phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            maxLength={24}
+            placeholder="01XXXXXXXXX"
+            value={phone}
+            onChange={e => {
+              setPhone(e.target.value)
+              setFormError(null)
+            }}
+            onBlur={() => touch('phone')}
+            disabled={submitting}
+            aria-invalid={errors.phone ? true : undefined}
+            aria-describedby={describedBy('request-phone', errors.phone, phoneHint)}
+            className="input-field"
+          />
+        </Field>
+
+        <Field
+          htmlFor="request-note"
+          label="Institution / department"
+          optional
+          hint="Helps the admin recognise you."
+        >
+          <input
+            id="request-note"
+            name="organization"
+            type="text"
+            autoComplete="organization"
+            maxLength={NOTE_MAX}
+            placeholder="e.g. University of Dhaka, CSE"
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            disabled={submitting}
+            aria-describedby={describedBy('request-note', null, 'Helps the admin recognise you.')}
+            className="input-field"
+          />
+        </Field>
+
+        <div>
+          <label
+            htmlFor={agreeId}
+            className={`flex items-start gap-3 rounded-lg p-2 -m-2 cursor-pointer text-[13px] leading-relaxed ${
+              agreeError ? 'text-red-200' : 'text-slate-400'
+            }`}
+          >
+            <span className="relative mt-0.5 w-5 h-5 flex-shrink-0">
+              <input
+                id={agreeId}
+                type="checkbox"
+                checked={agreed}
+                onChange={e => setAgreed(e.target.checked)}
+                disabled={submitting}
+                aria-invalid={agreeError ? true : undefined}
+                aria-describedby={agreeError ? `${agreeId}-error` : undefined}
+                className={`peer block w-5 h-5 appearance-none rounded-md border bg-[#0d0f1a] cursor-pointer transition-colors
+                            checked:bg-indigo-500 checked:border-indigo-500 hover:border-white/40 disabled:opacity-50 ${
+                              agreeError ? 'border-red-400/70' : 'border-white/25'
+                            }`}
+              />
+              <Check
+                className="pointer-events-none absolute inset-0 m-auto w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100"
+                strokeWidth={3}
+                aria-hidden="true"
+              />
+            </span>
+            <span>
+              I agree to the{' '}
+              <Link href="/terms" target="_blank" rel="noopener" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
+                Terms of Use
+              </Link>{' '}
+              and{' '}
+              <Link href="/privacy" target="_blank" rel="noopener" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
+                Privacy Policy
+              </Link>
+              , and will only download videos for personal or educational use.
+            </span>
+          </label>
+          <div id={`${agreeId}-error`} aria-live="polite" className="empty:hidden">
+            {agreeError && <p className="mt-2 text-xs text-red-400">{agreeError}</p>}
+          </div>
+        </div>
+      </div>
+
+      <button ref={submitRef} type="submit" className="btn-primary w-full mt-5" disabled={submitting}>
+        {submitting ? (
+          <>
+            <Spinner size="sm" label={null} /> Sending request…
+          </>
+        ) : (
+          <>
+            Request access <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </>
+        )}
+      </button>
+      <p aria-live="polite" className="empty:hidden mt-3 text-center text-xs text-slate-400">
+        {slow ? 'The server is waking up. This can take up to a minute the first time.' : ''}
+      </p>
+    </form>
+  )
+}
+
+function RequestSuccessPanel({
+  success,
+  onSignIn,
+  onStartOver,
+}: {
+  success: RequestSuccess
+  onSignIn: () => void
+  onStartOver: () => void
+}) {
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const name = firstName(success.name)
+
+  // Move focus to the confirmation so screen readers announce it.
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
+  const steps: { title: string; body: ReactNode }[] = [
+    {
+      title: 'An admin reviews your request',
+      body: 'Every request is checked by hand to keep the service fair for everyone.',
+    },
+    {
+      title: 'You get an email with your password',
+      body: (
+        <>
+          We&apos;ll send it to <span className="text-slate-200 break-all">{success.email}</span>. Check your Spam or
+          Promotions folder if it doesn&apos;t arrive.
+        </>
+      ),
+    },
+    {
+      title: 'Sign in and set your own password',
+      body: (
+        <>
+          Use your email or <span className="text-slate-200 whitespace-nowrap">{formatPhone(success.phone)}</span> with
+          the temporary password, then change it on your Account page.
+        </>
+      ),
+    },
+  ]
+
+  return (
+    <div className="relative fade-up">
+      <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mb-4">
+        <MailCheck className="w-6 h-6 text-emerald-400" aria-hidden="true" />
+      </div>
+      <h2 ref={headingRef} tabIndex={-1} className="text-xl font-bold text-white outline-none">
+        Request sent{name ? `, ${name}` : ''}!
+      </h2>
+      <p role="status" className="mt-1.5 text-sm text-slate-400">
+        {success.message || 'Your request is waiting for admin approval.'}
+      </p>
+
+      <ol className="mt-5 space-y-4">
+        {steps.map((step, index) => (
+          <li key={step.title} className="flex gap-3">
+            <span
+              className="w-7 h-7 flex-shrink-0 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-200 text-[13px] font-bold flex items-center justify-center"
+              aria-hidden="true"
+            >
+              {index + 1}
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white">{step.title}</p>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-400">{step.body}</p>
             </div>
-          </div>
+          </li>
+        ))}
+      </ol>
 
-        </section>
+      <p className="mt-5 rounded-lg bg-white/[0.03] border border-white/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-slate-400">
+        Until you&apos;re approved, signing in will say your account is waiting for approval. That&apos;s expected —
+        no need to send another request.
+      </p>
 
-        {/* ── Below-the-fold: feature cards ── */}
-        <section className="px-5 sm:px-8 pb-20 max-w-7xl mx-auto w-full">
-          <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-slate-600 mb-6 text-center">
-            Built for Academic Workflows
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              {
-                color: 'text-indigo-400',
-                bgColor: 'rgba(99,102,241,0.1)',
-                borderColor: 'rgba(99,102,241,0.15)',
-                icon: (
-                  <svg className="w-4.5 h-4.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.868V15.13a1 1 0 01-1.447.899L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                  </svg>
-                ),
-                title: '4K Resolution Engine',
-                desc: 'Extract up to 4K UHD streams from any lecture recording platform with a single URL.',
-              },
-              {
-                color: 'text-violet-400',
-                bgColor: 'rgba(139,92,246,0.1)',
-                borderColor: 'rgba(139,92,246,0.15)',
-                icon: (
-                  <svg className="w-4.5 h-4.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                  </svg>
-                ),
-                title: 'University-Gated Access',
-                desc: 'Restricted to verified .edu addresses. Every session is authenticated and encrypted. Expanding to everyone soon.',
-              },
-              {
-                color: 'text-emerald-400',
-                bgColor: 'rgba(52,211,153,0.08)',
-                borderColor: 'rgba(52,211,153,0.15)',
-                icon: (
-                  <svg className="w-4.5 h-4.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5" />
-                  </svg>
-                ),
-                title: 'Academic Use Only',
-                desc: 'Built exclusively for students. Save lectures, seminars, and research videos directly to your device.',
-              },
-            ].map(card => (
-              <div key={card.title} className="feature-card">
-                <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center mb-4"
-                  style={{ background: card.bgColor, border: `1px solid ${card.borderColor}` }}
-                >
-                  {card.icon}
-                </div>
-                <h3 className="text-white font-semibold text-[13px] mb-1.5">{card.title}</h3>
-                <p className="text-slate-500 text-[12px] leading-relaxed">{card.desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </main>
-
-      <Footer />
+      <div className="mt-5 grid gap-2.5">
+        <button type="button" onClick={onSignIn} className="btn-primary w-full">
+          <LogIn className="w-4 h-4" aria-hidden="true" />
+          Go to sign in
+        </button>
+        <button type="button" onClick={onStartOver} className="btn-ghost w-full">
+          Request access for someone else
+        </button>
+      </div>
     </div>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Marketing sections
+// ═════════════════════════════════════════════════════════════════════════════
+
+function SectionHeading({ id, eyebrow, title, intro }: { id: string; eyebrow: string; title: string; intro?: ReactNode }) {
+  return (
+    <div className="max-w-2xl mb-8 sm:mb-10">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-400">{eyebrow}</p>
+      <h2 id={id} className="mt-2 text-2xl sm:text-3xl font-bold text-white">
+        {title}
+      </h2>
+      {intro && <p className="mt-3 text-[15px] leading-relaxed text-slate-400">{intro}</p>}
+    </div>
+  )
+}
+
+const PLATFORM_CARDS: { name: string; Icon: LucideIcon; tone: string; ring: string; what: string; detail: string }[] = [
+  {
+    name: 'YouTube',
+    Icon: Youtube,
+    tone: 'text-red-400',
+    ring: 'bg-red-500/10 border-red-500/20',
+    what: 'Lectures, tutorials, Shorts',
+    detail: 'Pick any resolution the video offers, from data-saving 360p to full HD and beyond, or save just the audio.',
+  },
+  {
+    name: 'Facebook',
+    Icon: Facebook,
+    tone: 'text-blue-400',
+    ring: 'bg-blue-500/10 border-blue-500/20',
+    what: 'Public videos and Reels',
+    detail: 'Paste the link from the Share button. Works with videos and Reels that are shared publicly.',
+  },
+  {
+    name: 'Instagram',
+    Icon: Instagram,
+    tone: 'text-pink-400',
+    ring: 'bg-pink-500/10 border-pink-500/20',
+    what: 'Public Reels and video posts',
+    detail: 'Copy the post or Reel link and paste it in. Videos from public accounts only.',
+  },
+]
+
+function PlatformsSection() {
+  return (
+    <section aria-labelledby="platforms-title" className="border-t border-white/[0.05]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
+        <SectionHeading
+          id="platforms-title"
+          eyebrow="Supported platforms"
+          title="Download from the platforms you already use"
+          intro="Paste a link from any of these and choose the format that suits your device and data plan."
+        />
+        <ul className="grid gap-4 md:grid-cols-3">
+          {PLATFORM_CARDS.map(({ name, Icon, tone, ring, what, detail }) => (
+            <li key={name} className="feature-card flex flex-col">
+              <div className="flex items-center gap-3">
+                <span className={`w-11 h-11 rounded-xl border flex items-center justify-center ${ring}`}>
+                  <Icon className={`w-5 h-5 ${tone}`} aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-white">{name}</h3>
+                  <p className="text-[13px] text-slate-400">{what}</p>
+                </div>
+              </div>
+              <p className="mt-4 text-[14px] leading-relaxed text-slate-400">{detail}</p>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-5 text-[13px] text-slate-500">
+          Private, members-only and age-restricted videos can&apos;t be downloaded. Other sites aren&apos;t supported yet.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void }) {
+  const steps: { Icon: LucideIcon; title: string; body: string }[] = [
+    {
+      Icon: UserPlus,
+      title: 'Request access',
+      body: 'Tell us your name, email and mobile number. It takes less than a minute.',
+    },
+    {
+      Icon: MailCheck,
+      title: 'Get your password by email',
+      body: 'Once an admin approves you, a temporary password arrives in your inbox. Change it any time.',
+    },
+    {
+      Icon: ClipboardPaste,
+      title: 'Paste a link and download',
+      body: 'Choose the quality and save the file to your device. Your daily count resets at midnight.',
+    },
+  ]
+  return (
+    <section aria-labelledby="how-title" className="border-t border-white/[0.05] bg-white/[0.012]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
+        <SectionHeading id="how-title" eyebrow="How it works" title="From sign-up to saved video in three steps" />
+        <ol className="grid gap-4 md:grid-cols-3">
+          {steps.map(({ Icon, title, body }, index) => (
+            <li key={title} className="relative feature-card">
+              <div className="flex items-center gap-3">
+                <span
+                  className="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm font-bold flex items-center justify-center"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                  aria-hidden="true"
+                >
+                  {index + 1}
+                </span>
+                <Icon className="w-5 h-5 text-indigo-300" aria-hidden="true" />
+              </div>
+              <h3 className="mt-4 text-base font-semibold text-white">
+                <span className="sr-only">Step {index + 1}: </span>
+                {title}
+              </h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-slate-400">{body}</p>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-8">
+          <button type="button" onClick={onRequestAccess} className="btn-primary w-full sm:w-auto">
+            Request access <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FeaturesSection() {
+  const features: { Icon: LucideIcon; title: string; body: string; tone: string }[] = [
+    {
+      Icon: SlidersHorizontal,
+      title: 'Choose your quality',
+      body: 'Full HD for a laptop, a small file to save mobile data, or audio only for lectures you just want to listen to.',
+      tone: 'text-sky-300 bg-sky-500/10 border-sky-500/20',
+    },
+    {
+      Icon: Gauge,
+      title: 'A fair daily allowance',
+      body: 'Every member gets 4 downloads a day by default. Only finished downloads count; checking a link is free.',
+      tone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20',
+    },
+    {
+      Icon: ShieldCheck,
+      title: 'Private by design',
+      body: 'We keep only what the service needs. Passwords are stored encrypted (hashed), and no one, not even the admin, can read them.',
+      tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20',
+    },
+    {
+      Icon: MonitorSmartphone,
+      title: 'Made for phones first',
+      body: 'Works in any modern browser on your phone, tablet or laptop. Nothing to install, no ads.',
+      tone: 'text-violet-300 bg-violet-500/10 border-violet-500/20',
+    },
+  ]
+  return (
+    <section aria-labelledby="features-title" className="border-t border-white/[0.05]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
+        <SectionHeading id="features-title" eyebrow="Why UniStream Saver" title="Built for students, kept simple" />
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {features.map(({ Icon, title, body, tone }) => (
+            <li key={title} className="feature-card">
+              <span className={`w-10 h-10 rounded-xl border flex items-center justify-center ${tone}`}>
+                <Icon className="w-5 h-5" aria-hidden="true" />
+              </span>
+              <h3 className="mt-4 text-[15px] font-semibold text-white">{title}</h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-slate-400">{body}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+// ── FAQ ───────────────────────────────────────────────────────────────────────
+
+const linkClass = 'text-indigo-300 hover:text-indigo-200 underline underline-offset-2'
+
+function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
+  const inlineButton = (label: string, tab: AuthTab) => (
+    <button type="button" onClick={() => onOpenAuth(tab)} className={`${linkClass} font-medium`}>
+      {label}
+    </button>
+  )
+
+  const faqs: { id: string; q: string; a: ReactNode }[] = [
+    {
+      id: 'faq-who',
+      q: 'Who can use UniStream Saver?',
+      a: (
+        <>
+          We&apos;re starting with university students. {inlineButton('Request access', 'request')} with your name, email
+          and mobile number. An admin approves each request so the service stays fast and fair for everyone.
+        </>
+      ),
+    },
+    {
+      id: 'faq-approval',
+      q: 'How does approval work?',
+      a: (
+        <>
+          After you request access, your account shows as waiting for approval. Requests are reviewed by hand. When
+          yours is approved, you&apos;ll get an email with a temporary password. If you try to sign in before then,
+          you&apos;ll see a message saying your account is still waiting.
+        </>
+      ),
+    },
+    {
+      id: 'faq-password',
+      q: 'I was approved. Where is my password?',
+      a: (
+        <>
+          It&apos;s in the email we sent to the address you registered with. Check your Spam or Promotions folder too.
+          Sign in with your email or mobile number and that password, then set your own password from your{' '}
+          <Link href="/account" className={linkClass}>
+            Account
+          </Link>{' '}
+          page. Can&apos;t find the email? Use{' '}
+          <Link href="/forgot-password" className={linkClass}>
+            Forgot password
+          </Link>{' '}
+          to get a new link.
+        </>
+      ),
+    },
+    {
+      id: 'faq-limit',
+      q: 'How many videos can I download?',
+      a: (
+        <>
+          Each account can download <strong className="text-slate-200">4 videos a day</strong> by default. The count
+          resets at midnight Bangladesh time. Only completed downloads count: checking a link or a failed download
+          doesn&apos;t use your allowance. The admin can set a different limit for individual accounts, and you can always
+          see what&apos;s left at the top of the page.
+        </>
+      ),
+    },
+    {
+      id: 'faq-forgot',
+      q: 'I forgot my password. What now?',
+      a: (
+        <>
+          Tap <strong className="text-slate-200">Forgot password?</strong> on the sign-in form and enter your email.
+          We&apos;ll send a reset link that works for 60 minutes. Once you set a new password you&apos;re signed in
+          straight away. You can also change your password at any time from your Account page.
+        </>
+      ),
+    },
+    {
+      id: 'faq-sites',
+      q: 'Which sites and videos are supported?',
+      a: (
+        <>
+          YouTube, Facebook and Instagram. The video must be publicly viewable: private, members-only and
+          age-restricted videos can&apos;t be downloaded. You can save the video in several qualities or just the audio.
+        </>
+      ),
+    },
+    {
+      id: 'faq-premium',
+      q: 'Is it free? Will there be a paid plan?',
+      a: (
+        <>
+          Yes, it&apos;s free with the daily allowance. If UniStream Saver grows, we plan to offer an optional premium
+          plan with unlimited downloads. Nothing will ever be charged without your clear agreement, and we&apos;ll
+          announce any plan here first.
+        </>
+      ),
+    },
+    {
+      id: 'faq-use',
+      q: 'What am I allowed to download?',
+      a: (
+        <>
+          Videos for your own study and offline viewing. Please respect copyright and each platform&apos;s rules:
+          don&apos;t re-upload, share or sell other people&apos;s videos. Read the{' '}
+          <Link href="/terms" className={linkClass}>
+            Terms of Use
+          </Link>{' '}
+          for details.
+        </>
+      ),
+    },
+    {
+      id: 'faq-data',
+      q: 'What do you do with my information?',
+      a: (
+        <>
+          We store your name, email, mobile number and download history to run your account, send account emails and
+          apply the daily limit. We don&apos;t sell your data or send marketing emails. See the{' '}
+          <Link href="/privacy" className={linkClass}>
+            Privacy Policy
+          </Link>
+          .
+        </>
+      ),
+    },
+  ]
+
+  return (
+    <section id="faq" aria-labelledby="faq-title" className="border-t border-white/[0.05] bg-white/[0.012] scroll-mt-14">
+      <div className="max-w-3xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
+        <SectionHeading id="faq-title" eyebrow="Help & FAQ" title="Questions, answered" />
+        <div className="space-y-2.5">
+          {faqs.map(item => (
+            <details
+              key={item.id}
+              id={item.id}
+              className="group rounded-xl border border-white/[0.07] bg-white/[0.02] open:bg-white/[0.035] open:border-white/[0.1] transition-colors scroll-mt-20"
+            >
+              <summary className="flex items-center justify-between gap-4 cursor-pointer list-none [&::-webkit-details-marker]:hidden px-4 sm:px-5 py-4 min-h-12 rounded-xl text-[15px] font-semibold text-slate-100 hover:text-white">
+                {item.q}
+                <ChevronDown
+                  className="w-5 h-5 flex-shrink-0 text-slate-500 transition-transform group-open:rotate-180"
+                  aria-hidden="true"
+                />
+              </summary>
+              <div className="px-4 sm:px-5 pb-5 -mt-1 text-[14px] leading-relaxed text-slate-400">{item.a}</div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CtaSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
+  return (
+    <section aria-labelledby="cta-title" className="border-t border-white/[0.05]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
+        <div className="portal-card px-5 py-8 sm:px-10 sm:py-12 text-center">
+          <h2 id="cta-title" className="relative text-2xl sm:text-3xl font-bold text-white">
+            Ready to save your first video?
+          </h2>
+          <p className="relative mt-3 text-[15px] text-slate-400 max-w-xl mx-auto">
+            Request access in under a minute. You&apos;ll get an email as soon as you&apos;re approved.
+          </p>
+          <div className="relative mt-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
+            <button type="button" onClick={() => onOpenAuth('request')} className="btn-primary">
+              <UserPlus className="w-4 h-4" aria-hidden="true" />
+              Request access
+            </button>
+            <button type="button" onClick={() => onOpenAuth('signin')} className="btn-secondary">
+              <LogIn className="w-4 h-4" aria-hidden="true" />
+              I already have an account
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }

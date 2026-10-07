@@ -319,3 +319,258 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2 additions — shared by components/ui and the pages. Existing classes
+   above are unchanged except where a rule below refines them (tap targets,
+   disabled states, iOS zoom).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+
+  /* ── Secondary button (same size as .btn-primary) ── */
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: #e2e8f0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    letter-spacing: -0.01em;
+    padding: 0.75rem 1.5rem;
+    min-height: 2.875rem;
+    border-radius: 0.625rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ── Danger button (destructive confirmations) ── */
+  .btn-danger {
+    background: #dc2626;
+    color: #ffffff;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    letter-spacing: -0.01em;
+    padding: 0.75rem 1.5rem;
+    min-height: 2.875rem;
+    border-radius: 0.625rem;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 20px rgba(220, 38, 38, 0.25);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+    box-shadow: 0 6px 26px rgba(220, 38, 38, 0.35);
+  }
+
+  .btn-danger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ── Ghost button (toolbar / low-emphasis actions) ── */
+  .btn-ghost {
+    background: transparent;
+    color: #94a3b8;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.75rem;
+    min-height: 2.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.06);
+    color: #e2e8f0;
+  }
+
+  .btn-ghost:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ── Square icon-only button (always give it an aria-label) ── */
+  .btn-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    color: #94a3b8;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .btn-icon:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+  }
+
+  .btn-icon:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── Outline button: 40px tap target and a real disabled state ── */
+  .btn-outline {
+    min-height: 2.5rem;
+    justify-content: center;
+  }
+
+  .btn-outline:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-outline:disabled:hover {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+  }
+
+  /* ── Size modifier: add after any btn-* class ── */
+  .btn-sm {
+    padding: 0.5rem 0.875rem;
+    min-height: 2.5rem;
+    font-size: 0.8125rem;
+    border-radius: 0.5rem;
+  }
+
+  /* ── Plain surface card (portal-card without the glow / overflow clip) ── */
+  .surface-card {
+    background: #111322;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 1rem;
+  }
+
+  /* ── Form helpers ── */
+  .field-label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #cbd5e1;
+  }
+
+  .input-field[aria-invalid='true'] {
+    border-color: rgba(248, 113, 113, 0.55);
+    background: rgba(248, 113, 113, 0.03);
+  }
+
+  select.input-field {
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+  }
+
+  select.input-field option {
+    background: #111322;
+    color: #f1f5f9;
+  }
+
+  textarea.input-field {
+    resize: vertical;
+    min-height: 5.5rem;
+  }
+}
+
+/* iOS Safari zooms into inputs under 16px; keep phones at 16px. */
+@media (max-width: 639px) {
+  .input-field {
+    font-size: 16px;
+  }
+}
+
+/* ── Skip link (first focusable element on every page) ── */
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: -4rem;
+  z-index: 100;
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem;
+  background: #5b5ef4;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* ── Dialog / sheet / toast / menu motion ── */
+@keyframes uiFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes uiSheetUp {
+  from { opacity: 0.6; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes uiPopIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ui-backdrop { animation: uiFadeIn 0.18s ease both; }
+.ui-sheet    { animation: uiSheetUp 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes uiDropIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ui-toast    { animation: uiDropIn 0.2s ease both; }
+.ui-menu     { animation: uiPopIn 0.14s ease both; transform-origin: top right; }
+
+@media (min-width: 640px) {
+  .ui-sheet { animation: uiPopIn 0.18s ease both; }
+}
+
+/* Indeterminate bar used while yt-dlp merges tracks (animate-[slide_…]). */
+@keyframes slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+/* Horizontal scrollers (tab bars, chips) without a visible scrollbar. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

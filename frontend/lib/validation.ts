@@ -17,12 +17,12 @@ export const DAILY_LIMIT_MAX = 10000
  * Outcome of a validator: the normalised value to send to the API, or the
  * user-facing error message to show next to the field.
  */
-export type Validation<T = string> =
-  | { ok: true; value: T; error?: undefined }
-  | { ok: false; value?: undefined; error: string }
+export type Validation<T = string> = Valid<T> | Invalid
+export type Valid<T> = { ok: true; value: T; error?: undefined }
+export type Invalid = { ok: false; value?: undefined; error: string }
 
-const ok = <T,>(value: T): Validation<T> => ({ ok: true, value })
-const fail = <T = string,>(error: string): Validation<T> => ({ ok: false, error })
+const ok = <T,>(value: T): Valid<T> => ({ ok: true, value })
+const fail = (error: string): Invalid => ({ ok: false, error })
 
 /** Error text of a validation, or null when valid. Handy for `aria-invalid`. */
 export function errorOf(result: Validation<unknown>): string | null {

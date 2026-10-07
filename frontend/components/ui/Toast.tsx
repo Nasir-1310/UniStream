@@ -94,9 +94,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-label="Notifications"
         aria-live="polite"
         data-toast-viewport
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex flex-col items-center gap-2 px-3
-                   pb-[max(0.75rem,env(safe-area-inset-bottom))]
-                   sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:w-[380px] sm:px-0 sm:pb-0"
+        // Top of the screen on phones too: bottom toasts would cover bottom-sheet
+        // dialogs and the buttons under the user's thumb.
+        className="pointer-events-none fixed inset-x-0 top-0 z-[70] flex flex-col items-center gap-2 px-3
+                   pt-[max(0.75rem,env(safe-area-inset-top))]
+                   sm:left-auto sm:right-4 sm:top-4 sm:w-[380px] sm:px-0 sm:pt-0"
       >
         {toasts.map(toast => (
           <ToastView key={toast.id} toast={toast} onDismiss={dismiss} />

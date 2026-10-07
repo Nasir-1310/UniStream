@@ -7,10 +7,17 @@ from unittest.mock import patch
 import yt_dlp
 from fastapi.testclient import TestClient
 
+import dependencies
 import extraction_cache
 import main
+import security
 import yt_dlp_config
 from routers import download as download_router
+
+
+# /video-info needs a signed-in, approved account; these tests are about
+# extraction, so the session check is replaced by a fixed account.
+APPROVED_USER = {"id": "1", "identifier": "student@example.com", "status": "approved"}
 
 
 COMBINED_ONLY = [
@@ -66,16 +73,17 @@ class YoutubeAttemptTests(unittest.TestCase):
         proxy_patch = patch.dict("os.environ", {"YOUTUBE_PROXY": ""})
         proxy_patch.start()
         self.addCleanup(proxy_patch.stop)
-        for reset in (extraction_cache.clear, yt_dlp_config.forget_attempt):
+        for reset in (
+            extraction_cache.clear, yt_dlp_config.forget_attempt, security.rate_limiter.reset,
+        ):
             reset()
             self.addCleanup(reset)
+        main.app.dependency_overrides[dependencies.require_user] = lambda: APPROVED_USER
+        self.addCleanup(main.app.dependency_overrides.pop, dependencies.require_user, None)
 
     def post_video_info(self, extract, url="https://youtu.be/example"):
-        with patch.object(main, "get_user", return_value={"status": "approved"}), \
-                patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(extract)):
-            return TestClient(main.app).post(
-                "/video-info", json={"url": url, "identifier": "student@example.com"},
-            )
+        with patch.object(yt_dlp, "YoutubeDL", fake_youtube_dl(extract)):
+            return TestClient(main.app).post("/video-info", json={"url": url})
 
     def test_youtube_tries_anonymous_before_cookies(self):
         attempts = yt_dlp_config.youtube_ydl_attempts("https://youtu.be/example")

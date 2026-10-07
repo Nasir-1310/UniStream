@@ -229,6 +229,7 @@ def _youtube_network_options() -> dict:
     # A link copied from a playlist (watch?v=ID&list=...) means that one video.
     options = {
         **js_runtime_options(),
+        "allowed_extractors": list(ALLOWED_EXTRACTORS),
         "noplaylist": True,
         "cachedir": _YT_DLP_CACHE_DIR,
     }
@@ -236,6 +237,18 @@ def _youtube_network_options() -> dict:
     if proxy:
         options["proxy"] = proxy
     return options
+
+
+# yt-dlp may only use the extractors of the three supported sites. The
+# platform gate checks the outer URL, but yt-dlp's redirect extractors
+# (facebook.com/flx/warn, consent.youtube.com, Facebook's plugin embed) and
+# its generic extractor would otherwise follow an embedded URL and make this
+# server fetch any host the user chose (SSRF).
+ALLOWED_EXTRACTORS = [
+    "youtube", "youtube:tab", "youtubeytbe", "youtubelivestreamembed",
+    "facebook", "facebook:reel",
+    "instagram", "instagramios", "instagram:story",
+]
 
 
 def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
@@ -248,7 +261,7 @@ def youtube_ydl_attempts(url: str) -> list[tuple[str, dict]]:
     page and once through the player API.
     """
     if not _is_youtube_url(url):
-        return [("default", {})]
+        return [("default", {"allowed_extractors": list(ALLOWED_EXTRACTORS)})]
 
     network_options = _youtube_network_options()
     attempts = [(
@@ -653,6 +666,12 @@ def youtube_auth_mode() -> str:
 def youtube_error_message(url: str, error: Exception) -> str:
     """Make YouTube authentication failures actionable without exposing secrets."""
     message = str(error)
+    lowered = message.lower()
+    if "no suitable extractor" in lowered or "unsupported url" in lowered:
+        return (
+            "This link doesn't point to a video we can download. Open the "
+            "video itself and copy its link."
+        )
     if not _is_youtube_url(url):
         return message
     if "sign in to confirm" not in message.lower():

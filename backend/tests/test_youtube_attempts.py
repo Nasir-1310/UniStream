@@ -115,7 +115,7 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         for _label, options in youtube:
             self.assertEqual(options["proxy"], "http://proxy.example:8080")
-        self.assertEqual(other, [("default", {})])
+        self.assertEqual(other, [("default", {"allowed_extractors": yt_dlp_config.ALLOWED_EXTRACTORS})])
 
     def test_prefer_attempt_moves_the_listing_source_first(self):
         attempts = [("anonymous", {}), ("cookies_safari", {}), ("cookies", {})]
@@ -129,7 +129,7 @@ class YoutubeAttemptTests(unittest.TestCase):
     def test_other_sites_never_receive_youtube_cookies(self):
         attempts = yt_dlp_config.youtube_ydl_attempts("https://www.facebook.com/watch?v=1")
 
-        self.assertEqual(attempts, [("default", {})])
+        self.assertEqual(attempts, [("default", {"allowed_extractors": yt_dlp_config.ALLOWED_EXTRACTORS})])
 
     def test_video_info_falls_back_when_only_a_360p_stream_is_listed(self):
         seen = []
@@ -631,6 +631,28 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(seen, [["web_safari"]])
+
+
+class RedirectExtractorTests(unittest.TestCase):
+    """Redirect wrappers on allowed hosts must not make the server fetch
+    another URL (SSRF): yt-dlp refuses them without any network request."""
+
+    def test_redirect_wrappers_are_unsupported(self):
+        for url in (
+            "https://www.facebook.com/flx/warn/?u=http%3A%2F%2F127.0.0.1%3A9%2Fx&h=x",
+            "https://consent.youtube.com/m?continue=http%3A%2F%2F127.0.0.1%3A9%2Fx",
+            "https://www.facebook.com/plugins/video.php?href=http%3A%2F%2F127.0.0.1%3A9%2Fx",
+        ):
+            for _label, attempt in yt_dlp_config.youtube_ydl_attempts(url):
+                options = {**attempt, "quiet": True, "no_warnings": True, "proxy": "http://127.0.0.1:9"}
+                with self.subTest(url=url), self.assertRaises(yt_dlp.utils.DownloadError) as ctx:
+                    with yt_dlp.YoutubeDL(options) as ydl:
+                        ydl.extract_info(url, download=False)
+                self.assertIn("No suitable extractor", str(ctx.exception))
+                self.assertIn(
+                    "doesn't point to a video",
+                    yt_dlp_config.youtube_error_message(url, ctx.exception),
+                )
 
 
 class PrivateCookieFileTests(unittest.TestCase):

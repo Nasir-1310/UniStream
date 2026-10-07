@@ -380,6 +380,8 @@ export interface DownloadProgressEvent {
   downloaded: number
   total: number | null
   job_id?: string
+  /** On the first event: private code for downloadResumeUrl() if the stream drops. */
+  resume?: string
   /** On `complete`: one-time token for downloadFileUrl(). */
   token?: string
   /** On `error`: message to show. */
@@ -666,6 +668,14 @@ export async function createDownloadTicket(
  */
 export function downloadProgressUrl(ticket: string): string {
   return `${BACKEND_ORIGIN}/download/progress?ticket=${encodeURIComponent(ticket)}`
+}
+
+/**
+ * Reconnects to a running download after its progress stream dropped. The
+ * server keeps the download going for 60 seconds, waiting for this.
+ */
+export function downloadResumeUrl(jobId: string, resume: string): string {
+  return `${BACKEND_ORIGIN}/download/progress?job=${encodeURIComponent(jobId)}&resume=${encodeURIComponent(resume)}`
 }
 
 /**

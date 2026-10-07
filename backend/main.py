@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.datastructures import MutableHeaders
 
 import extraction_cache
+import link_resolver
 import security
 from dependencies import require_user, too_many_requests
 from routers.admin import router as admin_router
@@ -476,13 +477,16 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
         raise too_many_requests("Too many requests, try again in {wait}.", retry_after)
 
     started = time.monotonic()
-    cache_key = video_cache_key(body.url)
+    # Share links (facebook.com/share/v/..., fb.watch/...) become the video
+    # link yt-dlp knows; only Facebook/Instagram hosts are ever contacted.
+    url = await asyncio.to_thread(link_resolver.resolve_share_url, body.url)
+    cache_key = video_cache_key(url)
     cached = extraction_cache.payload(cache_key)
     if cached is not None:
         response.headers["Server-Timing"] = "cache;desc=hit"
         return cached
 
-    youtube = is_youtube_url(body.url)
+    youtube = is_youtube_url(url)
 
     def _extract(attempt_opts: dict, log: YtDlpLog) -> dict:
         ydl_opts = {
@@ -496,12 +500,12 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
         ydl_opts.update(attempt_opts)
         with private_cookiefile(ydl_opts) as private_opts, \
                 yt_dlp.YoutubeDL(private_opts) as ydl:
-            return ydl.extract_info(body.url, download=False)
+            return ydl.extract_info(url, download=False)
 
     try:
-        attempts = youtube_ydl_attempts(body.url)
+        attempts = youtube_ydl_attempts(url)
     except Exception as e:
-        detail = youtube_error_message(body.url, e)
+        detail = youtube_error_message(url, e)
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
     labels = [label for label, _opts in attempts]
     logs = {label: YtDlpLog() for label in labels}
@@ -543,7 +547,7 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
         candidate = outcomes[label]
         if isinstance(candidate, Exception):
             logger.warning("Video info %s attempt failed: %s", label, candidate)
-            attempt_errors[label] = youtube_error_message(body.url, candidate)
+            attempt_errors[label] = youtube_error_message(url, candidate)
             continue
         if youtube and (candidate.get("_type") == "playlist" or "entries" in candidate):
             raise HTTPException(
@@ -571,7 +575,7 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
 
     if info is None or (youtube and info_score[1] == 0):
         detail = youtube_failure_message(
-            body.url, attempt_errors, {label: log.warnings for label, log in logs.items()},
+            url, attempt_errors, {label: log.warnings for label, log in logs.items()},
         )
         raise HTTPException(status_code=400, detail=f"Could not fetch video info: {detail}")
 
@@ -584,7 +588,7 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
     formats = info.get("formats", [])
     result  = _parse_formats(formats, info)
     notice  = youtube_quality_notice(
-        body.url, info_score, attempt_errors,
+        url, info_score, attempt_errors,
         {label: log.warnings for label, log in logs.items()},
     ) or youtube_resolution_cap_notice(info_label, info_score)
 

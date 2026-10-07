@@ -18,6 +18,7 @@
 #   app.include_router(download_router)   # no prefix — paths are explicit
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -41,6 +42,7 @@ import dependencies
 import security
 import storage
 import extraction_cache
+import link_resolver
 from yt_dlp_config import (
     is_youtube_url,
     prefer_attempt,
@@ -194,11 +196,16 @@ def _video_format_selector(
     the fallback that once turned a refused 1080p stream into a silent 360p
     download is kept only for callers that send no height.
     """
-    selectors = [f"{format_id}+bestaudio"]
+    # AAC (m4a) audio first: it goes into MP4 as a plain stream copy, so the
+    # merge is a quick file copy instead of re-encoding the soundtrack.
+    def with_audio(video: str) -> list[str]:
+        return [f"{video}+bestaudio[ext=m4a]", f"{video}+bestaudio"]
+
+    selectors = with_audio(format_id)
     if height:
-        selectors += [f"bv*[height={height}]+bestaudio", f"b[height={height}]"]
+        selectors += [*with_audio(f"bv*[height={height}]"), f"b[height={height}]"]
     elif allow_fallback:
-        selectors += ["bv*+bestaudio", "best"]
+        selectors += [*with_audio("bv*"), "best"]
     return "/".join(selectors)
 
 
@@ -228,11 +235,11 @@ def _build_ydl_opts_video(
         "outtmpl": output_template,
         "windowsfilenames": True,
         "trim_file_name": 150,
+        # Streams are copied, never re-encoded. Re-encoding the audio of a long
+        # video took many minutes of the free instance's tenth of a CPU (and
+        # its memory) in the "merging" step, where large downloads failed.
         "merge_output_format": "mp4",
         "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
-        "postprocessor_args": {
-            "ffmpeg": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"]
-        },
         "concurrent_fragment_downloads": 4,
         "retries": 3,
         **_FRAGMENT_OPTIONS,
@@ -297,6 +304,8 @@ def _download_with_fallback(
     second watch-page fetch and deno run.
     """
     output_template = str(Path(tmp_dir) / "%(title).150B.%(ext)s")
+    # Same share-link resolution as /video-info (cached, so usually instant).
+    url = link_resolver.resolve_share_url(url)
     attempts = prefer_attempt(youtube_ydl_attempts(url), source)
     last_error = None
 
@@ -458,8 +467,103 @@ def create_download_ticket(body: TicketRequest, user: dict = Depends(dependencie
     return {"ticket": ticket, "expires_in": security.DOWNLOAD_TICKET_TTL_SECONDS}
 
 
+# How long a download keeps running after its progress stream dropped, so the
+# page can reconnect. Mobile networks and proxies cut long-lived connections;
+# without this a blip near the end of a big download threw the whole file away.
+RESUME_GRACE_SECONDS = 60
+
+
+async def _drop_if_unwatched(job_id: str):
+    await asyncio.sleep(RESUME_GRACE_SECONDS)
+    job = _jobs.get(job_id)
+    if job is not None and job.get("watchers", 0) <= 0:
+        # Nobody came back: the progress hook now cancels the download, and a
+        # finished but unfetched file is discarded uncounted by _run_download
+        # or expires with its file token.
+        _jobs.pop(job_id, None)
+
+
+def _follow_job(job_id: str, first_event: dict | None = None):
+    """SSE events for one job, until it completes or fails."""
+
+    async def _event_stream():
+        job = _jobs.get(job_id)
+        if job is None:
+            return
+        job["watchers"] = job.get("watchers", 0) + 1
+        finished = False
+        try:
+            # A leading SSE comment makes even small-response-buffering proxies
+            # flush their headers immediately. EventSource ignores comment lines.
+            yield ":" + (" " * 2048) + "\n\n"
+            if first_event is not None:
+                yield _sse(first_event)
+
+            POLL  = 0.25    # seconds
+            LIMIT = 3600    # 1-hour safety cap
+            elapsed = 0.0
+
+            while elapsed < LIMIT:
+                await asyncio.sleep(POLL)
+                elapsed += POLL
+
+                job = _jobs.get(job_id)
+                if job is None:
+                    break
+                status = job.get("status", "starting")
+
+                payload = {
+                    "status":         status,
+                    "percent":        job.get("percent", 0),
+                    "speed":          job.get("speed", "0 KB/s"),
+                    "eta":            job.get("eta", "--:--"),
+                    "downloaded_fmt": job.get("downloaded_fmt", "0 KB"),
+                    "total_fmt":      job.get("total_fmt", "?"),
+                    "downloaded":     job.get("downloaded", 0),
+                    "total":          job.get("total"),
+                }
+
+                if status == "complete":
+                    payload["token"] = job["token"]
+                    payload["usage"] = job.get("usage")
+                    yield _sse(payload)
+                    finished = True
+                    break
+
+                elif status == "error":
+                    payload["error"] = job.get("error", "Unknown error")
+                    if job.get("code"):
+                        payload["code"] = job["code"]
+                    yield _sse(payload)
+                    finished = True
+                    break
+
+                else:
+                    yield _sse(payload)
+        finally:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job["watchers"] = job.get("watchers", 1) - 1
+                if finished:
+                    _jobs.pop(job_id, None)
+                elif job["watchers"] <= 0:
+                    # The browser disconnected mid-download: give it a short
+                    # window to reconnect before the download is abandoned.
+                    asyncio.create_task(_drop_if_unwatched(job_id))
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
 @router.get("/download/progress")
-async def download_with_progress(ticket: str | None = Query(None)):
+async def download_with_progress(
+    ticket: str | None = Query(None),
+    job: str | None = Query(None, max_length=64),
+    resume: str | None = Query(None, max_length=128),
+):
     """
     SSE stream that drives the rich progress UI in the frontend.
 
@@ -475,6 +579,19 @@ async def download_with_progress(ticket: str | None = Query(None)):
          one-time `token` (plus the account's updated `usage`).
       5. Browser calls GET /download/file?token=<token> to trigger the save.
     """
+    if job is not None or resume is not None:
+        # Reconnecting to a running download after the stream dropped.
+        existing = _jobs.get(job or "")
+        if (
+            existing is None
+            or not resume
+            or not hmac.compare_digest(str(existing.get("resume", "")), resume)
+        ):
+            return _sse_refusal(
+                "This download was interrupted for too long. Please start it again.", "auth"
+            )
+        return _follow_job(job)
+
     claims = security.verify_download_ticket(ticket) if ticket else None
     if claims is None or not security.used_tickets.consume(claims["jti"], claims["exp"]):
         return _sse_refusal(TICKET_EXPIRED_MESSAGE, "auth")
@@ -499,7 +616,10 @@ async def download_with_progress(ticket: str | None = Query(None)):
         logger.exception("Could not create a download folder")
         return _sse_refusal(_UNAVAILABLE_MESSAGE, None)
 
+    resume_code = secrets.token_urlsafe(24)
     _jobs[job_id] = {
+        "resume":         resume_code,
+        "watchers":       0,
         "status":         "starting",
         "percent":        0,
         "speed":          "0 KB/s",
@@ -667,66 +787,15 @@ async def download_with_progress(ticket: str | None = Query(None)):
 
     asyncio.create_task(_run_download())
 
-    # ── SSE generator ─────────────────────────────────────────────────────────
-    async def _event_stream():
-        try:
-            # A leading SSE comment makes even small-response-buffering proxies
-            # flush their headers immediately. EventSource ignores comment lines.
-            yield ":" + (" " * 2048) + "\n\n"
-            yield _sse({"status": "starting", "percent": 0, "job_id": job_id,
-                        "speed": "0 KB/s", "eta": "--:--",
-                        "downloaded_fmt": "0 KB", "total_fmt": "?",
-                        "downloaded": 0, "total": None})
-
-            POLL  = 0.25    # seconds
-            LIMIT = 3600    # 1-hour safety cap
-            elapsed = 0.0
-
-            while elapsed < LIMIT:
-                await asyncio.sleep(POLL)
-                elapsed += POLL
-
-                job = _jobs.get(job_id)
-                if job is None:
-                    break
-                status = job.get("status", "starting")
-
-                payload = {
-                    "status":         status,
-                    "percent":        job.get("percent", 0),
-                    "speed":          job.get("speed", "0 KB/s"),
-                    "eta":            job.get("eta", "--:--"),
-                    "downloaded_fmt": job.get("downloaded_fmt", "0 KB"),
-                    "total_fmt":      job.get("total_fmt", "?"),
-                    "downloaded":     job.get("downloaded", 0),
-                    "total":          job.get("total"),
-                }
-
-                if status == "complete":
-                    payload["token"] = job["token"]
-                    payload["usage"] = job.get("usage")
-                    yield _sse(payload)
-                    break
-
-                elif status == "error":
-                    payload["error"] = job.get("error", "Unknown error")
-                    if job.get("code"):
-                        payload["code"] = job["code"]
-                    yield _sse(payload)
-                    break
-
-                else:
-                    yield _sse(payload)
-        finally:
-            # Also runs when the browser disconnects mid-download: the job is
-            # then dropped, and _run_download discards its file uncounted.
-            _jobs.pop(job_id, None)
-
-    return StreamingResponse(
-        _event_stream(),
-        media_type="text/event-stream",
-        headers=_SSE_HEADERS,
-    )
+    # The first event carries the job id and a private resume code, so the
+    # page can reconnect to this download if the stream drops (see
+    # RESUME_GRACE_SECONDS).
+    return _follow_job(job_id, first_event={
+        "status": "starting", "percent": 0, "job_id": job_id, "resume": resume_code,
+        "speed": "0 KB/s", "eta": "--:--",
+        "downloaded_fmt": "0 KB", "total_fmt": "?",
+        "downloaded": 0, "total": None,
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -355,11 +355,12 @@ def is_healthy_listing(score: tuple[bool, int]) -> bool:
 # watch-page download and a deno run, which on a tenth of a CPU dominate the
 # wait, so later requests try the remembered attempt alone first. A full DASH
 # ladder cannot be beaten and is kept; an HLS-only route (up to 1080p) is
-# re-checked against the other attempts every couple of hours, in case the
+# re-checked against the other attempts every 12 hours (each check runs all
+# three attempts, slow on a tenth of a CPU), in case the
 # server's IP is served better again.
 _ROUTE_LOCK = threading.Lock()
 _ROUTE: dict = {}
-_CAPPED_ROUTE_SECONDS = 2 * 60 * 60
+_CAPPED_ROUTE_SECONDS = 12 * 60 * 60
 
 
 def remembered_attempt(labels: list[str]) -> str | None:

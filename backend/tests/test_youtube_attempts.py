@@ -260,8 +260,8 @@ class YoutubeAttemptTests(unittest.TestCase):
             )
 
         self.assertEqual(calls, [
-            (None, "137+bestaudio"),
-            ("cookies.txt", "137+bestaudio"),
+            (None, "137+bestaudio[ext=m4a]/137+bestaudio"),
+            ("cookies.txt", "137+bestaudio[ext=m4a]/137+bestaudio"),
         ])
 
     def test_download_starts_with_the_attempt_that_listed_the_format(self):
@@ -286,14 +286,16 @@ class YoutubeAttemptTests(unittest.TestCase):
     def test_download_matches_the_chosen_height_across_clients(self):
         selector = download_router._video_format_selector("137", 1080, False)
         self.assertEqual(
-            selector, "137+bestaudio/bv*[height=1080]+bestaudio/b[height=1080]"
+            selector,
+            "137+bestaudio[ext=m4a]/137+bestaudio"
+            "/bv*[height=1080]+bestaudio[ext=m4a]/bv*[height=1080]+bestaudio/b[height=1080]",
         )
 
         # A chosen height is never silently downgraded, even on the last attempt.
         self.assertEqual(download_router._video_format_selector("137", 1080, True), selector)
         self.assertEqual(
             download_router._video_format_selector("137", None, True),
-            "137+bestaudio/bv*+bestaudio/best",
+            "137+bestaudio[ext=m4a]/137+bestaudio/bv*+bestaudio[ext=m4a]/bv*+bestaudio/best",
         )
 
     def test_cookie_attempt_uses_the_tv_client_for_the_full_ladder(self):
@@ -536,7 +538,7 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         self.assertEqual(info["title"], "Lecture")
         self.assertEqual(
-            processed, [("96+bestaudio/bv*[height=1080]+bestaudio/b[height=1080]", True, False)]
+            processed, [(download_router._video_format_selector("96", 1080, False), True, False)]
         )
 
     def test_download_extracts_again_when_the_analysed_info_fails(self):

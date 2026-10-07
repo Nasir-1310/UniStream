@@ -1,3 +1,4 @@
+import asyncio
 """End-to-end API tests on a throwaway SQLite database.
 
 Email delivery is replaced by a recorder (no test touches the network), and
@@ -1109,6 +1110,48 @@ class DownloadTests(ApiTestCase):
         self.assertEqual([events[-1]["status"] for events in results], ["complete", "complete"])
         self.assertIsNone(results[0][-1]["usage"]["limit"])
         self.assertIsNone(results[0][-1]["usage"]["remaining"])
+
+    def test_first_event_carries_a_resume_code(self):
+        _user_id, token, _password = self.active_user(daily_limit=-1)
+        events = self.stream(self.ticket(token))
+        self.assertEqual(events[0]["status"], "starting")
+        self.assertTrue(events[0]["job_id"])
+        self.assertGreaterEqual(len(events[0]["resume"]), 24)
+
+    def test_reconnecting_with_the_resume_code_delivers_the_result(self):
+        download_router._jobs["job-r"] = {
+            "resume": "secret-code", "watchers": 0, "status": "complete",
+            "percent": 100, "token": "file-token", "usage": None,
+        }
+        self.addCleanup(download_router._jobs.pop, "job-r", None)
+
+        events = self.stream(params={"job": "job-r", "resume": "secret-code"})
+
+        self.assertEqual(events[-1]["status"], "complete")
+        self.assertEqual(events[-1]["token"], "file-token")
+        self.assertNotIn("job-r", download_router._jobs)
+
+    def test_reconnecting_with_a_wrong_code_is_refused(self):
+        download_router._jobs["job-w"] = {"resume": "secret-code", "watchers": 0, "status": "downloading"}
+        self.addCleanup(download_router._jobs.pop, "job-w", None)
+
+        for params in ({"job": "job-w", "resume": "guess"}, {"job": "job-w"}, {"job": "missing", "resume": "x"}):
+            events = self.stream(params=params)
+            self.assertEqual([e["code"] for e in events], ["auth"])
+        self.assertIn("job-w", download_router._jobs)
+
+    def test_a_dropped_stream_keeps_the_job_only_while_someone_may_return(self):
+        download_router._jobs["job-g"] = {"resume": "c", "watchers": 0, "status": "downloading"}
+        download_router._jobs["job-h"] = {"resume": "c", "watchers": 1, "status": "downloading"}
+        self.addCleanup(download_router._jobs.pop, "job-g", None)
+        self.addCleanup(download_router._jobs.pop, "job-h", None)
+
+        with patch.object(download_router, "RESUME_GRACE_SECONDS", 0):
+            asyncio.run(download_router._drop_if_unwatched("job-g"))
+            asyncio.run(download_router._drop_if_unwatched("job-h"))
+
+        self.assertNotIn("job-g", download_router._jobs)
+        self.assertIn("job-h", download_router._jobs)
 
     def test_abandoned_download_stops_and_frees_its_slots(self):
         user_id, token, _password = self.active_user(daily_limit=-1)

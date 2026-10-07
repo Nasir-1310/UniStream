@@ -34,6 +34,7 @@ import {
   createDownloadTicket,
   downloadFileUrl,
   downloadProgressUrl,
+  downloadResumeUrl,
   getVideoInfo,
   hasDownloadsLeft,
   isDailyLimitError,
@@ -55,6 +56,9 @@ const SESSION_EXPIRED_TEXT = 'Your session has expired. Please sign in again.'
 const TICKET_EXPIRED_RE = /download link has expired/i
 /** Show the "server is waking up" hint after this long. */
 const SLOW_ANALYSIS_MS = 8000
+/** Reconnect attempts after a dropped progress stream (server waits 60 s). */
+const MAX_RECONNECTS = 5
+const RECONNECT_DELAY_MS = 2000
 
 const STARTING: DownloadProgressEvent = {
   status: 'starting',
@@ -427,53 +431,81 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
 
     // Single use and valid for 60 seconds, so it is opened right away and
     // every retry asks for a new one.
-    let stream: EventSource
-    try {
-      stream = new EventSource(downloadProgressUrl(ticket))
-    } catch {
-      endStream()
-      setRow(formatId, { status: 'error', message: 'The download couldn’t start. Please try again.', retryable: true })
-      return
-    }
-
-    streamRef.current = stream
-    setStreaming(true)
-
     let settled = false
     let received = false
     let lastStatus = STARTING.status
+    // From the first event: lets the page reconnect to the same download if
+    // the stream drops (the server keeps it running for 60 seconds).
+    let jobId: string | null = null
+    let resumeCode: string | null = null
+    let reconnects = 0
 
-    stream.onmessage = message => {
-      if (settled || streamRef.current !== stream) return
-      const event = parseProgressEvent(message.data)
-      if (!event) return
-      received = true
+    const open = (streamUrl: string): boolean => {
+      let stream: EventSource
+      try {
+        stream = new EventSource(streamUrl)
+      } catch {
+        return false
+      }
+      streamRef.current = stream
+      setStreaming(true)
 
-      if (event.status === 'complete') {
-        settled = true
-        endStream()
-        finishDownload(format, event)
-        return
-      }
-      if (event.status === 'error') {
-        settled = true
-        endStream()
-        failDownload(format, event, isRetry)
-        return
-      }
-      if (event.status !== lastStatus) {
-        lastStatus = event.status
-        if (event.status === 'merging') {
-          setAnnouncement(format.type === 'audio' ? 'Converting to MP3.' : 'Almost done: merging video and audio.')
+      stream.onmessage = message => {
+        if (settled || streamRef.current !== stream) return
+        const event = parseProgressEvent(message.data)
+        if (!event) return
+        received = true
+        reconnects = 0
+        if (event.job_id && event.resume) {
+          jobId = event.job_id
+          resumeCode = event.resume
         }
+
+        if (event.status === 'complete') {
+          settled = true
+          endStream()
+          finishDownload(format, event)
+          return
+        }
+        if (event.status === 'error') {
+          settled = true
+          endStream()
+          failDownload(format, event, isRetry)
+          return
+        }
+        if (event.status !== lastStatus) {
+          lastStatus = event.status
+          if (event.status === 'merging') {
+            setAnnouncement(format.type === 'audio' ? 'Converting to MP3.' : 'Almost done: preparing your file.')
+          }
+        }
+        setRow(formatId, { status: 'active', progress: event })
       }
-      setRow(formatId, { status: 'active', progress: event })
+
+      // EventSource would reconnect on its own and replay the spent ticket,
+      // so errors are handled here: reconnect to the same download with its
+      // resume code a few times, and only then give up.
+      stream.onerror = () => {
+        if (settled || streamRef.current !== stream) return
+        stream.close()
+        if (jobId && resumeCode && reconnects < MAX_RECONNECTS) {
+          reconnects += 1
+          const resumeUrl = downloadResumeUrl(jobId, resumeCode)
+          setAnnouncement('Connection lost. Reconnecting…')
+          window.setTimeout(() => {
+            // Cancelled, or another stream took over, while waiting.
+            if (settled || streamRef.current !== stream) return
+            if (!open(resumeUrl)) giveUp()
+          }, RECONNECT_DELAY_MS * reconnects)
+          return
+        }
+        giveUp()
+      }
+      return true
     }
 
-    // EventSource reconnects on its own after an error, which would replay a
-    // spent ticket, so any error ends this download for good.
-    stream.onerror = () => {
-      if (settled || streamRef.current !== stream) return
+    const giveUp = () => {
+      if (settled) return
       settled = true
       endStream()
       const message =
@@ -484,6 +516,11 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           : 'We couldn’t reach the download server. Please try again in a moment.'
       setRow(formatId, { status: 'error', message, retryable: true })
       setAnnouncement(`Download failed. ${message}`)
+    }
+
+    if (!open(downloadProgressUrl(ticket))) {
+      endStream()
+      setRow(formatId, { status: 'error', message: 'The download couldn’t start. Please try again.', retryable: true })
     }
   }
 

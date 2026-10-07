@@ -462,5 +462,28 @@ class TemplateTests(NoNetworkTestCase):
             email_service.send_test_email("admin@example.com")
 
 
+class BrevoUnauthorizedHintTests(unittest.TestCase):
+    def _failure(self, message, secret="xkeysib-abc"):
+        import email_service
+
+        class FakeResponse:
+            status_code = 401
+
+            def json(self):
+                return {"message": message}
+
+        return str(email_service._http_failure("Brevo", FakeResponse(), "BREVO_API_KEY", secret))
+
+    def test_ip_block_gets_an_actionable_hint(self):
+        text = self._failure("We have detected you are using an unrecognised IP address 1.2.3.4")
+        self.assertIn("Authorised IPs", text)
+
+    def test_smtp_key_is_recognised(self):
+        self.assertIn("xkeysib-", self._failure("Key not found", secret="xsmtpsib-abc"))
+
+    def test_other_reasons_are_shown(self):
+        self.assertIn("Brevo says: Key not found", self._failure("Key not found"))
+
+
 if __name__ == "__main__":
     unittest.main()

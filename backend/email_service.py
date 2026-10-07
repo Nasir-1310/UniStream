@@ -190,7 +190,19 @@ def _http_failure(label: str, response: httpx.Response, key_env: str, secret: st
     detail = detail[:200]
     status = response.status_code
     if status == 401:
-        return EmailError(f"{label} rejected the API key (HTTP 401). Check {key_env}.")
+        hint = ""
+        lowered = detail.lower()
+        if "ip" in lowered and ("unrecognised" in lowered or "unrecognized" in lowered or "authori" in lowered):
+            hint = (
+                " Brevo is blocking this server's IP address: in Brevo open "
+                "Security → Authorised IPs and turn off IP blocking."
+            )
+        elif secret and secret.startswith("xsmtpsib-"):
+            hint = " This is an SMTP key; create an API key (it starts with xkeysib-)."
+        suffix = f" Brevo says: {detail}" if detail and not hint else ""
+        return EmailError(
+            f"{label} rejected the API key (HTTP 401). Check {key_env}.{hint}{suffix}"
+        )
     if status == 429:
         return EmailError(
             f"{label} rate limit or daily quota reached (HTTP 429). Try again later."
@@ -200,7 +212,8 @@ def _http_failure(label: str, response: httpx.Response, key_env: str, secret: st
 
 
 def _send_brevo(from_email, from_name, to, subject, html_body, text_body) -> None:
-    key = _env("BREVO_API_KEY")
+    # Keys pasted into a dashboard sometimes keep their surrounding quotes.
+    key = _env("BREVO_API_KEY").strip("\"'")
     response = _post(
         "Brevo",
         BREVO_URL,

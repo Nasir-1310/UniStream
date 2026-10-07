@@ -1110,6 +1110,77 @@ class DownloadTests(ApiTestCase):
         self.assertIsNone(results[0][-1]["usage"]["limit"])
         self.assertIsNone(results[0][-1]["usage"]["remaining"])
 
+    def test_abandoned_download_stops_and_frees_its_slots(self):
+        user_id, token, _password = self.active_user(daily_limit=-1)
+        gate, started, finished = threading.Event(), threading.Semaphore(0), threading.Event()
+        calls, outcome = [], []
+
+        class StoppableYoutubeDL:
+            def __init__(self, options):
+                self.options = options
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def extract_info(self, _url, download):
+                calls.append(1)
+                started.release()
+                gate.wait(20)
+                try:
+                    for _ in range(50):
+                        for hook in self.options.get("progress_hooks", []):
+                            hook({"status": "downloading", "downloaded_bytes": 1, "total_bytes": 100})
+                        time.sleep(0.01)
+                    outcome.append("ran to the end")
+                except BaseException as exc:
+                    outcome.append(type(exc).__name__)
+                    raise
+                finally:
+                    finished.set()
+                return {"title": "x"}
+
+        ticket = self.ticket(token)
+        results = []
+        with patch.object(yt_dlp, "YoutubeDL", StoppableYoutubeDL):
+            thread = threading.Thread(target=lambda: results.append(self.stream(ticket, client=TestClient(main.app))))
+            thread.start()
+            self.assertTrue(started.acquire(timeout=20))
+            # The browser leaves: the stream drops its job.
+            for key in [k for k in download_router._jobs if not k.startswith("token:")]:
+                download_router._jobs.pop(key, None)
+            gate.set()
+            self.assertTrue(finished.wait(20))
+            thread.join(20)
+            self.assertFalse(thread.is_alive())
+            deadline = time.time() + 10
+            while dependencies.download_slots.active(user_id) and time.time() < deadline:
+                time.sleep(0.05)
+
+        self.assertNotIn("complete", [event["status"] for event in results[0]])
+        self.assertEqual(outcome, ["DownloadCancelled"])
+        self.assertEqual(len(calls), 1)  # no fallback attempt after a cancel
+        self.assertEqual(dependencies.download_slots.active(user_id), 0)
+        self.assertEqual(self.logs(), [])
+        self.assertEqual(self.client.get("/auth/me", headers=bearer(token)).json()["user"]["usage"]["used"], 0)
+
+    def test_startup_sweeps_download_folders_left_by_a_previous_process(self):
+        root = Path(self.temp_dir.name)
+        old, fresh = root / "unistream_old", root / "unistream_fresh"
+        for folder in (old, fresh):
+            folder.mkdir()
+            (folder / "video.mp4").write_bytes(b"x")
+        (root / "other_dir").mkdir()
+        stale = time.time() - download_router.STALE_TEMP_SECONDS - 60
+        os.utime(old, (stale, stale))
+        os.utime(root / "other_dir", (stale, stale))
+        self.assertEqual(download_router.sweep_stale_temp_dirs(str(root)), 1)
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+        self.assertTrue((root / "other_dir").exists())
+
     def test_default_limit_comes_from_the_settings(self):
         _user_id, token, _password = self.active_user()
         ticket = self.ticket(token)

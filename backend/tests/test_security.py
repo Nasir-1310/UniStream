@@ -154,6 +154,14 @@ class PhoneValidationTests(unittest.TestCase):
         self.assertIn("11 digits", str(ctx.exception))
 
 
+class PhoneDigitScriptTests(unittest.TestCase):
+    def test_bengali_and_mixed_digits_become_ascii(self):
+        for value in ("০১৭১২৩৪৫৬৭৮", "017১২৩৪৫৬৭৮", "+৮৮০ ১৭১২-৩৪৫৬৭৮", "０１７１２３４５６７８"):
+            with self.subTest(value=value):
+                self.assertEqual(security.validate_phone(value), "+8801712345678")
+                self.assertEqual(security.classify_login(value), "+8801712345678")
+
+
 class LoginClassificationTests(unittest.TestCase):
     def test_email_or_phone(self):
         self.assertEqual(security.classify_login(" Me@Example.COM "), "me@example.com")

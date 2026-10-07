@@ -72,6 +72,37 @@ FILE_GONE_MESSAGE = (
     "This download link has expired or was already used. Please download the video again."
 )
 
+TEMP_PREFIX = "unistream_"
+# Older than any live download (1-hour stream cap + 5-minute file token).
+STALE_TEMP_SECONDS = 2 * 3600
+
+
+def sweep_stale_temp_dirs(root: str | None = None, max_age: float = STALE_TEMP_SECONDS) -> int:
+    """Delete download folders a previous process left behind; returns how many.
+
+    Unfetched files are normally removed after FILE_TOKEN_TTL_SECONDS by a
+    task in memory, so a restart or crash in that window leaked them for good
+    (each one a whole video) until the disk filled. Only folders older than
+    any live download are touched, so other processes sharing /tmp are safe.
+    """
+    removed = 0
+    cutoff = time.time() - max_age
+    try:
+        candidates = list(Path(root or tempfile.gettempdir()).glob(f"{TEMP_PREFIX}*"))
+    except OSError:
+        return 0
+    for folder in candidates:
+        try:
+            if folder.is_dir() and not folder.is_symlink() and folder.stat().st_mtime < cutoff:
+                shutil.rmtree(folder, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
+sweep_stale_temp_dirs()
+
 
 # ── ffmpeg discovery ───────────────────────────────────────────────────────────
 # yt-dlp shells out to ffmpeg to merge the separate video and audio streams into
@@ -293,6 +324,8 @@ def _download_with_fallback(
             with private_cookiefile(_options(source_opts, False)) as private_opts, \
                     yt_dlp.YoutubeDL(private_opts) as ydl:
                 return ydl.process_ie_result(cached_info, download=True)
+        except yt_dlp.utils.DownloadCancelled:
+            raise
         except Exception as exc:
             logger.warning("Download from the analysed info failed, extracting again: %s", exc)
             extraction_cache.discard_info(cache_key)
@@ -304,6 +337,9 @@ def _download_with_fallback(
             with private_cookiefile(_options(attempt_opts, is_last)) as private_opts, \
                     yt_dlp.YoutubeDL(private_opts) as ydl:
                 return ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadCancelled:
+            # The browser left (see _hook): no other attempt is wanted either.
+            raise
         except Exception as exc:
             logger.warning("Download %s attempt failed: %s", label, exc)
             last_error = exc
@@ -456,7 +492,7 @@ async def download_with_progress(ticket: str | None = Query(None)):
     user_id = user["id"]
     job_id  = str(uuid.uuid4())
     try:
-        tmp_dir = tempfile.mkdtemp(prefix="unistream_")
+        tmp_dir = tempfile.mkdtemp(prefix=TEMP_PREFIX)
     except OSError:
         # e.g. a full disk: give the slot back, or the account stays "busy".
         dependencies.release_download(user_id)
@@ -481,7 +517,10 @@ async def download_with_progress(ticket: str | None = Query(None)):
     def _hook(d: dict):
         job = _jobs.get(job_id)
         if not job:
-            return
+            # The browser closed the stream: nobody can fetch this file, so
+            # stop now instead of holding a server-wide download slot (and
+            # the account's) until a possibly hour-long download ends.
+            raise yt_dlp.utils.DownloadCancelled("The browser left before the download finished.")
 
         if d["status"] == "downloading":
             downloaded = d.get("downloaded_bytes") or 0
@@ -531,6 +570,10 @@ async def download_with_progress(ticket: str | None = Query(None)):
             )
             if not acquired:
                 raise _ServerBusy("The server is busy right now. Please try again in a minute.")
+            if job_id not in _jobs:
+                # The browser left while this download waited for a slot.
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return
 
             def _blocking():
                 return _download_with_fallback(
@@ -643,7 +686,9 @@ async def download_with_progress(ticket: str | None = Query(None)):
                 await asyncio.sleep(POLL)
                 elapsed += POLL
 
-                job    = _jobs.get(job_id, {})
+                job = _jobs.get(job_id)
+                if job is None:
+                    break
                 status = job.get("status", "starting")
 
                 payload = {

@@ -444,7 +444,12 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
     } catch (err) {
       const status = apiErrorStatus(err)
       setFormError({ message: apiErrorMessage(err, 'Sign in failed. Please try again.'), status })
-      if (status === 401) setPassword('')
+      if (status === 401) {
+        // Clear the wrong password without flagging the now-empty field as
+        // "Please enter your password." under the "Incorrect…" message.
+        setPassword('')
+        setSubmitted(false)
+      }
       focusAfterRef.current = status === 401 ? passwordRef.current : submitRef.current
     } finally {
       window.clearTimeout(slowTimer)

@@ -118,6 +118,10 @@ def validate_phone(s) -> str:
     if not isinstance(s, str) or not s.strip():
         raise ValueError("Please enter your phone number.")
     compact = _PHONE_SEPARATORS_RE.sub("", s.strip())
+    # Bengali (or any other script's) digits become ASCII: otherwise
+    # "০১৭১২৩৪৫৬৭৮" would be stored as a different number than 01712345678,
+    # and its owner could never sign in with the number as usually typed.
+    compact = "".join(str(unicodedata.decimal(ch)) if ch.isdecimal() else ch for ch in compact)
     if compact.startswith("00"):  # international dialling prefix
         compact = "+" + compact[2:]
     if not re.fullmatch(r"\+?\d+", compact):

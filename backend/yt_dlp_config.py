@@ -689,6 +689,53 @@ def youtube_client_report(url: str) -> dict:
     return report
 
 
+def platform_link_report(url: str) -> dict:
+    """Run the real Facebook/Instagram extraction once from this server's IP.
+
+    Both sites answer data-centre IPs with a login wall or HTTP 429 unless a
+    signed-in session is configured, which a local test never shows. The
+    report has the same shape as youtube_client_report() under "clients".
+    """
+    import yt_dlp
+    import link_resolver
+    from security import detect_platform
+
+    platform = detect_platform(url) or "link"
+    started = time.monotonic()
+    resolved = link_resolver.resolve_share_url(url)
+    signed_in = bool(social_cookie_status().get(platform))
+    result: dict = {}
+    for _label, attempt_opts in youtube_ydl_attempts(resolved):
+        log = YtDlpLog()
+        opts = {
+            "quiet": True,
+            "verbose": True,
+            "logger": log,
+            "ignore_no_formats_error": True,
+            **attempt_opts,
+        }
+        try:
+            with private_cookiefile(opts) as probe_opts, yt_dlp.YoutubeDL(probe_opts) as ydl:
+                info = ydl.extract_info(resolved, download=False)
+            formats = info.get("formats") or []
+            video = [f for f in formats if f.get("vcodec") not in (None, "none") and f.get("height")]
+            result["heights"] = sorted({f["height"] for f in video})
+            result["protocols"] = sorted({str(f.get("protocol")) for f in video})
+            result["audio_stream"] = any(
+                f.get("vcodec") == "none" and f.get("acodec") not in (None, "none") for f in formats
+            )
+        except Exception as exc:
+            result["error"] = " ".join(str(exc).split())[:300]
+            result["message_shown_to_users"] = youtube_error_message(resolved, exc)
+        result["notes"] = log.notes[:8]
+    result["seconds"] = round(time.monotonic() - started, 1)
+    mode = f"{platform} — {'signed in' if signed_in else 'no cookies configured'}"
+    return {
+        "resolved_url": resolved if resolved != url else None,
+        "clients": {mode: {platform: result}},
+    }
+
+
 def youtube_auth_mode() -> str:
     """Report configuration presence without exposing credential material."""
     if os.getenv("YOUTUBE_COOKIES_BASE64", "").strip():
@@ -706,6 +753,9 @@ def youtube_error_message(url: str, error: Exception) -> str:
     """Make YouTube authentication failures actionable without exposing secrets."""
     message = str(error)
     lowered = message.lower()
+    if "unable to obtain file audio codec" in lowered:
+        # FFmpegExtractAudio found no audio stream in what was downloaded.
+        return "This video has no sound, so it can't be saved as MP3. Download it as MP4 instead."
     if "no suitable extractor" in lowered or "unsupported url" in lowered:
         return (
             "This link doesn't point to a video we can download. Open the "

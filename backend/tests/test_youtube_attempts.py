@@ -678,5 +678,20 @@ class PrivateCookieFileTests(unittest.TestCase):
             self.assertEqual(options, {"proxy": "x"})
 
 
+class ErrorMessageTests(unittest.TestCase):
+    def test_mp3_of_a_silent_video_says_it_has_no_sound(self):
+        # What FFmpegExtractAudio raises for an Instagram reel without audio.
+        error = yt_dlp.utils.DownloadError(
+            "ERROR: Postprocessing: WARNING: unable to obtain file audio codec with ffprobe"
+        )
+        for url in ("https://www.instagram.com/reel/Chunk8-jurw/", "https://youtu.be/dQw4w9WgXcQ"):
+            with self.subTest(url=url):
+                self.assertEqual(
+                    yt_dlp_config.youtube_error_message(url, error),
+                    "This video has no sound, so it can't be saved as MP3. "
+                    "Download it as MP4 instead.",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

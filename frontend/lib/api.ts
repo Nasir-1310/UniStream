@@ -193,6 +193,8 @@ export interface StorageHealth {
   youtube_auth?: string
   youtube_proxy?: string
   js_runtime?: string | null
+  /** Whether INSTAGRAM_/FACEBOOK_COOKIES_BASE64 are set on the server. */
+  social_cookies?: Partial<Record<'instagram' | 'facebook', boolean>>
   yt_dlp_version?: string
   ffmpeg_location?: string | null
   configuration_warning?: string | null

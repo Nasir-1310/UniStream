@@ -156,6 +156,19 @@ function ToolsCard({ storage }: { storage: StorageHealth }) {
           detail={auth === 'not_configured' ? 'Some videos may need cookies to show every resolution from a data-centre IP.' : undefined}
         />
         <CheckRow ok label={`YouTube proxy: ${storage.youtube_proxy ?? 'unknown'}`} />
+        {(['facebook', 'instagram'] as const).map(site => {
+          const name = site === 'facebook' ? 'Facebook' : 'Instagram'
+          const set = Boolean(storage.social_cookies?.[site])
+          return (
+            <CheckRow
+              key={site}
+              ok={set}
+              warn
+              label={`${name} sign-in: ${set ? 'Cookies (secret)' : 'Not configured'}`}
+              detail={set ? undefined : `${name} often refuses data-centre IPs without cookies: set ${site.toUpperCase()}_COOKIES_BASE64.`}
+            />
+          )
+        })}
       </ul>
     </Card>
   )
@@ -192,8 +205,8 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     const target = url.trim()
-    if (target && detectPlatform(target) !== 'youtube') {
-      setUrlError('Enter a YouTube link, or leave it empty to use the default test video.')
+    if (target && !detectPlatform(target)) {
+      setUrlError('Enter a YouTube, Facebook or Instagram link, or leave it empty to use the default YouTube test video.')
       return
     }
     setUrlError(null)
@@ -203,7 +216,7 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
     try {
       setResult(await adminYoutubeCheck(target || undefined))
     } catch (err) {
-      if (!handleAuthError(err)) setError(apiErrorMessage(err, 'The YouTube check failed.'))
+      if (!handleAuthError(err)) setError(apiErrorMessage(err, 'The download check failed.'))
     } finally {
       setRunning(null)
     }
@@ -213,8 +226,8 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
 
   return (
     <Card
-      title="YouTube resolution check"
-      description="Which YouTube clients list which resolutions from this server"
+      title="Download check"
+      description="What YouTube, Facebook and Instagram give this server for a link"
       icon={Activity}
       className="xl:col-span-2"
     >
@@ -230,7 +243,7 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <div className="flex-1">
           <label htmlFor="yt-check-url" className="sr-only">
-            YouTube link to test (optional)
+            Video link to test (optional)
           </label>
           <input
             id="yt-check-url"
@@ -242,7 +255,7 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
               setUrl(e.target.value)
               setUrlError(null)
             }}
-            placeholder="YouTube link (optional — a default test video is used)"
+            placeholder="YouTube, Facebook or Instagram link (optional — a YouTube test video is used)"
             aria-invalid={urlError ? true : undefined}
             aria-describedby={urlError ? 'yt-check-url-error' : undefined}
             className="input-field py-2.5"
@@ -259,7 +272,9 @@ function YoutubeCheckCard({ storage }: { storage: StorageHealth | undefined }) {
         </button>
       </form>
       <p className="mt-2 text-xs text-slate-500" aria-live="polite">
-        {running !== null ? 'Each client is checked separately. This usually takes 1–3 minutes, so keep this tab open.' : 'Takes 1–3 minutes.'}
+        {running !== null
+          ? 'A YouTube link checks each client separately (1–3 minutes, keep this tab open); Facebook and Instagram take seconds.'
+          : 'YouTube: 1–3 minutes. Facebook and Instagram: a few seconds.'}
       </p>
 
       {error && (

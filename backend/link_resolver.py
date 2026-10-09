@@ -97,10 +97,35 @@ def _link_in_page(page_url: str, text: str) -> str | None:
     return None
 
 
-def _follow(url: str, headers: dict) -> str:
+def _session_cookies(url: str):
+    """The configured Facebook/Instagram session for this link, or None.
+
+    From a data-centre IP, Facebook answers an anonymous share link with a
+    login wall (or HTTP 400) instead of the redirect to the video; a
+    signed-in session gets the redirect. Every hop stays on Facebook or
+    Instagram (see _follow), so the cookies never reach another host.
+    """
+    try:
+        from yt_dlp.cookies import YoutubeDLCookieJar  # reads #HttpOnly_ lines
+        from yt_dlp_config import social_cookiefile  # local: yt_dlp_config imports this module
+
+        path = social_cookiefile(security.detect_platform(url))
+        if not path:
+            return None
+        jar = YoutubeDLCookieJar(path)
+        jar.load()
+        return jar
+    except Exception as exc:
+        logger.warning("Could not load the session cookies for %s: %s", url, exc)
+        return None
+
+
+def _follow(url: str, headers: dict, cookies=None) -> str:
     """Follow on-site redirects (and page metadata) from a share link."""
     current = url
-    with httpx.Client(follow_redirects=False, timeout=_TIMEOUT_SECONDS, headers=headers) as client:
+    with httpx.Client(
+        follow_redirects=False, timeout=_TIMEOUT_SECONDS, headers=headers, cookies=cookies,
+    ) as client:
         for _ in range(_MAX_HOPS):
             response = client.get(current)
             location = response.headers.get("location")
@@ -137,9 +162,14 @@ def resolve_share_url(url: str) -> str:
             return cached[1]
 
     current = url
-    for headers in (_HEADERS, _CRAWLER_HEADERS):
+    # Signed in first (when a session is configured): the dependable route
+    # from a data-centre IP. The crawler pass needs no session.
+    cookies = _session_cookies(url)
+    passes = [(_HEADERS, cookies)] if cookies is not None else []
+    passes += [(_HEADERS, None), (_CRAWLER_HEADERS, None)]
+    for headers, pass_cookies in passes:
         try:
-            current = _follow(url, headers)
+            current = _follow(url, headers, pass_cookies)
         except httpx.HTTPError as exc:
             logger.warning("Could not resolve share link %s: %s", url, exc)
             continue

@@ -1947,12 +1947,44 @@ class InputLimitTests(ApiTestCase):
         response = self.admin("POST", "/admin/logs/purge", json={"all": True, "confirm": "DELETE"})
         self.assertEqual(response.status_code, 422)
 
-    def test_youtube_check_only_probes_youtube(self):
+    def test_youtube_check_only_probes_supported_sites(self):
         for url in ("http://127.0.0.1:8000/admin", "https://evil.example/watch?v=1", "https://youtube.com@evil.example/"):
             with self.subTest(url=url):
                 response = self.admin("GET", "/admin/youtube-check", params={"url": url})
                 self.assertEqual((response.status_code, response.json()["detail"]),
-                                 (400, "Enter a YouTube video link to check."))
+                                 (400, "Enter a YouTube, Facebook or Instagram video link to check."))
+
+    def test_download_check_runs_the_real_facebook_extraction(self):
+        seen = []
+
+        class FakeYoutubeDL:
+            def __init__(self, options):
+                seen.append(options)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def extract_info(self, url, download):
+                return {"formats": [
+                    {"format_id": "v", "height": 720, "vcodec": "vp09", "acodec": "none", "protocol": "https"},
+                    {"format_id": "a", "vcodec": "none", "acodec": "mp4a"},
+                ]}
+
+        url = "https://www.facebook.com/watch/?v=647537299265662"
+        no_cookies = {"FACEBOOK_COOKIES_BASE64": "", "INSTAGRAM_COOKIES_BASE64": ""}
+        with patch.object(yt_dlp, "YoutubeDL", FakeYoutubeDL), patch.dict(os.environ, no_cookies):
+            response = self.admin("GET", "/admin/youtube-check", params={"url": url})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        report = body["clients"]["facebook — no cookies configured"]["facebook"]
+        self.assertEqual((report["heights"], report["audio_stream"]), ([720], True))
+        self.assertEqual(body["social_cookies"], {"instagram": False, "facebook": False})
+        # Only the supported extractors, as for a real download.
+        self.assertNotIn("generic", seen[0]["allowed_extractors"])
 
 
 class AuthRateLimitTests(ApiTestCase):

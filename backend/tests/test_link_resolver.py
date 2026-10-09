@@ -1,4 +1,7 @@
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -71,6 +74,32 @@ class LinkResolverTests(unittest.TestCase):
         self.assertEqual(resolved, share)
         # Browser pass, then crawler pass: neither ever requests the off-site target.
         self.assertEqual(seen, [share, share])
+
+    def test_configured_session_is_sent_to_facebook_first(self):
+        share = "https://www.facebook.com/share/v/1MSKQhixa7/"
+        target = "https://www.facebook.com/reel/1088470043774115"
+        cookie_file = Path(tempfile.mkdtemp()) / "facebook.txt"
+        self.addCleanup(shutil.rmtree, cookie_file.parent, ignore_errors=True)
+        cookie_file.write_text(
+            "# Netscape HTTP Cookie File\n"
+            "#HttpOnly_.facebook.com\tTRUE\t/\tTRUE\t2147483647\txs\tsecret-session\n"
+        )
+        sent = []
+
+        def handler(request: httpx.Request):
+            sent.append(request.headers.get("cookie"))
+            if request.headers.get("cookie"):
+                return httpx.Response(302, headers={"location": target})
+            return httpx.Response(400)  # what Facebook gives anonymous browsers
+
+        real_client = httpx.Client
+        transport = httpx.MockTransport(handler)
+        with patch.object(link_resolver.httpx, "Client", lambda **kw: real_client(transport=transport, **kw)), \
+                patch("yt_dlp_config.social_cookiefile", return_value=str(cookie_file)):
+            resolved = link_resolver.resolve_share_url(share)
+
+        self.assertEqual(resolved, target)
+        self.assertEqual(sent, ["xs=secret-session"])
 
     def test_unresolvable_link_is_returned_unchanged(self):
         share = "https://www.facebook.com/share/v/nothing/"

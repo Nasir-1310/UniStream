@@ -51,6 +51,8 @@ from dependencies import (
 )
 from yt_dlp_config import (
     js_runtime_options,
+    platform_link_report,
+    social_cookie_status,
     youtube_auth_mode,
     youtube_client_report,
     youtube_proxy,
@@ -699,6 +701,8 @@ def storage_health():
     info["youtube_auth"] = youtube_auth_mode()
     info["youtube_proxy"] = "configured" if youtube_proxy() else "not configured"
     info["js_runtime"] = js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path")
+    # Whether INSTAGRAM_/FACEBOOK_COOKIES_BASE64 are set (never their values).
+    info["social_cookies"] = social_cookie_status()
     return info
 
 
@@ -711,18 +715,31 @@ def youtube_check(
     YouTube treats data-centre IPs differently, so a video that lists every
     resolution locally can list only 360p here; this shows which client to use.
     Takes a minute or two: each client is probed separately.
+
+    A Facebook or Instagram link runs that site's real extraction once, which
+    shows whether the site serves this server (it often refuses data-centre
+    IPs without a signed-in session).
     """
     import yt_dlp
 
-    # The server fetches this link: only YouTube, never an arbitrary host.
-    if security.detect_platform(url) != "youtube":
-        raise HTTPException(status_code=400, detail="Enter a YouTube video link to check.")
+    # The server fetches this link: only the three supported sites, never an
+    # arbitrary host.
+    platform = security.detect_platform(url)
+    if platform not in ("youtube", "facebook", "instagram"):
+        raise HTTPException(
+            status_code=400, detail="Enter a YouTube, Facebook or Instagram video link to check.",
+        )
 
-    return {
+    report = {
         "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
         "yt_dlp_version": yt_dlp.version.__version__,
         "youtube_auth": youtube_auth_mode(),
         "youtube_proxy": "configured" if youtube_proxy() else "not configured",
         "js_runtime": js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path"),
-        "clients": youtube_client_report(url),
+        "social_cookies": social_cookie_status(),
     }
+    if platform == "youtube":
+        report["clients"] = youtube_client_report(url)
+    else:
+        report.update(platform_link_report(url))
+    return report

@@ -1137,7 +1137,7 @@ class DownloadTests(ApiTestCase):
 
         for params in ({"job": "job-w", "resume": "guess"}, {"job": "job-w"}, {"job": "missing", "resume": "x"}):
             events = self.stream(params=params)
-            self.assertEqual([e["code"] for e in events], ["auth"])
+            self.assertEqual([e["code"] for e in events], ["gone"])
         self.assertIn("job-w", download_router._jobs)
 
     def test_a_dropped_stream_keeps_the_job_only_while_someone_may_return(self):
@@ -1799,7 +1799,9 @@ class AdminRouteAuditTests(ApiTestCase):
                 with self.subTest(path=route.path):
                     self.assertFalse(any(word in route.path for word in ("delete", "purge", "reset", "bulk")))
         deleting = sorted(route.path for route in self.admin_routes() if "DELETE" in route.methods)
-        self.assertEqual(deleting, ["/admin/logs/{log_id}", "/admin/users/{user_id}"])
+        self.assertEqual(
+            deleting, ["/admin/feedback/{feedback_id}", "/admin/logs/{log_id}", "/admin/users/{user_id}"]
+        )
 
 
 class HttpHardeningTests(ApiTestCase):
@@ -2037,6 +2039,54 @@ class AuthRateLimitTests(ApiTestCase):
             other = self.client.post("/auth/forgot-password", json={"email": "a@example.com"},
                                      headers={"x-forwarded-for": "192.0.2.181"})
             self.assertEqual(other.status_code, 200)
+
+
+class FeedbackTests(ApiTestCase):
+    def test_a_problem_report_reaches_the_admin(self):
+        user_id, token, _password = self.active_user()
+        response = self.client.post("/feedback", headers=bearer(token), json={
+            "kind": "problem",
+            "message": "The 2160p download stopped while merging.",
+            "url": "https://youtu.be/aFYEvD6nmmU",
+            "details": "Quality: 2160p MP4 · Error: This download stopped",
+        })
+        self.assertEqual(response.status_code, 201)
+
+        listing = self.admin("GET", "/admin/feedback").json()
+        self.assertEqual((listing["total"], listing["new"], listing["ready"]), (1, 1, True))
+        item = listing["items"][0]
+        self.assertEqual(item["kind"], "problem")
+        self.assertEqual(item["user_id"], user_id)
+        self.assertEqual(item["identifier"], "rahim@example.com")
+        self.assertEqual(item["url"], "https://youtu.be/aFYEvD6nmmU")
+        self.assertIn("2160p", item["details"])
+
+        done = self.admin("PATCH", f"/admin/feedback/{item['id']}", json={"status": "done"})
+        self.assertEqual(done.json()["status"], "done")
+        self.assertEqual(self.admin("GET", "/admin/feedback", params={"status": "new"}).json()["total"], 0)
+
+        self.assertTrue(self.admin("DELETE", f"/admin/feedback/{item['id']}").json()["deleted"])
+        self.assertEqual(self.admin("GET", "/admin/feedback").json()["total"], 0)
+
+    def test_feedback_needs_a_signed_in_user_and_a_message(self):
+        self.assertEqual(
+            self.client.post("/feedback", json={"kind": "idea", "message": "Add Vimeo"}).status_code, 401
+        )
+        _user_id, token, _password = self.active_user()
+        for body in ({"kind": "idea", "message": "  "}, {"kind": "spam", "message": "Hello there"}):
+            with self.subTest(body=body):
+                response = self.client.post("/feedback", headers=bearer(token), json=body)
+                self.assertEqual(response.status_code, 422)
+
+    def test_feedback_is_admin_only_to_read(self):
+        _user_id, token, _password = self.active_user()
+        self.assertIn(self.client.get("/admin/feedback", headers=bearer(token)).status_code, (401, 403))
+
+    def test_missing_supabase_table_does_not_break_the_admin_page(self):
+        with patch.object(storage, "list_feedback", side_effect=storage.SchemaOutdatedError("feedback")):
+            body = self.admin("GET", "/admin/feedback").json()
+        self.assertFalse(body["ready"])
+        self.assertIn("CREATE TABLE IF NOT EXISTS public.feedback", body["setup_sql"])
 
 if __name__ == "__main__":
     unittest.main()

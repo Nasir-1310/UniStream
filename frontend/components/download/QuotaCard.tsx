@@ -55,7 +55,7 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
         <Badge tone="brand">Unlimited</Badge>
       </span>
     )
-    detail = `${pluralize(usage.used, 'download')} today.`
+    detail = `Unlimited downloads per day for your account · ${pluralize(usage.used, 'download')} today.`
   } else if (limit === 0) {
     headline = 'Downloads are turned off'
     detail = 'Downloads are turned off for your account right now. Contact the administrator if this is a mistake.'

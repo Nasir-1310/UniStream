@@ -113,8 +113,8 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <ul className={UL}>
         <li>
-          Each account can complete <strong className="text-white">4 downloads per day</strong> by default. The count
-          resets at midnight Bangladesh time.
+          Downloads per day are <strong className="text-white">unlimited, depending on your account</strong>. The
+          administrator may set a daily limit for an account; that count resets at midnight Bangladesh time.
         </li>
         <li>
           Only finished downloads count. Looking up a link, cancelling or a download that fails doesn&apos;t use your
@@ -233,7 +233,7 @@ export default function TermsPage() {
                 <li>Use UniStream Saver for your own study and offline viewing.</li>
                 <li>Only save videos you&apos;re allowed to, and never re-upload, share or sell them.</li>
                 <li>One account per person. Keep your password to yourself.</li>
-                <li>You get 4 downloads a day by default. Accounts that break the rules can be blocked.</li>
+                <li>Downloads per day are unlimited, depending on your account. Accounts that break the rules can be blocked.</li>
               </ul>
             </div>
 

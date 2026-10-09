@@ -22,13 +22,13 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
               <span className="w-7 h-7 rounded-lg bg-indigo-600/90 flex items-center justify-center">
                 <Download className="w-3.5 h-3.5 text-white" strokeWidth={2.5} aria-hidden="true" />
               </span>
-              <span className="font-semibold text-sm text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              <span className="font-semibold text-sm text-white" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
                 UniStream<span className="text-sky-400">Saver</span>
               </span>
             </Link>
             <p className="mt-3 text-[13px] leading-relaxed text-slate-500">
-              Save YouTube, Facebook and Instagram videos in up to 1080p HD. Free for approved students, with 4
-              downloads a day.
+              Save YouTube, Facebook and Instagram videos in up to 4K. Free for approved students, with unlimited
+              downloads per day depending on your account.
             </p>
           </div>
 

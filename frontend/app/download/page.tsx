@@ -16,9 +16,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { KeyRound, LogIn, RefreshCw } from 'lucide-react'
+import { KeyRound, LogIn, MessageSquareHeart, RefreshCw } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { FeedbackDialog, type FeedbackPrefill } from '@/components/FeedbackDialog'
 import { Alert, Modal, PageLoader, useToast } from '@/components/ui'
 import { AnalyzingState } from '@/components/download/AnalyzingState'
 import { FormatMatrix } from '@/components/download/FormatMatrix'
@@ -56,8 +57,10 @@ const SESSION_EXPIRED_TEXT = 'Your session has expired. Please sign in again.'
 const TICKET_EXPIRED_RE = /download link has expired/i
 /** Show the "server is waking up" hint after this long. */
 const SLOW_ANALYSIS_MS = 8000
-/** Reconnect attempts after a dropped progress stream (server waits 60 s). */
-const MAX_RECONNECTS = 5
+/** Reconnect attempts after a dropped progress stream (the server keeps the download for 10 minutes). */
+const MAX_RECONNECTS = 8
+/** The server's refusal of a download it no longer has (older servers sent it with code "auth"). */
+const JOB_GONE_RE = /interrupted for too long|stopped while the page was away/i
 const RECONNECT_DELAY_MS = 2000
 
 const STARTING: DownloadProgressEvent = {
@@ -168,6 +171,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   const [url, setUrl] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  /** Platform of the link being looked up (YouTube takes longer: sets the progress estimate). */
+  const [analyzingPlatform, setAnalyzingPlatform] = useState<Platform | null>(null)
   const [slow, setSlow] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [rows, setRows] = useState<Record<string, RowState>>({})
@@ -179,6 +184,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   const [hideTempNotice, setHideTempNotice] = useState(false)
   const [hideInAppNotice, setHideInAppNotice] = useState(false)
   const [announcement, setAnnouncement] = useState('')
+  /** Open "Report a problem / feedback" dialog, with what it should start from. */
+  const [feedback, setFeedback] = useState<FeedbackPrefill | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -285,6 +292,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     setResult(null)
     setRows({})
     setSlow(false)
+    setAnalyzingPlatform(check.platform ?? null)
     setAnalyzing(true)
     const slowTimer = window.setTimeout(() => setSlow(true), SLOW_ANALYSIS_MS)
 
@@ -488,6 +496,21 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       stream.onerror = () => {
         if (settled || streamRef.current !== stream) return
         stream.close()
+        if (jobId && resumeCode && document.visibilityState === 'hidden') {
+          // A phone pauses pages in the background, which drops the stream.
+          // The download keeps running on the server; reconnect when the user
+          // comes back instead of spending the retries while the page sleeps.
+          const resumeUrl = downloadResumeUrl(jobId, resumeCode)
+          setAnnouncement('Download continues on the server. Progress resumes when you come back.')
+          const onVisible = () => {
+            if (document.visibilityState !== 'visible') return
+            document.removeEventListener('visibilitychange', onVisible)
+            if (settled || streamRef.current !== stream) return
+            if (!open(resumeUrl)) giveUp()
+          }
+          document.addEventListener('visibilitychange', onVisible)
+          return
+        }
         if (jobId && resumeCode && reconnects < MAX_RECONNECTS) {
           reconnects += 1
           const resumeUrl = downloadResumeUrl(jobId, resumeCode)
@@ -576,6 +599,18 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   function failDownload(format: VideoFormat, event: DownloadProgressEvent, isRetry: boolean) {
     const formatId = format.format_id
     const message = event.error?.trim() || 'The download failed. Please try again.'
+    if (event.code === 'gone' || (event.code === 'auth' && JOB_GONE_RE.test(message))) {
+      // The server no longer has this download (left too long, or it
+      // restarted). Nothing is wrong with the account: offer Retry, never
+      // sign-out, and don't silently start a long download over again.
+      setRow(formatId, {
+        status: 'error',
+        message: 'This download stopped before it finished (the page was away too long, or the server restarted). It didn’t count toward your limit. Please try again.',
+        retryable: true,
+      })
+      setAnnouncement('Download failed. Please try again.')
+      return
+    }
     switch (event.code) {
       case 'auth':
         if (!isRetry) {
@@ -619,6 +654,23 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     setAnnouncement('Download cancelled.')
   }
 
+  /** "Report this problem" on a failed download: the link, quality and error go along. */
+  function reportProblem(format: VideoFormat, message: string) {
+    const analysed = result
+    setFeedback({
+      kind: 'problem',
+      url: analysed?.url,
+      details: [
+        `Quality: ${formatName(format)}`,
+        analysed?.platform ? `Platform: ${analysed.platform}` : null,
+        analysed?.info.title ? `Video: ${analysed.info.title}` : null,
+        `Error: ${message}`,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    })
+  }
+
   function goToSignIn() {
     const expired = authIssue === SESSION_EXPIRED_TEXT
     setAuthIssue(null)
@@ -653,12 +705,22 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
         {announcement}
       </p>
 
-      <header className="mb-4 sm:mb-6">
-        {firstName && <p className="text-[13px] font-medium text-indigo-300/90">Hi, {firstName}</p>}
-        <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold text-white">Download a video</h1>
-        <p className="mt-1.5 text-sm sm:text-[15px] leading-relaxed text-slate-400 max-w-2xl">
-          Paste a YouTube, Facebook or Instagram link, choose a quality, and save it for offline viewing.
-        </p>
+      <header className="mb-4 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          {firstName && <p className="text-[13px] font-medium text-indigo-300/90">Hi, {firstName}</p>}
+          <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold text-white">Download a video</h1>
+          <p className="mt-1.5 text-sm sm:text-[15px] leading-relaxed text-slate-400 max-w-2xl">
+            Paste a YouTube, Facebook or Instagram link, choose a quality up to 4K, and save it for offline viewing.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setFeedback({ kind: 'feedback' })}
+          className="btn-outline btn-sm self-start sm:self-auto whitespace-nowrap"
+        >
+          <MessageSquareHeart className="w-4 h-4" aria-hidden="true" />
+          Report a problem / Feedback
+        </button>
       </header>
 
       <div className="space-y-3 mb-4 sm:mb-5 empty:hidden">
@@ -715,7 +777,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
 
       <div ref={resultsRef} className="mt-5 sm:mt-6 scroll-mt-20">
         {analyzing ? (
-          <AnalyzingState slow={slow} onCancel={cancelAnalysis} />
+          <AnalyzingState slow={slow} onCancel={cancelAnalysis} platform={analyzingPlatform} />
         ) : result ? (
           <>
             {result.info.notice && (
@@ -740,6 +802,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
                 activeId={activeId}
                 onDownload={format => void startDownload(format)}
                 onCancel={cancelDownload}
+                onReport={reportProblem}
                 blockedReason={blockedReason}
                 headingRef={headingRef}
               />
@@ -749,6 +812,13 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           <GettingStarted />
         )}
       </div>
+
+      <FeedbackDialog
+        key={feedback ? JSON.stringify(feedback) : 'closed'}
+        open={feedback !== null}
+        onClose={() => setFeedback(null)}
+        prefill={feedback}
+      />
 
       <Modal
         open={Boolean(authIssue)}

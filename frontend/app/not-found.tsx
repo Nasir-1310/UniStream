@@ -25,7 +25,7 @@ export default function NotFound() {
           </div>
           <p
             className="mt-6 text-sm font-semibold tracking-[0.2em] text-sky-400"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
           >
             ERROR 404
           </p>

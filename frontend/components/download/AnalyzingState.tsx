@@ -1,52 +1,71 @@
 // components/download/AnalyzingState.tsx
 //
 // Shown while /video-info looks up the link. That usually takes a few
-// seconds, but the first request after the API has slept (Render free tier)
-// can take up to a minute, so after a while the copy says so instead of
-// looking stuck.
+// seconds (YouTube longer), but the first request after the API has slept
+// (Render free tier) can take up to a minute, so after a while the copy says
+// so instead of looking stuck.
+//
+// The server reports no progress for a lookup, so the percentage is an
+// estimate from the elapsed time and how long the platform usually takes:
+// it climbs quickly, slows down as it nears the end, and never reaches 100%
+// on its own. The results replace it as soon as they arrive.
 
+import { useEffect, useState } from 'react'
 import { Film, X } from 'lucide-react'
+import type { Platform } from '@/lib/validation'
 
 export interface AnalyzingStateProps {
   /** True once the request has run long enough to explain the wait. */
   slow: boolean
   onCancel: () => void
+  /** The link's platform: YouTube lookups take longer than Facebook/Instagram ones. */
+  platform?: Platform | null
 }
 
-const BARS = [40, 65, 50, 80, 55, 70, 45, 60, 75, 50]
+/** Typical lookup time in seconds, per platform. */
+const EXPECTED_SECONDS: Record<string, number> = { youtube: 25, facebook: 6, instagram: 6 }
 
-export function AnalyzingState({ slow, onCancel }: AnalyzingStateProps) {
+const STAGES: [number, string][] = [
+  [0, 'Connecting to the server…'],
+  [15, 'Reading the video page…'],
+  [45, 'Finding the available qualities…'],
+  [80, 'Almost done: checking file sizes…'],
+]
+
+/** 0 → 95%: about 80% at the expected time, then ever slower. */
+function estimate(elapsedSeconds: number, expected: number): number {
+  return 95 * (1 - Math.exp((-1.6 * elapsedSeconds) / expected))
+}
+
+export function AnalyzingState({ slow, onCancel, platform = null }: AnalyzingStateProps) {
+  const expected = EXPECTED_SECONDS[platform ?? ''] ?? 15
+  const [percent, setPercent] = useState(0)
+
+  useEffect(() => {
+    const started = Date.now()
+    const timer = window.setInterval(() => {
+      setPercent(estimate((Date.now() - started) / 1000, expected))
+    }, 200)
+    return () => window.clearInterval(timer)
+  }, [expected])
+
+  const shown = Math.floor(percent)
+  const stage = STAGES.reduce((label, [from, text]) => (shown >= from ? text : label), STAGES[0][1])
+
   return (
     <div className="surface-card flex flex-col items-center justify-center px-5 py-12 sm:py-16 text-center">
       <div className="relative w-20 h-20" aria-hidden="true">
-        <svg className="absolute inset-0 w-20 h-20 animate-spin" style={{ animationDuration: '3s' }} viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r="36" fill="none" strokeWidth="2" className="stroke-white/[0.06]" />
+        <svg className="absolute inset-0 w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="36" fill="none" strokeWidth="3" className="stroke-white/[0.06]" />
           <circle
             cx="40"
             cy="40"
             r="36"
             fill="none"
-            strokeWidth="2"
+            strokeWidth="3"
             strokeLinecap="round"
-            strokeDasharray="56 170"
-            className="stroke-indigo-500/70"
-          />
-        </svg>
-        <svg
-          className="absolute inset-0 w-20 h-20 animate-spin"
-          style={{ animationDuration: '1.8s', animationDirection: 'reverse' }}
-          viewBox="0 0 80 80"
-        >
-          <circle cx="40" cy="40" r="26" fill="none" strokeWidth="2" className="stroke-white/[0.04]" />
-          <circle
-            cx="40"
-            cy="40"
-            r="26"
-            fill="none"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray="30 133"
-            className="stroke-sky-400/60"
+            strokeDasharray={`${(2 * Math.PI * 36 * shown) / 100} ${2 * Math.PI * 36}`}
+            className="stroke-indigo-400 transition-[stroke-dasharray] duration-200"
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
@@ -56,23 +75,33 @@ export function AnalyzingState({ slow, onCancel }: AnalyzingStateProps) {
         </div>
       </div>
 
-      <div className="mt-6 space-y-1.5 max-w-sm" role="status" aria-live="polite">
-        <p className="text-sm font-semibold text-white">Getting the video…</p>
+      <p className="mt-5 text-3xl font-semibold text-white tabular-nums" aria-hidden="true">
+        {shown}%
+      </p>
+
+      <div className="mt-2 space-y-1.5 max-w-sm" role="status" aria-live="polite">
+        <p className="text-sm font-semibold text-white">{stage}</p>
         <p className="text-xs leading-relaxed text-slate-500">
           {slow
             ? 'Still working. The first request after a quiet spell can take up to a minute while the server wakes up.'
-            : 'Finding the available qualities and file sizes.'}
+            : platform === 'youtube'
+            ? 'YouTube videos usually take 15–30 seconds.'
+            : 'This usually takes a few seconds.'}
         </p>
       </div>
 
-      <div className="mt-6 flex items-end gap-1 h-8" aria-hidden="true">
-        {BARS.map((h, i) => (
-          <div
-            key={i}
-            className="w-1.5 rounded-full bg-indigo-500/40"
-            style={{ height: `${h}%`, animation: `dlbar 1.2s ease-in-out ${i * 0.1}s infinite alternate` }}
-          />
-        ))}
+      <div
+        className="mt-5 h-1.5 w-full max-w-xs rounded-full bg-white/[0.08] overflow-hidden"
+        role="progressbar"
+        aria-label="Getting the video (estimated)"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={shown}
+      >
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-400 transition-[width] duration-200"
+          style={{ width: `${shown}%` }}
+        />
       </div>
 
       <button type="button" onClick={onCancel} className="btn-ghost mt-6">

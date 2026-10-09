@@ -78,6 +78,7 @@ NO_EMAIL_ERROR = "This account has no email address. Share the password with the
 
 UserId = Annotated[str, Path(min_length=1, max_length=ID_MAX)]
 LogId = Annotated[str, Path(min_length=1, max_length=ID_MAX)]
+FeedbackId = Annotated[str, Path(min_length=1, max_length=ID_MAX)]
 
 
 def _now() -> datetime:
@@ -649,6 +650,55 @@ def purge_logs(body: PurgeLogsRequest):
 @router.delete("/logs/{log_id}")
 def delete_log(log_id: LogId):
     return {"deleted": storage.delete_download_logs([log_id])}
+
+
+# ── Feedback and problem reports ──────────────────────────────────────────────
+
+FEEDBACK_NOT_SET_UP = (
+    "The feedback table isn't in Supabase yet. Run backend/sql/feedback.sql in "
+    "Supabase → SQL Editor (it is shown under \"setup_sql\")."
+)
+
+
+class FeedbackStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["new", "done"]
+
+
+@router.get("/feedback")
+def list_feedback(
+    status: Optional[Literal["new", "done"]] = Query(None),
+    page: int = Query(1, ge=1, le=100_000),
+    page_size: int = Query(50, ge=1, le=storage.MAX_FEEDBACK_PAGE_SIZE),
+):
+    """Newest-first reports and feedback from users: {"items", "total", "new"}."""
+    try:
+        return {**storage.list_feedback(status=status, page=page, page_size=page_size), "ready": True}
+    except storage.SchemaOutdatedError:
+        return {
+            "items": [], "total": 0, "new": 0, "ready": False,
+            "detail": FEEDBACK_NOT_SET_UP, "setup_sql": storage.feedback_sql(),
+        }
+
+
+@router.patch("/feedback/{feedback_id}")
+def update_feedback(feedback_id: FeedbackId, body: FeedbackStatusRequest):
+    try:
+        item = storage.set_feedback_status(feedback_id, body.status)
+    except storage.SchemaOutdatedError:
+        raise HTTPException(status_code=503, detail=FEEDBACK_NOT_SET_UP) from None
+    if item is None:
+        raise HTTPException(status_code=404, detail="That message no longer exists.")
+    return item
+
+
+@router.delete("/feedback/{feedback_id}")
+def delete_feedback(feedback_id: FeedbackId):
+    try:
+        return {"deleted": storage.delete_feedback(feedback_id)}
+    except storage.SchemaOutdatedError:
+        raise HTTPException(status_code=503, detail=FEEDBACK_NOT_SET_UP) from None
 
 
 # ── Settings and system ───────────────────────────────────────────────────────

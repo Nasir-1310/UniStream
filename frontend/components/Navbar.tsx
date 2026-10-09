@@ -43,7 +43,7 @@ export default function Navbar({ showAuth = true, rightSlot, homeHref }: NavbarP
           <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-sm shadow-indigo-900/50">
             <Download className="w-4 h-4 text-white" strokeWidth={2.5} aria-hidden="true" />
           </span>
-          <span className="max-[359px]:sr-only font-semibold text-[14px] text-white tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          <span className="max-[359px]:sr-only font-semibold text-[14px] text-white tracking-tight" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
             UniStream<span className="text-sky-400">Saver</span>
           </span>
         </Link>

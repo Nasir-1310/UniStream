@@ -369,7 +369,7 @@ export interface AdminChangeCredentialsRequest {
 export type DownloadStatus = 'starting' | 'downloading' | 'merging' | 'complete' | 'error'
 
 /** Why a download was refused before it started (SSE cannot carry HTTP status codes). */
-export type DownloadErrorCode = 'auth' | 'limit' | 'platform' | 'busy'
+export type DownloadErrorCode = 'auth' | 'limit' | 'platform' | 'busy' | 'gone'
 
 /** One SSE progress event, normalised by parseProgressEvent(). */
 export interface DownloadProgressEvent {
@@ -720,6 +720,24 @@ export function parseProgressEvent(raw: string): DownloadProgressEvent | null {
   }
 }
 
+/** What someone is telling us: a problem (e.g. a failed download), general feedback, or an idea. */
+export type FeedbackKind = 'problem' | 'feedback' | 'idea'
+
+export interface FeedbackInput {
+  kind: FeedbackKind
+  message: string
+  /** The video link the problem happened with, if any. */
+  url?: string | null
+  /** Added by the page for a failed download: quality, platform and error text. */
+  details?: string | null
+}
+
+/** POST /feedback — report a problem or send feedback to the admin. */
+export async function sendFeedback(body: FeedbackInput): Promise<{ sent: boolean; message: string }> {
+  const { data } = await API.post<{ sent: boolean; message: string }>('/feedback', body)
+  return data
+}
+
 /** True when the user may start another download today. */
 export function hasDownloadsLeft(usage: Usage | null | undefined): boolean {
   if (!usage) return false
@@ -858,6 +876,52 @@ export async function adminBulkUsers(
 /** GET /admin/logs — newest first, filtered and paginated. */
 export async function adminListLogs(query: LogQuery = {}): Promise<Paginated<LogEntry>> {
   const { data } = await API.get<Paginated<LogEntry>>('/admin/logs', { params: cleanParams(query) })
+  return data
+}
+
+export interface FeedbackItem {
+  id: string
+  user_id: string | null
+  identifier: string
+  kind: FeedbackKind
+  message: string
+  url: string | null
+  details: string | null
+  status: 'new' | 'done'
+  created_at: string | null
+}
+
+export interface FeedbackList {
+  items: FeedbackItem[]
+  total: number
+  /** How many are still marked new (unread). */
+  new: number
+  /** False until the feedback table exists in Supabase. */
+  ready: boolean
+  detail?: string
+  /** The SQL that creates the table, while `ready` is false. */
+  setup_sql?: string
+}
+
+/** GET /admin/feedback — newest-first problem reports and feedback. */
+export async function adminListFeedback(params: {
+  status?: 'new' | 'done'
+  page?: number
+  page_size?: number
+}): Promise<FeedbackList> {
+  const { data } = await API.get<FeedbackList>('/admin/feedback', { params })
+  return data
+}
+
+/** PATCH /admin/feedback/{id} — mark one as new or done. */
+export async function adminSetFeedbackStatus(id: string, status: 'new' | 'done'): Promise<FeedbackItem> {
+  const { data } = await API.patch<FeedbackItem>(`/admin/feedback/${encodeURIComponent(id)}`, { status })
+  return data
+}
+
+/** DELETE /admin/feedback/{id}. */
+export async function adminDeleteFeedback(id: string): Promise<{ deleted: boolean }> {
+  const { data } = await API.delete<{ deleted: boolean }>(`/admin/feedback/${encodeURIComponent(id)}`)
   return data
 }
 

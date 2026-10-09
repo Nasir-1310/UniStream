@@ -7,7 +7,7 @@ import './globals.css'
 // Shared by every page that doesn't set its own; also the landing page's
 // metadata (it's a client component, so it can't export any).
 const description =
-  'Save YouTube, Facebook and Instagram videos in up to 1080p HD, or just the audio as MP3. Free for approved students, with 4 downloads a day.'
+  'Save YouTube, Facebook and Instagram videos in up to 4K, or just the audio as MP3. Free for approved students, with unlimited downloads per day depending on your account.'
 
 export const metadata: Metadata = {
   title: {
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'UniStream Saver',
-    description: 'Save YouTube, Facebook and Instagram videos in up to 1080p HD. Free for approved students.',
+    description: 'Save YouTube, Facebook and Instagram videos in up to 4K. Free for approved students.',
     type: 'website',
     siteName: 'UniStream Saver',
   },
@@ -56,13 +56,13 @@ export default function RootLayout({
           crossOrigin=""
         />
         {/*
-          Space Grotesk — display / headings (geometric, personality)
-          Inter — body / UI text (neutral, readable at all sizes)
+          Source Sans 3 — one humanist sans for headings and body text, the
+          clean journal look (titles semibold, labels italic).
         */}
         {/* App Router root layout is the document-level font declaration. */}
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"
           rel="stylesheet"
         />
       </head>

@@ -130,8 +130,11 @@ def _start():
         f"WGConfig = {_DIR / 'wgcf-profile.conf'}\n\n[Socks5]\nBindAddress = {_HOST}:{_PORT}\n"
     )
     log = open(_DIR / "wireproxy.log", "ab")
+    # The whole instance has 512 MB. Go would otherwise let wireproxy's heap
+    # grow with a fast 4K download; a soft limit makes it collect early.
+    env = {**os.environ, "GOMEMLIMIT": "64MiB", "GOGC": "50"}
     _process = subprocess.Popen(
-        [str(wireproxy), "-c", str(config)], cwd=_DIR, stdout=log, stderr=subprocess.STDOUT,
+        [str(wireproxy), "-c", str(config)], cwd=_DIR, stdout=log, stderr=subprocess.STDOUT, env=env,
     )
     if not _wait_for_port(30):
         raise RuntimeError("wireproxy did not start (see wireproxy.log)")

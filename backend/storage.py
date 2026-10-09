@@ -834,6 +834,19 @@ _LOCAL_TABLES = (
         updated_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        identifier TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL CHECK (kind IN ('problem', 'feedback', 'idea')),
+        message TEXT NOT NULL,
+        url TEXT,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'done')),
+        created_at TEXT NOT NULL
+    )
+    """,
 )
 
 # Columns that v1 local databases may lack; ALTER TABLE adds them in place.
@@ -1991,3 +2004,165 @@ def storage_diagnostics() -> dict:
     info["last_remote_success"] = _last_remote_success
     info["last_remote_error"] = _last_remote_error
     return info
+
+
+# ── Feedback and problem reports ─────────────────────────────────────────
+#
+# Optional on Supabase: the table comes from backend/sql/feedback.sql, and is not
+# part of the schema check, so the rest of the app keeps working before that
+# script has been run (these functions then raise SchemaOutdatedError).
+
+FEEDBACK_KINDS = ("problem", "feedback", "idea")
+FEEDBACK_STATUSES = ("new", "done")
+MAX_FEEDBACK_MESSAGE = 2000
+MAX_FEEDBACK_DETAILS = 2000
+MAX_FEEDBACK_PAGE_SIZE = 100
+FEEDBACK_SQL_PATH = backend_dir / "sql" / "feedback.sql"
+
+
+def _feedback_from_row(row: Any) -> dict:
+    data = dict(row)
+    user_id = data.get("user_id")
+    return {
+        "id": str(data.get("id")),
+        "user_id": str(user_id) if user_id is not None else None,
+        "identifier": data.get("identifier") or "",
+        "kind": data.get("kind") or "feedback",
+        "message": data.get("message") or "",
+        "url": data.get("url") or None,
+        "details": data.get("details") or None,
+        "status": data.get("status") or "new",
+        "created_at": _iso(data.get("created_at")),
+    }
+
+
+def feedback_sql() -> str:
+    """The Supabase script that creates the feedback table."""
+    try:
+        return FEEDBACK_SQL_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return "-- sql/feedback.sql was not found next to the backend.\n"
+
+
+def add_feedback(
+    *,
+    user_id: str | None,
+    identifier: str,
+    kind: str,
+    message: str,
+    url: str | None = None,
+    details: str | None = None,
+) -> None:
+    """Store one problem report, piece of feedback or idea."""
+    if kind not in FEEDBACK_KINDS:
+        raise ValueError(f"Invalid feedback kind: {kind}")
+    record = {
+        "identifier": identifier or "",
+        "kind": kind,
+        "message": (message or "").strip()[:MAX_FEEDBACK_MESSAGE],
+        "url": _clean_text((url or "")[:MAX_LOG_URL_LENGTH]),
+        "details": _clean_text((details or "")[:MAX_FEEDBACK_DETAILS]),
+    }
+
+    if SUPABASE_CONFIGURED:
+        payload = {**record, "user_id": _uuid_or_none(user_id) if user_id else None}
+        _remote(
+            "save feedback",
+            lambda client: client.table("feedback").insert(payload, returning="minimal").execute(),
+            idempotent=False,
+        )
+        return
+
+    with _local_transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO feedback (user_id, identifier, kind, message, url, details, status, created_at)
+            VALUES ((SELECT id FROM users WHERE id = ?), ?, ?, ?, ?, ?, 'new', ?)
+            """,
+            (
+                _local_id_or_none(user_id) if user_id else None,
+                record["identifier"], record["kind"], record["message"],
+                record["url"], record["details"], _db_ts(_utcnow()),
+            ),
+        )
+
+
+def list_feedback(*, status: str | None = None, page: int = 1, page_size: int = 50) -> dict:
+    """Newest-first page of feedback: {"items", "total", "new"}."""
+    page = max(1, int(page))
+    page_size = min(max(1, int(page_size)), MAX_FEEDBACK_PAGE_SIZE)
+    offset = (page - 1) * page_size
+    if status is not None and status not in FEEDBACK_STATUSES:
+        return {"items": [], "total": 0, "new": 0}
+
+    if SUPABASE_CONFIGURED:
+        def operation(client: Client):
+            rows, total = _remote_page(
+                client,
+                "feedback",
+                "*",
+                lambda query: query.eq("status", status) if status else query,
+                lambda query: _order(_order(query, "created_at", True), "id", True),
+                offset,
+                page_size,
+            )
+            unread = _remote_count(client, "feedback", lambda query: query.eq("status", "new"))
+            return rows, total, unread
+
+        rows, total, unread = _remote("list feedback", operation)
+        return {"items": [_feedback_from_row(row) for row in rows], "total": total, "new": unread}
+
+    where_sql, params = ("WHERE status = ?", [status]) if status else ("", [])
+    conn = _get_local_conn()
+    with _local_lock:
+        total = conn.execute(f"SELECT COUNT(*) FROM feedback {where_sql}", params).fetchone()[0]
+        unread = conn.execute("SELECT COUNT(*) FROM feedback WHERE status = 'new'").fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM feedback {where_sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            (*params, page_size, offset),
+        ).fetchall()
+    return {"items": [_feedback_from_row(row) for row in rows], "total": int(total), "new": int(unread)}
+
+
+def set_feedback_status(feedback_id: str, status: str) -> dict | None:
+    """Mark feedback new or done; returns it, or None when it doesn't exist."""
+    if status not in FEEDBACK_STATUSES:
+        raise ValueError(f"Invalid feedback status: {status}")
+
+    if SUPABASE_CONFIGURED:
+        row_id = _uuid_or_none(feedback_id)
+        if row_id is None:
+            return None
+        rows = _remote(
+            "update feedback",
+            lambda client: client.table("feedback").update({"status": status}).eq("id", row_id).execute().data,
+        )
+        return _feedback_from_row(rows[0]) if rows else None
+
+    local_id = _local_id_or_none(feedback_id)
+    if local_id is None:
+        return None
+    with _local_transaction() as conn:
+        conn.execute("UPDATE feedback SET status = ? WHERE id = ?", (status, local_id))
+        row = conn.execute("SELECT * FROM feedback WHERE id = ?", (local_id,)).fetchone()
+    return _feedback_from_row(row) if row else None
+
+
+def delete_feedback(feedback_id: str) -> bool:
+    """Delete one piece of feedback; False when it didn't exist."""
+    if SUPABASE_CONFIGURED:
+        row_id = _uuid_or_none(feedback_id)
+        if row_id is None:
+            return False
+        return _remote(
+            "delete feedback",
+            lambda client: _execute_for_count(
+                client.table("feedback").delete(count="exact", returning="minimal").eq("id", row_id)
+            ),
+        ) > 0
+
+    local_id = _local_id_or_none(feedback_id)
+    if local_id is None:
+        return False
+    with _local_transaction() as conn:
+        return conn.execute("DELETE FROM feedback WHERE id = ?", (local_id,)).rowcount > 0

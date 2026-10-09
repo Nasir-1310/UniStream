@@ -36,6 +36,7 @@ from routers.admin import router as admin_router
 from routers.admin_auth import router as admin_auth_router
 from routers.auth import router as auth_router
 from routers.download import router as download_router
+from routers.feedback import router as feedback_router
 from storage import SchemaOutdatedError, StorageUnavailableError
 from yt_dlp_config import (
     format_ladder_score,
@@ -307,6 +308,7 @@ app.add_middleware(
 # ── Mount routers ─────────────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(download_router)
+app.include_router(feedback_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 

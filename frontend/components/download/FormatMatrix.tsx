@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   CircleCheck,
   Download,
+  Flag,
   Layers,
   Lock,
   Music,
@@ -33,6 +34,8 @@ export interface FormatMatrixProps {
   activeId: string | null
   onDownload: (format: VideoFormat) => void
   onCancel: () => void
+  /** Open the problem report for a failed download (its message is passed along). */
+  onReport?: (format: VideoFormat, message: string) => void
   /** Why no download can start right now (limit reached, offline); null when they can. */
   blockedReason: string | null
   /** Receives focus after an analysis so screen readers land on the results. */
@@ -210,9 +213,10 @@ interface FormatRowProps {
   blockedReason: string | null
   onDownload: (format: VideoFormat) => void
   onCancel: () => void
+  onReport?: (format: VideoFormat, message: string) => void
 }
 
-function FormatRow({ format, state, badge, locked, blockedReason, onDownload, onCancel }: FormatRowProps) {
+function FormatRow({ format, state, badge, locked, blockedReason, onDownload, onCancel, onReport }: FormatRowProps) {
   const audio = format.type === 'audio' || !isVideoExt(format.ext)
   const size = sizeOf(format)
   const resolution = audio ? null : format.resolution
@@ -334,7 +338,22 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
       {state.status === 'error' && (
         <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-relaxed text-red-300">
           <AlertCircle className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />
-          <span>{state.message}</span>
+          <span>
+            {state.message}
+            {onReport && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  onClick={() => onReport(format, state.message)}
+                  className="inline-flex items-center gap-1 font-semibold text-red-200 underline underline-offset-2 hover:text-white"
+                >
+                  <Flag className="w-3 h-3" aria-hidden="true" />
+                  Report this problem
+                </button>
+              </>
+            )}
+          </span>
         </p>
       )}
     </li>
@@ -349,6 +368,7 @@ export function FormatMatrix({
   activeId,
   onDownload,
   onCancel,
+  onReport,
   blockedReason,
   headingRef,
 }: FormatMatrixProps) {
@@ -480,6 +500,7 @@ export function FormatMatrix({
                     blockedReason={blockedReason}
                     onDownload={onDownload}
                     onCancel={onCancel}
+                    onReport={onReport}
                   />
                 ))}
               </ul>

@@ -11,8 +11,8 @@ module.exports = {
     extend: {
       // ── Font families ──────────────────────────────────────────
       fontFamily: {
-        sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['Space Grotesk', 'system-ui', '-apple-system', 'sans-serif'],
+        sans:    ['Source Sans 3', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Source Sans 3', 'system-ui', '-apple-system', 'sans-serif'],
       },
 
       // ── Brand green palette ────────────────────────────────────

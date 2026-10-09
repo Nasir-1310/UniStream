@@ -146,16 +146,16 @@ export default function HomePage() {
               >
                 Save YouTube, Facebook and Instagram videos{' '}
                 <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-violet-400 bg-clip-text text-transparent">
-                  in up to 1080p HD.
+                  in up to 4K.
                 </span>
               </h1>
               <p className="mt-3 sm:mt-5 text-[15px] sm:text-base leading-relaxed text-slate-400 max-w-xl">
-                Simple and fast: paste a link, choose a quality and download. Free for approved students, with 4
-                downloads a day.
+                Simple and fast: paste a link, choose a quality and download. Free for approved students, with unlimited
+                downloads per day depending on your account.
               </p>
               <p className="mt-3 inline-flex items-start gap-2 text-[13px] sm:text-sm leading-relaxed text-violet-200/90">
                 <Sparkles className="w-4 h-4 mt-px flex-shrink-0 text-violet-300" aria-hidden="true" />
-                <span>Premium with unlimited downloads is coming soon.</span>
+                <span>Now up to 4K on YouTube, Facebook and Instagram.</span>
               </p>
             </div>
 
@@ -176,8 +176,8 @@ export default function HomePage() {
             <div className="lg:col-start-1 lg:row-start-2 lg:self-start">
               <ul className="grid gap-2.5 sm:grid-cols-2 max-w-xl text-[14px] text-slate-300">
                 {[
-                  '4 free downloads a day',
-                  'Up to 1080p HD, or audio only (MP3)',
+                  'Unlimited downloads per day (depends on your account)',
+                  'Up to 4K Ultra HD, or audio only (MP3)',
                   'Works in your phone’s browser',
                   'No ads, no app to install',
                 ].map(item => (
@@ -296,7 +296,7 @@ function AuthCard({ tab, onTabChange, loginValue, onLoginValueChange, user, redi
                   ? 'bg-indigo-500/90 text-white shadow-sm shadow-indigo-900/40'
                   : 'text-slate-400 hover:text-white hover:bg-white/[0.05]'
               }`}
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              style={{ fontFamily: "'Source Sans 3', sans-serif" }}
             >
               <Icon className="w-4 h-4 flex-shrink-0 max-[359px]:hidden" aria-hidden="true" />
               <span className="whitespace-nowrap">{label}</span>
@@ -991,7 +991,7 @@ const PLATFORM_CARDS: { name: string; Icon: LucideIcon; tone: string; ring: stri
     tone: 'text-red-400',
     ring: 'bg-red-500/10 border-red-500/20',
     what: 'Lectures, tutorials, Shorts',
-    detail: 'Choose anything from data-saving 360p up to 1080p Full HD, or save just the audio as an MP3.',
+    detail: 'Choose anything from data-saving 360p up to 4K Ultra HD, or save just the audio as an MP3.',
   },
   {
     name: 'Facebook',
@@ -1060,7 +1060,7 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
     {
       Icon: ClipboardPaste,
       title: 'Paste a link and download',
-      body: 'Choose a quality and save it to your device. You get 4 downloads a day, reset at midnight Bangladesh time.',
+      body: 'Choose a quality and save it to your device. Downloads per day are unlimited, depending on your account.',
     },
   ]
   return (
@@ -1073,7 +1073,7 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
               <div className="flex items-center gap-3">
                 <span
                   className="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm font-bold flex items-center justify-center"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                  style={{ fontFamily: "'Source Sans 3', sans-serif" }}
                   aria-hidden="true"
                 >
                   {index + 1}
@@ -1103,13 +1103,13 @@ function FeaturesSection() {
     {
       Icon: SlidersHorizontal,
       title: 'Choose your quality',
-      body: 'Up to 1080p Full HD for a laptop, a small file to save mobile data, or audio only (MP3) for lectures you just want to hear.',
+      body: 'Up to 4K Ultra HD for a big screen, a small file to save mobile data, or audio only (MP3) for lectures you just want to hear.',
       tone: 'text-sky-300 bg-sky-500/10 border-sky-500/20',
     },
     {
       Icon: Gauge,
-      title: 'A fair daily allowance',
-      body: 'Approved students get 4 downloads a day. Only finished downloads count, and premium with unlimited downloads is coming soon.',
+      title: 'Unlimited daily downloads',
+      body: 'Approved students get unlimited downloads per day, depending on their account. Only finished downloads count.',
       tone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20',
     },
     {
@@ -1202,9 +1202,9 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'How many videos can I download?',
       a: (
         <>
-          Each account can download <strong className="text-slate-200">4 videos a day</strong>. The count resets at
-          midnight Bangladesh time. Only finished downloads count: looking up a link, cancelling or a failed download
-          doesn&apos;t use one. You can always see how many downloads you have left today at the top of the page.
+          Downloads per day are <strong className="text-slate-200">unlimited, depending on your account</strong>. If
+          your account has a daily limit, it resets at midnight Bangladesh time. Only finished downloads count: looking up a link, cancelling or a failed download
+          doesn&apos;t use one. Your account&apos;s allowance is always shown at the top of the download page.
         </>
       ),
     },
@@ -1213,9 +1213,9 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'Which sites and qualities are supported?',
       a: (
         <>
-          YouTube, Facebook and Instagram. On YouTube you can choose any quality up to{' '}
-          <strong className="text-slate-200">1080p Full HD</strong>, or save just the audio as an MP3. Facebook and
-          Instagram offer the qualities the post itself has. Private, members-only and age-restricted videos may not
+          YouTube, Facebook and Instagram, in any quality up to{' '}
+          <strong className="text-slate-200">4K Ultra HD</strong> that the video itself has, or just the audio as an
+          MP3. Private, members-only and age-restricted videos may not
           work.
         </>
       ),
@@ -1236,8 +1236,8 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'Is it free? Will there be a paid plan?',
       a: (
         <>
-          Yes, it&apos;s free for approved students, with 4 downloads a day. A premium plan with unlimited downloads is
-          coming soon. It will be optional, and nothing will ever be charged without your clear agreement.
+          Yes, it&apos;s free for approved students, with unlimited downloads per day depending on your account. If a
+          paid plan ever comes, it will be optional, and nothing will be charged without your clear agreement.
         </>
       ),
     },

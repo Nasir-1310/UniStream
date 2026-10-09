@@ -8,7 +8,7 @@
 // and forth.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { LayoutDashboard, LogOut, RefreshCw, ScrollText, Server, Settings, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, LogOut, MessageSquareHeart, RefreshCw, ScrollText, Server, Settings, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import { Alert, Spinner, useToast } from '@/components/ui'
 import { adminOverview, apiErrorMessage, type AdminSession, type AdminUser } from '@/lib/api'
@@ -26,6 +26,7 @@ import {
 import { AddUserModal } from './AddUserModal'
 import { CredentialsModal } from './CredentialsModal'
 import { isAdminSessionEnded, useAdminQuery } from './hooks'
+import { FeedbackSection } from './FeedbackSection'
 import { LogsSection } from './LogsSection'
 import { OverviewSection } from './OverviewSection'
 import { SettingsSection } from './SettingsSection'
@@ -38,6 +39,7 @@ const NAV: { id: SectionId; label: string; short: string; icon: LucideIcon }[] =
   { id: 'overview', label: 'Overview', short: 'Overview', icon: LayoutDashboard },
   { id: 'users', label: 'Users', short: 'Users', icon: Users },
   { id: 'logs', label: 'Download history', short: 'History', icon: ScrollText },
+  { id: 'feedback', label: 'Feedback', short: 'Feedback', icon: MessageSquareHeart },
   { id: 'settings', label: 'Settings', short: 'Settings', icon: Settings },
   { id: 'system', label: 'System', short: 'System', icon: Server },
 ]
@@ -196,6 +198,7 @@ export function AdminShell({
       />
     ),
     logs: <LogsSection key={`logs-${intent.logs}`} intent={intent.value?.section === 'logs' ? intent.value : undefined} />,
+    feedback: <FeedbackSection />,
     settings: <SettingsSection />,
     system: <SystemSection />,
   }
@@ -288,7 +291,7 @@ export function AdminShell({
           className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.08] bg-[#0d0f1a]/95 backdrop-blur-md
                      pb-[env(safe-area-inset-bottom)]"
         >
-          <ul className="grid grid-cols-5 max-w-xl mx-auto">
+          <ul className="grid grid-cols-6 max-w-2xl mx-auto">
             {NAV.map(item => {
               const active = item.id === section
               return (

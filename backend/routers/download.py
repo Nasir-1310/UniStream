@@ -317,6 +317,11 @@ def _download_with_fallback(
                 format_id, output_template, allow_fallback, height
             )
         ydl_opts.update(attempt_opts)
+        if ydl_opts.get("proxy"):
+            # Through a proxy (WARP) every parallel fragment is buffered in it
+            # while the tenth of a CPU catches up: fewer at once keeps a long
+            # 4K download inside the instance's 512 MB.
+            ydl_opts["concurrent_fragment_downloads"] = 2
         if progress_hooks:
             ydl_opts["progress_hooks"] = progress_hooks
         return ydl_opts
@@ -390,7 +395,8 @@ def _sse_refusal(message: str, code: str | None) -> StreamingResponse:
     """A download refused before it started, as a single SSE error event.
 
     EventSource cannot read an HTTP error status or body, so the reason
-    travels as an event; `code` ("auth" | "limit" | "platform" | "busy")
+    travels as an event; `code` ("auth" | "limit" | "platform" | "busy" |
+    "gone", a download that can no longer be resumed)
     tells the page how to react.
     """
     event = {
@@ -468,9 +474,15 @@ def create_download_ticket(body: TicketRequest, user: dict = Depends(dependencie
 
 
 # How long a download keeps running after its progress stream dropped, so the
-# page can reconnect. Mobile networks and proxies cut long-lived connections;
-# without this a blip near the end of a big download threw the whole file away.
-RESUME_GRACE_SECONDS = 60
+# page can reconnect. Mobile networks and proxies cut long-lived connections,
+# and a phone pauses a page that is in the background (the user switched apps
+# while a long 4K download was merging). Sixty seconds threw such downloads
+# away just before they finished; ten minutes covers a look at another app.
+RESUME_GRACE_SECONDS = 10 * 60
+JOB_GONE_MESSAGE = (
+    "This download stopped while the page was away (or the server restarted). "
+    "Please start it again."
+)
 
 
 async def _drop_if_unwatched(job_id: str):
@@ -587,9 +599,8 @@ async def download_with_progress(
             or not resume
             or not hmac.compare_digest(str(existing.get("resume", "")), resume)
         ):
-            return _sse_refusal(
-                "This download was interrupted for too long. Please start it again.", "auth"
-            )
+            # Not "auth": nothing is wrong with the account, the job is gone.
+            return _sse_refusal(JOB_GONE_MESSAGE, "gone")
         return _follow_job(job)
 
     claims = security.verify_download_ticket(ticket) if ticket else None

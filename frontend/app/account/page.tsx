@@ -322,7 +322,7 @@ function UsageCard({
           </>
         ) : (
           <>
-            <span className="text-4xl sm:text-5xl font-bold text-white tabular-nums leading-none" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            <span className="text-4xl sm:text-5xl font-bold text-white tabular-nums leading-none" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
               {formatNumber(usage.used)}
             </span>
             <span className="pb-1 text-lg text-slate-500 tabular-nums">/ {formatNumber(limit)} used</span>

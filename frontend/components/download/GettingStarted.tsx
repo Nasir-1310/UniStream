@@ -14,7 +14,7 @@ const STEPS = [
 ]
 
 const PLATFORM_NOTES: Record<Platform, string> = {
-  youtube: 'Videos and Shorts up to 1080p HD, or audio only (MP3).',
+  youtube: 'Videos and Shorts up to 4K, or audio only (MP3).',
   facebook: 'Public videos and reels.',
   instagram: 'Public reels and video posts.',
 }

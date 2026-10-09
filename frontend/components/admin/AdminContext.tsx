@@ -9,9 +9,9 @@
 import { createContext, useContext } from 'react'
 import type { AdminSession, AdminUser, CredentialsResult, Overview } from '@/lib/api'
 
-export type SectionId = 'overview' | 'users' | 'logs' | 'settings' | 'system'
+export type SectionId = 'overview' | 'users' | 'logs' | 'feedback' | 'settings' | 'system'
 
-export const SECTION_IDS: readonly SectionId[] = ['overview', 'users', 'logs', 'settings', 'system']
+export const SECTION_IDS: readonly SectionId[] = ['overview', 'users', 'logs', 'feedback', 'settings', 'system']
 
 /** Data groups a mutation can make stale; each query key includes the ones it reads. */
 export type Scope = 'users' | 'logs' | 'settings' | 'system'

@@ -366,7 +366,7 @@ export interface AdminChangeCredentialsRequest {
 
 // ── Download progress (SSE) ───────────────────────────────────────────────────
 
-export type DownloadStatus = 'starting' | 'downloading' | 'merging' | 'complete' | 'error'
+export type DownloadStatus = 'queued' | 'starting' | 'downloading' | 'merging' | 'complete' | 'error'
 
 /** Why a download was refused before it started (SSE cannot carry HTTP status codes). */
 export type DownloadErrorCode = 'auth' | 'limit' | 'platform' | 'busy' | 'gone'
@@ -382,6 +382,8 @@ export interface DownloadProgressEvent {
   downloaded: number
   total: number | null
   job_id?: string
+  /** While `queued`: place in the server-wide line (1 = next to start). */
+  position?: number | null
   /** On the first event: private code for downloadResumeUrl() if the stream drops. */
   resume?: string
   /** On `complete`: one-time token for downloadFileUrl(). */

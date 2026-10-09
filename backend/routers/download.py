@@ -26,9 +26,9 @@ import re
 import secrets
 import shutil
 import tempfile
-import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import quote
@@ -60,9 +60,63 @@ logger = logging.getLogger(__name__)
 # Maps "token:<random>" → {filename, expires, job_id, user_id}
 _jobs: dict[str, dict] = {}
 
-# Server-wide cap on simultaneous downloads (each account may run two).
-MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "5"))
-_semaphore = threading.Semaphore(MAX_CONCURRENT)
+# Server-wide cap on simultaneous downloads (each account may run two). More
+# downloads wait in a first-come, first-served line and see their place in it.
+# Three keeps big 4K merges inside the free instance's 512 MB; raise it on a
+# bigger instance.
+MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "3"))
+# Beyond this many waiting, a new download is turned away as "busy".
+MAX_QUEUED = int(os.getenv("MAX_QUEUED_DOWNLOADS", "50"))
+SERVER_BUSY_MESSAGE = (
+    "Too many people are downloading right now. Please try again in a few minutes."
+)
+
+
+class DownloadQueue:
+    """Download slots shared by everyone, with a fair line for the rest.
+
+    Waiting happens on the event loop (a sleep per second), never in a worker
+    thread, so a long line cannot use up the threads every other request
+    needs. Only the person at the front may take a free slot, so nobody is
+    overtaken. Someone who leaves the page drops out of the line.
+    """
+
+    def __init__(self, slots: int, max_waiting: int):
+        self.slots = max(1, slots)
+        self.max_waiting = max_waiting
+        self.active = 0
+        self._line: deque[str] = deque()
+
+    @property
+    def waiting(self) -> int:
+        return len(self._line)
+
+    def full(self) -> bool:
+        return self.active >= self.slots and len(self._line) >= self.max_waiting
+
+    async def wait_turn(self, job_id: str, on_wait=None) -> bool:
+        """Take a slot when it is this job's turn; False if the job went away first."""
+        self._line.append(job_id)
+        try:
+            while True:
+                if self._line[0] == job_id and self.active < self.slots:
+                    self._line.popleft()
+                    self.active += 1
+                    return True
+                if job_id not in _jobs:
+                    return False
+                if on_wait is not None:
+                    on_wait(self._line.index(job_id) + 1)
+                await asyncio.sleep(1)
+        finally:
+            if job_id in self._line:
+                self._line.remove(job_id)
+
+    def release(self):
+        self.active = max(0, self.active - 1)
+
+
+_queue = DownloadQueue(MAX_CONCURRENT, MAX_QUEUED)
 
 # Tickets per account and hour; each one is a pre-check against the database.
 TICKETS_PER_USER = (30, 3600)
@@ -387,10 +441,6 @@ _UNAVAILABLE_MESSAGE = (
 )
 
 
-class _ServerBusy(RuntimeError):
-    """Every server-wide download slot stayed taken for 30 seconds."""
-
-
 def _sse_refusal(message: str, code: str | None) -> StreamingResponse:
     """A download refused before it started, as a single SSE error event.
 
@@ -535,6 +585,10 @@ def _follow_job(job_id: str, first_event: dict | None = None):
                     "total":          job.get("total"),
                 }
 
+                if status == "queued":
+                    # Place in the server-wide line (1 = next to start).
+                    payload["position"] = job.get("position")
+
                 if status == "complete":
                     payload["token"] = job["token"]
                     payload["usage"] = job.get("usage")
@@ -608,6 +662,10 @@ async def download_with_progress(
         return _sse_refusal(TICKET_EXPIRED_MESSAGE, "auth")
     url, format_id, ext = claims["url"], claims["format_id"], claims["ext"]
     height, source = claims["height"], claims["source"]
+
+    if _queue.full():
+        # Checked before the account's slot is reserved: nothing to undo.
+        return _sse_refusal(SERVER_BUSY_MESSAGE, "busy")
 
     try:
         user, platform, limit = await asyncio.to_thread(dependencies.reserve_download, claims)
@@ -694,14 +752,13 @@ async def download_with_progress(
         reserved = True
 
         try:
-            acquired = await asyncio.to_thread(
-                _semaphore.acquire,
-                blocking=True,
-                timeout=30,
-            )
-            if not acquired:
-                raise _ServerBusy("The server is busy right now. Please try again in a minute.")
-            if job_id not in _jobs:
+            def _on_wait(position: int):
+                job = _jobs.get(job_id)
+                if job is not None:
+                    job.update(status="queued", position=position)
+
+            acquired = await _queue.wait_turn(job_id, _on_wait)
+            if not acquired or job_id not in _jobs:
                 # The browser left while this download waited for a slot.
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return
@@ -788,11 +845,9 @@ async def download_with_progress(
                     "error":  youtube_error_message(url, exc),
                     "done":   True,
                 })
-                if isinstance(exc, _ServerBusy):
-                    job["code"] = "busy"
         finally:
             if acquired:
-                _semaphore.release()
+                _queue.release()
             if reserved:
                 dependencies.release_download(user_id)
 

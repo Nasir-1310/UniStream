@@ -140,7 +140,11 @@ function ProgressDetails({
   const { status } = progress
   const percent = Math.max(0, Math.min(100, Math.round(progress.percent || 0)))
   const phase =
-    status === 'starting'
+    status === 'queued'
+      ? progress.position && progress.position > 1
+        ? `Waiting in line: you’re number ${progress.position}. It starts by itself.`
+        : 'Waiting in line: you’re next. It starts by itself.'
+      : status === 'starting'
       ? 'Preparing your download…'
       : status === 'merging'
       ? audio
@@ -231,7 +235,11 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
     action = (
       <span className="inline-flex items-center gap-1.5 h-10 px-1 text-xs font-semibold text-indigo-300 tabular-nums whitespace-nowrap">
         <Spinner size="xs" label={null} />
-        {state.progress.status === 'downloading' ? `${percent}%` : 'Working…'}
+        {state.progress.status === 'downloading'
+          ? `${percent}%`
+          : state.progress.status === 'queued'
+          ? `In line #${state.progress.position ?? 1}`
+          : 'Working…'}
       </span>
     )
   } else if (state.status === 'complete') {

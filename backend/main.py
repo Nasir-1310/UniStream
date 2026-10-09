@@ -14,7 +14,6 @@ import contextlib
 import logging
 import os
 import re
-import threading
 import time
 from pathlib import Path
 from typing import Annotated
@@ -95,7 +94,47 @@ logging.getLogger("uvicorn.access").addFilter(RedactTokens())
 # Analysing a video costs the server a watch-page fetch and a JS challenge
 # run; it does not count toward the daily limit, so it is capped separately.
 VIDEO_INFO_PER_USER = (40, 3600)
-_YOUTUBE_EXTRACTION = threading.Lock()
+
+ANALYSIS_BUSY_MESSAGE = (
+    "Lots of people are getting videos right now. Please try again in {wait}."
+)
+
+
+class AnalysisGate:
+    """How many lookups of one kind run at once; the rest wait their turn.
+
+    Waiting happens on the event loop, never in a worker thread: a thread
+    blocked on a lock holds one of the few shared worker threads, and a dozen
+    people analysing at once would then stall every other request (sign-in,
+    database calls) too. Past `max_waiting` people in line, a new lookup is
+    turned away at once with a 429 instead of waiting for minutes.
+    """
+
+    def __init__(self, slots: int, max_waiting: int):
+        self._slots = asyncio.Semaphore(slots)
+        self.max_waiting = max_waiting
+        self.waiting = 0
+
+    @contextlib.asynccontextmanager
+    async def turn(self):
+        if self._slots.locked() and self.waiting >= self.max_waiting:
+            raise too_many_requests(ANALYSIS_BUSY_MESSAGE, 30)
+        self.waiting += 1
+        try:
+            await self._slots.acquire()
+        finally:
+            self.waiting -= 1
+        try:
+            yield
+        finally:
+            self._slots.release()
+
+
+# A YouTube lookup runs deno, and the free instance has 512 MB and a tenth of
+# a CPU: one at a time, at most 6 in line (about 1-2 minutes, inside the
+# page's 2-minute timeout). Facebook/Instagram lookups are light: 3 at once.
+_YOUTUBE_ANALYSIS = AnalysisGate(slots=int(os.getenv("YOUTUBE_ANALYSIS_SLOTS", "1")), max_waiting=6)
+_OTHER_ANALYSIS = AnalysisGate(slots=3, max_waiting=30)
 
 INTERNAL_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a moment."
 # No request this API accepts is anywhere near this size.
@@ -508,10 +547,7 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
             "logger": log,
         }
         ydl_opts.update(attempt_opts)
-        # A YouTube extraction runs deno; one at a time server-wide keeps two
-        # visitors analysing at once inside the free instance's 512 MB.
-        with (_YOUTUBE_EXTRACTION if youtube else contextlib.nullcontext()), \
-                private_cookiefile(ydl_opts) as private_opts, \
+        with private_cookiefile(ydl_opts) as private_opts, \
                 yt_dlp.YoutubeDL(private_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
@@ -554,13 +590,19 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
         key=lambda attempt: preference.index(attempt[0]) if attempt[0] in preference else len(preference),
     )
     remembered = remembered_attempt(labels) if len(attempts) > 1 else None
-    if remembered:
-        await _run([attempt for attempt in ordered if attempt[0] == remembered])
-        first = outcomes[remembered]
-        if isinstance(first, Exception) or not is_healthy_listing(format_ladder_score(first)):
-            await _run([attempt for attempt in ordered if attempt[0] not in outcomes])
-    else:
-        await _run(ordered)
+    async with (_YOUTUBE_ANALYSIS if youtube else _OTHER_ANALYSIS).turn():
+        # Someone may have analysed this video while we waited our turn.
+        cached = extraction_cache.payload(cache_key)
+        if cached is not None:
+            response.headers["Server-Timing"] = "cache;desc=hit-after-wait"
+            return cached
+        if remembered:
+            await _run([attempt for attempt in ordered if attempt[0] == remembered])
+            first = outcomes[remembered]
+            if isinstance(first, Exception) or not is_healthy_listing(format_ladder_score(first)):
+                await _run([attempt for attempt in ordered if attempt[0] not in outcomes])
+        else:
+            await _run(ordered)
 
     info, info_score, info_label = None, None, None
     attempt_errors: dict[str, str] = {}

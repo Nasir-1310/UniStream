@@ -485,6 +485,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           lastStatus = event.status
           if (event.status === 'merging') {
             setAnnouncement(format.type === 'audio' ? 'Converting to MP3.' : 'Almost done: preparing your file.')
+          } else if (event.status === 'queued') {
+            setAnnouncement('Many people are downloading. Your download is waiting in line and starts by itself.')
           }
         }
         setRow(formatId, { status: 'active', progress: event })

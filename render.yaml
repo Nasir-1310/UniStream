@@ -91,5 +91,7 @@ services:
       # wins when both are set. YouTube may refuse WARP's IPs too.
       - key: YOUTUBE_WARP
         sync: false
+      # Downloads running at once; the rest wait in a fair line (see
+      # routers/download.py). 3 fits the free plan's 512 MB; raise it with RAM.
       - key: MAX_CONCURRENT_DOWNLOADS
-        value: "5"
+        value: "3"

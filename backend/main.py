@@ -28,6 +28,7 @@ from starlette.datastructures import MutableHeaders
 import extraction_cache
 import link_resolver
 import security
+import warp_proxy
 from dependencies import require_user, too_many_requests
 from routers.admin import router as admin_router
 from routers.admin_auth import router as admin_auth_router
@@ -53,6 +54,10 @@ from yt_dlp_config import (
 
 backend_dir = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=backend_dir / ".env")
+
+# Free Cloudflare WARP exit for YouTube when YOUTUBE_WARP=true (Render's own IP
+# is refused by YouTube). Starts in the background; a no-op otherwise.
+warp_proxy.start_in_background()
 
 app = FastAPI(title="UniStream Saver API", version="2.0.0")
 logger = logging.getLogger(__name__)

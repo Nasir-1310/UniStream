@@ -86,5 +86,10 @@ services:
       # session): YouTube stream links are bound to the requesting IP.
       - key: YOUTUBE_PROXY
         sync: false
+      # Free alternative when YouTube refuses Render's IP: "true" sends YouTube
+      # traffic through Cloudflare WARP (backend/warp_proxy.py). YOUTUBE_PROXY
+      # wins when both are set. YouTube may refuse WARP's IPs too.
+      - key: YOUTUBE_WARP
+        sync: false
       - key: MAX_CONCURRENT_DOWNLOADS
         value: "5"

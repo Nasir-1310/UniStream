@@ -55,7 +55,7 @@ from yt_dlp_config import (
     social_cookie_status,
     youtube_auth_mode,
     youtube_client_report,
-    youtube_proxy,
+    youtube_proxy_status,
 )
 
 
@@ -699,7 +699,7 @@ def storage_health():
     info["yt_dlp_version"] = yt_dlp.version.__version__
     info["ffmpeg_location"] = FFMPEG_LOCATION
     info["youtube_auth"] = youtube_auth_mode()
-    info["youtube_proxy"] = "configured" if youtube_proxy() else "not configured"
+    info["youtube_proxy"] = youtube_proxy_status()
     info["js_runtime"] = js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path")
     # Whether INSTAGRAM_/FACEBOOK_COOKIES_BASE64 are set (never their values).
     info["social_cookies"] = social_cookie_status()
@@ -734,7 +734,7 @@ def youtube_check(
         "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
         "yt_dlp_version": yt_dlp.version.__version__,
         "youtube_auth": youtube_auth_mode(),
-        "youtube_proxy": "configured" if youtube_proxy() else "not configured",
+        "youtube_proxy": youtube_proxy_status(),
         "js_runtime": js_runtime_options().get("js_runtimes", {}).get("deno", {}).get("path"),
         "social_cookies": social_cookie_status(),
     }

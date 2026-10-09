@@ -238,8 +238,27 @@ def youtube_proxy() -> str | None:
     that requested them. For the same reason the proxy needs a sticky session:
     yt-dlp opens a new connection per request, and a proxy that rotates its
     exit IP per connection makes every stream URL fail with HTTP 403.
+
+    Without one, the free Cloudflare WARP tunnel is used once it is up
+    (YOUTUBE_WARP=true, see warp_proxy).
     """
-    return os.getenv("YOUTUBE_PROXY", "").strip() or None
+    configured = os.getenv("YOUTUBE_PROXY", "").strip()
+    if configured:
+        return configured
+    import warp_proxy  # local: warp_proxy imports nothing from here
+
+    return warp_proxy.proxy_url()
+
+
+def youtube_proxy_status() -> str:
+    """What carries YouTube traffic, for the admin page (never the proxy URL)."""
+    if os.getenv("YOUTUBE_PROXY", "").strip():
+        return "configured"
+    import warp_proxy
+
+    if warp_proxy.enabled():
+        return f"Cloudflare WARP ({warp_proxy.status()})"
+    return "not configured"
 
 
 # yt-dlp stores the signature-function data it derives from YouTube's player

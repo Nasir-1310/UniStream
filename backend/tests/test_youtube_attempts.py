@@ -142,7 +142,9 @@ class YoutubeAttemptTests(unittest.TestCase):
         response = self.post_video_info(extract)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(sorted(seen, key=str), sorted([None, "cookies.txt", "cookies.txt"], key=str))
+        # Attempts run one at a time; the signed-in one lists every
+        # resolution, so the others are never started.
+        self.assertEqual(seen, ["cookies.txt"])
         self.assertEqual(
             [item["resolution"] for item in response.json()["formats"]],
             ["1080p", "360p", "129kbps"],
@@ -227,7 +229,7 @@ class YoutubeAttemptTests(unittest.TestCase):
         )
         self.assertIn("refusing this server's IP address", message)
 
-    def test_video_info_prefers_anonymous_when_both_list_every_resolution(self):
+    def test_video_info_runs_one_attempt_when_it_lists_every_resolution(self):
         seen = []
 
         def extract(options, _url, _download):
@@ -237,8 +239,27 @@ class YoutubeAttemptTests(unittest.TestCase):
         response = self.post_video_info(extract)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["source"], "anonymous")
+        # One deno run, not three at once (the free instance has 512 MB).
+        self.assertEqual(seen, ["cookies.txt"])
+        self.assertEqual(response.json()["source"], "cookies")
         self.assertIsNone(response.json()["notice"])
+
+    def test_video_info_tries_anonymous_after_a_refused_session(self):
+        seen = []
+
+        def extract(options, _url, _download):
+            youtube_args = options["extractor_args"]["youtube"]
+            safari = youtube_args.get("webpage_client") == ["web_safari"]
+            seen.append("cookies_safari" if safari else "cookies" if options.get("cookiefile") else "anonymous")
+            if options.get("cookiefile"):
+                raise yt_dlp.utils.DownloadError("HTTP Error 403: Forbidden")
+            return {"title": "Lecture", "extractor_key": "Youtube", "formats": FULL_LADDER}
+
+        response = self.post_video_info(extract)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(seen, ["cookies", "anonymous"])
+        self.assertEqual(response.json()["source"], "anonymous")
 
     def test_download_retries_with_cookies_instead_of_downgrading(self):
         calls = []
@@ -504,8 +525,9 @@ class YoutubeAttemptTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(seen[0], "cookies_safari")
-        self.assertEqual(sorted(seen[1:]), ["other", "other"])
-        self.assertEqual(response.json()["source"], "anonymous")
+        # The signed-in player API is next and lists every resolution.
+        self.assertEqual(seen[1:], ["other"])
+        self.assertEqual(response.json()["source"], "cookies")
 
     def test_download_reuses_the_analysed_info_without_extracting_again(self):
         tmp_dir = tempfile.mkdtemp()

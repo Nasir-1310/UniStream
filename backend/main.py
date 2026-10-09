@@ -10,9 +10,11 @@
 #               backend/admin_account.py       (admin account, require_admin)
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Annotated
@@ -92,6 +94,7 @@ logging.getLogger("uvicorn.access").addFilter(RedactTokens())
 # Analysing a video costs the server a watch-page fetch and a JS challenge
 # run; it does not count toward the daily limit, so it is capped separately.
 VIDEO_INFO_PER_USER = (40, 3600)
+_YOUTUBE_EXTRACTION = threading.Lock()
 
 INTERNAL_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a moment."
 # No request this API accepts is anywhere near this size.
@@ -503,7 +506,10 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
             "logger": log,
         }
         ydl_opts.update(attempt_opts)
-        with private_cookiefile(ydl_opts) as private_opts, \
+        # A YouTube extraction runs deno; one at a time server-wide keeps two
+        # visitors analysing at once inside the free instance's 512 MB.
+        with (_YOUTUBE_EXTRACTION if youtube else contextlib.nullcontext()), \
+                private_cookiefile(ydl_opts) as private_opts, \
                 yt_dlp.YoutubeDL(private_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
@@ -518,31 +524,41 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
     timings: dict[str, float] = {}
 
     async def _run(selected: list):
-        # Attempts in one stage run side by side in worker threads, so a slow
-        # one never queues behind another and the event loop stays free.
-        async def _timed(label, opts):
+        # One attempt at a time, in a worker thread so the event loop stays
+        # free, stopping at the first full DASH ladder. Each attempt runs deno;
+        # three at once outgrew the free instance's 512 MB once YouTube
+        # answered through WARP, and on a tenth of a CPU they finish no sooner
+        # side by side.
+        for label, opts in selected:
             attempt_started = time.monotonic()
             try:
-                return await asyncio.to_thread(_extract, opts, logs[label])
+                outcomes[label] = await asyncio.to_thread(_extract, opts, logs[label])
+            except Exception as exc:
+                outcomes[label] = exc
             finally:
                 timings[label] = time.monotonic() - attempt_started
-
-        results = await asyncio.gather(
-            *(_timed(label, opts) for label, opts in selected), return_exceptions=True,
-        )
-        outcomes.update(zip((label for label, _opts in selected), results))
+            result = outcomes[label]
+            if not isinstance(result, Exception) and format_ladder_score(result)[0]:
+                return
 
     # Each attempt costs a watch-page download and a deno run. Try the attempt
     # that last gave a healthy listing on its own first; only when it fails,
-    # or gives the degraded 360p-only answer, do the others run.
+    # or gives the degraded 360p-only answer, do the others run. Otherwise the
+    # signed-in player API (full ladder) goes first, then the anonymous one,
+    # then the Safari page (HLS, at most 1080p).
+    preference = ("cookies", "anonymous", "cookies_safari")
+    ordered = sorted(
+        attempts,
+        key=lambda attempt: preference.index(attempt[0]) if attempt[0] in preference else len(preference),
+    )
     remembered = remembered_attempt(labels) if len(attempts) > 1 else None
     if remembered:
-        await _run([attempt for attempt in attempts if attempt[0] == remembered])
+        await _run([attempt for attempt in ordered if attempt[0] == remembered])
         first = outcomes[remembered]
         if isinstance(first, Exception) or not is_healthy_listing(format_ladder_score(first)):
-            await _run([attempt for attempt in attempts if attempt[0] not in outcomes])
+            await _run([attempt for attempt in ordered if attempt[0] not in outcomes])
     else:
-        await _run(attempts)
+        await _run(ordered)
 
     info, info_score, info_label = None, None, None
     attempt_errors: dict[str, str] = {}
@@ -563,9 +579,9 @@ async def video_info(body: VideoInfoRequest, response: Response, user: dict = De
         if info is None or score > info_score:
             info, info_score, info_label = candidate, score, label
 
-    if len(attempts) > 1 and len(outcomes) == len(attempts):
-        # A full run that found a healthy listing decides which attempt later
-        # requests try first.
+    if len(attempts) > 1 and (len(outcomes) == len(attempts) or (info_score and info_score[0])):
+        # A full run, or one that stopped at a full ladder, decides which
+        # attempt later requests try first.
         remember_attempt(info_label, info_score)
 
     total = time.monotonic() - started

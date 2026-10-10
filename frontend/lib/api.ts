@@ -721,9 +721,14 @@ export function isDailyLimitError(err: unknown): boolean {
   return /downloads? for today|downloads are turned off/i.test(detail)
 }
 
-/** URL that saves the finished file (token from the `complete` event; single use, 5 minutes). */
+/**
+ * URL that saves the finished file (token from the `complete` event; single
+ * use, 5 minutes). Straight from the API, not through the /api rewrite: a
+ * video can be gigabytes, and every byte through the rewrite would also count
+ * against the frontend host's bandwidth.
+ */
 export function downloadFileUrl(fileToken: string): string {
-  return `/api/download/file?token=${encodeURIComponent(fileToken)}`
+  return `${BACKEND_ORIGIN}/download/file?token=${encodeURIComponent(fileToken)}`
 }
 
 /** Parse one SSE `data:` payload, filling defaults; null if it isn't valid JSON. */

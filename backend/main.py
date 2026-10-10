@@ -30,6 +30,7 @@ import extraction_cache
 import link_resolver
 import security
 import warp_proxy
+from version import deployed_commit
 from dependencies import require_user, too_many_requests
 from routers.admin import router as admin_router
 from routers.admin_auth import router as admin_auth_router
@@ -503,11 +504,11 @@ def _parse_formats(formats: list, info: dict) -> list:
 
 @app.get("/")
 def health():
-    # Render sets RENDER_GIT_COMMIT, which shows whether a push is live yet.
+    # Shows whether a push is live yet (Render or the Hugging Face image).
     return {
         "status": "ok",
         "service": "UniStream Saver API v2",
-        "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
+        "commit": deployed_commit(),
     }
 
 

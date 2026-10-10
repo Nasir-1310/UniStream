@@ -13,3 +13,4 @@ __pycache__/
 cookies*.txt
 youtube-cookies*.txt
 *_cookies.txt
+.commit

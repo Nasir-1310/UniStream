@@ -20,7 +20,6 @@ show the admin the script to run; other routes answer 503 with that advice.
 import csv
 import io
 import logging
-import os
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -34,6 +33,7 @@ import email_service
 import security
 import storage
 from admin_account import require_admin
+from version import deployed_commit
 from dependencies import (
     DEFAULT_DAILY_LIMIT,
     ID_MAX,
@@ -781,7 +781,7 @@ def youtube_check(
         )
 
     report = {
-        "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7] or "local",
+        "commit": deployed_commit(),
         "yt_dlp_version": yt_dlp.version.__version__,
         "youtube_auth": youtube_auth_mode(),
         "youtube_proxy": youtube_proxy_status(),

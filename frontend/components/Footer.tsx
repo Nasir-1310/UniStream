@@ -1,6 +1,8 @@
 // components/Footer.tsx
 import Link from 'next/link'
-import { Download, Facebook, Instagram, Youtube } from 'lucide-react'
+import { Download, Facebook, Instagram, Mail, Youtube } from 'lucide-react'
+import { WhatsAppIcon } from '@/components/ContactCard'
+import { CONTACT, CONTACT_MAILTO } from '@/lib/contact'
 
 // Evaluated once per page load rather than during render.
 const YEAR = new Date().getFullYear()
@@ -49,6 +51,18 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
             </p>
           </div>
 
+          <div className="flex flex-col gap-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 mb-1">যোগাযোগ</p>
+            <a href={CONTACT.whatsappLink} target="_blank" rel="noopener noreferrer" className={linkClass}>
+              <WhatsAppIcon className="w-4 h-4 mr-2 text-[#1fa855]" />
+              {CONTACT.whatsapp}
+            </a>
+            <a href={CONTACT_MAILTO} className={`${linkClass} break-all`}>
+              <Mail className="w-4 h-4 mr-2 flex-shrink-0" aria-hidden="true" />
+              {CONTACT.email}
+            </a>
+          </div>
+
           <nav aria-label="ফুটার" className="flex flex-col gap-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 mb-1">সাহায্য ও নীতিমালা</p>
             <ul className="flex flex-wrap gap-x-4 text-[13px] md:flex-col md:gap-x-0">
@@ -75,6 +89,9 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
           <p>
             © <span suppressHydrationWarning>{YEAR}</span> UniStream Saver। শুধু ব্যক্তিগত ও পড়াশোনার কাজে — কপিরাইট ও
             প্রতিটি প্ল্যাটফর্মের নিয়ম মেনে চলুন।
+            <span className="block mt-1">
+              তৈরি করেছেন <span className="text-slate-400 font-medium">{CONTACT.name}</span> · {CONTACT.roleShort}
+            </span>
           </p>
           {showAdminLink && (
             <Link href="/admin" className="inline-flex items-center min-h-10 text-slate-600 hover:text-slate-400 transition-colors">

@@ -1,6 +1,7 @@
 // components/ui/Field.tsx
 import type { ReactNode } from 'react'
 import { AlertCircle } from 'lucide-react'
+import { isBanglaPage } from '@/lib/serverText'
 
 export interface FieldProps {
   /** id of the input inside; the label points at it. */
@@ -10,7 +11,7 @@ export interface FieldProps {
   hint?: ReactNode
   /** Error text; rendered with id `${htmlFor}-error` in a live region. */
   error?: string | null
-  /** Adds "(optional)" after the label. */
+  /** Adds "(ঐচ্ছিক)" after the label ("(optional)" in the English admin panel). */
   optional?: boolean
   /** Extra element on the label row, e.g. a "Forgot password?" link. */
   labelAside?: ReactNode
@@ -28,7 +29,7 @@ export function Field({ htmlFor, label, hint, error, optional, labelAside, class
       <div className="flex items-center justify-between gap-3 mb-1.5">
         <label htmlFor={htmlFor} className="text-[13px] font-medium text-slate-300">
           {label}
-          {optional && <span className="ml-1 font-normal text-slate-500">(optional)</span>}
+          {optional && <span className="ml-1 font-normal text-slate-500">({isBanglaPage() ? 'ঐচ্ছিক' : 'optional'})</span>}
         </label>
         {labelAside}
       </div>

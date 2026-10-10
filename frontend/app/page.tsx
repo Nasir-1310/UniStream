@@ -43,9 +43,11 @@ import {
 } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { ContactSection } from '@/components/ContactCard'
 import { Alert, Field, PasswordInput, Spinner, describedBy, useToast } from '@/components/ui'
 import { apiErrorMessage, apiErrorStatus, login, register, warmBackend, type PublicUser } from '@/lib/api'
 import { useSession } from '@/lib/auth'
+import { CONTACT, CONTACT_MAILTO } from '@/lib/contact'
 import { formatPhone } from '@/lib/format'
 import { classifyLogin, errorOf, validateEmail, validateName, validatePhone, NAME_MAX } from '@/lib/validation'
 import { bnError, translateServerText } from '@/lib/serverText'
@@ -209,6 +211,7 @@ export default function HomePage() {
         <FeaturesSection />
         <FaqSection onOpenAuth={openAuth} />
         <CtaSection onOpenAuth={openAuth} />
+        <ContactSection />
       </main>
 
       <Footer showAdminLink />
@@ -1251,6 +1254,23 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
             ব্যবহারের শর্তাবলি
           </Link>{' '}
           পড়ুন।
+        </>
+      ),
+    },
+    {
+      id: 'faq-help',
+      q: 'কিছু বুঝতে না পারলে কার সাথে যোগাযোগ করব?',
+      a: (
+        <>
+          WhatsApp-এ <strong className="text-slate-200">{CONTACT.whatsapp}</strong> নম্বরে মেসেজ দিন, অথবা{' '}
+          <a href={CONTACT_MAILTO} className={linkClass}>
+            {CONTACT.email}
+          </a>{' '}
+          ঠিকানায় ইমেইল করুন। পেজের একদম নিচে{' '}
+          <a href="#contact" className={linkClass}>
+            যোগাযোগ
+          </a>{' '}
+          অংশেও তথ্য দেওয়া আছে।
         </>
       ),
     },

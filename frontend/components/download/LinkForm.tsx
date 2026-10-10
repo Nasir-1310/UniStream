@@ -11,6 +11,7 @@ import { Check, ClipboardPaste, Link2, Search, X } from 'lucide-react'
 import { PlatformIcon, Spinner, platformStyle } from '@/components/ui'
 import { PLATFORMS, PLATFORM_LABELS, UNSUPPORTED_URL_MESSAGE, validateVideoUrl } from '@/lib/validation'
 import { translateServerText } from '@/lib/serverText'
+import { AnalysisProgressInline, type AnalysisProgress } from './AnalyzingState'
 import { extractLink } from './types'
 
 export interface LinkFormProps {
@@ -25,6 +26,12 @@ export interface LinkFormProps {
   /** Validation or API error to show under the box. */
   error: string | null
   analyzing: boolean
+  /** Estimated lookup progress, shown right under the link while `analyzing`. */
+  progress?: AnalysisProgress
+  /** The lookup is taking long (the server is probably waking up). */
+  slow?: boolean
+  /** Stop the running lookup. */
+  onCancel?: () => void
   /** Why looking up a link is not possible right now (download running, offline); null when it is. */
   lockedReason: string | null
 }
@@ -32,7 +39,7 @@ export interface LinkFormProps {
 const INPUT_ID = 'video-url'
 
 export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function LinkForm(
-  { value, onChange, onSubmit, onPaste, onClear, error, analyzing, lockedReason },
+  { value, onChange, onSubmit, onPaste, onClear, error, analyzing, progress, slow = false, onCancel, lockedReason },
   ref,
 ) {
   const trimmed = value.trim()
@@ -115,11 +122,14 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
         </div>
       </div>
 
+      {/* Right under the link, so phones see the progress without scrolling. */}
+      {analyzing && progress && onCancel && <AnalysisProgressInline progress={progress} slow={slow} onCancel={onCancel} />}
+
       {/* Errors are announced; hints are not. */}
       <div id={`${INPUT_ID}-error`} aria-live="polite" className="empty:hidden">
         {error && <p className="mt-2.5 text-[13px] leading-relaxed text-red-300">{error}</p>}
       </div>
-      {!error && (
+      {!error && !analyzing && (
         <p
           id={`${INPUT_ID}-hint`}
           className={`mt-2.5 text-xs leading-relaxed ${unsupported ? 'text-amber-300' : 'text-slate-500'}`}

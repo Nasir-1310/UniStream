@@ -677,3 +677,50 @@
   background: rgb(255 253 248 / 0.7);
   border-color: rgb(122 92 46 / 0.22);
 }
+
+/* On cream the dark theme's faint white overlay is invisible: hovering and
+   pressing an outline button tints it with the green accent instead. */
+[data-theme='light'] .btn-outline:hover:not(:disabled),
+[data-theme='light'] .btn-secondary:hover:not(:disabled) {
+  background: rgb(var(--accent-rgb) / 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  color: rgb(var(--accent-rgb));
+}
+
+[data-theme='light'] .btn-outline:active:not(:disabled),
+[data-theme='light'] .btn-secondary:active:not(:disabled) {
+  background: rgb(var(--accent-rgb) / 0.16);
+  transform: scale(0.98);
+}
+
+/* "Report a problem / Feedback": green outline, filled while its dialog is open. */
+.btn-feedback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 2.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(var(--accent-rgb) / 0.45);
+  background: rgb(var(--accent-rgb) / 0.06);
+  color: rgb(var(--accent-rgb));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.btn-feedback:hover {
+  background: rgb(var(--accent-rgb) / 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.7);
+}
+
+.btn-feedback:active,
+.btn-feedback.is-open {
+  background: rgb(var(--accent-rgb));
+  border-color: rgb(var(--accent-rgb));
+  color: #ffffff;
+}
+
+.btn-feedback:active {
+  transform: scale(0.98);
+}

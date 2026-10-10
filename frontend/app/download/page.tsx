@@ -21,7 +21,7 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { FeedbackDialog, type FeedbackPrefill } from '@/components/FeedbackDialog'
 import { Alert, Modal, PageLoader, useToast } from '@/components/ui'
-import { AnalyzingState } from '@/components/download/AnalyzingState'
+import { AnalyzingState, useAnalysisProgress } from '@/components/download/AnalyzingState'
 import { FormatMatrix } from '@/components/download/FormatMatrix'
 import { GettingStarted } from '@/components/download/GettingStarted'
 import { LinkForm } from '@/components/download/LinkForm'
@@ -185,6 +185,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   const [hideTempNotice, setHideTempNotice] = useState(false)
   const [hideInAppNotice, setHideInAppNotice] = useState(false)
   const [announcement, setAnnouncement] = useState('')
+  const progress = useAnalysisProgress(analyzing, analyzingPlatform)
   /** Open "Report a problem / feedback" dialog, with what it should start from. */
   const [feedback, setFeedback] = useState<FeedbackPrefill | null>(null)
 
@@ -720,7 +721,9 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
         <button
           type="button"
           onClick={() => setFeedback({ kind: 'feedback' })}
-          className="btn-outline btn-sm self-start sm:self-auto whitespace-nowrap"
+          aria-haspopup="dialog"
+          aria-expanded={feedback !== null}
+          className={`btn-feedback btn-sm self-start sm:self-auto whitespace-nowrap ${feedback !== null ? 'is-open' : ''}`}
         >
           <MessageSquareHeart className="w-4 h-4" aria-hidden="true" />
           সমস্যা জানান / মতামত দিন
@@ -774,6 +777,9 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           onClear={clearLink}
           error={urlError}
           analyzing={analyzing}
+          progress={progress}
+          slow={slow}
+          onCancel={cancelAnalysis}
           lockedReason={lockedReason}
         />
         <QuotaCard usage={usage} now={now} />
@@ -781,7 +787,11 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
 
       <div ref={resultsRef} className="mt-5 sm:mt-6 scroll-mt-20">
         {analyzing ? (
-          <AnalyzingState slow={slow} onCancel={cancelAnalysis} platform={analyzingPlatform} />
+          // Phones show the progress inside the link card (LinkForm); the large
+          // card is for wide screens, where it fills the empty results area.
+          <div className="hidden lg:block">
+            <AnalyzingState progress={progress} slow={slow} onCancel={cancelAnalysis} platform={analyzingPlatform} />
+          </div>
         ) : result ? (
           <>
             {result.info.notice && (

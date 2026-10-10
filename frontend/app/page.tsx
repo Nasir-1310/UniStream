@@ -48,6 +48,7 @@ import { apiErrorMessage, apiErrorStatus, login, register, warmBackend, type Pub
 import { useSession } from '@/lib/auth'
 import { formatPhone } from '@/lib/format'
 import { classifyLogin, errorOf, validateEmail, validateName, validatePhone, NAME_MAX } from '@/lib/validation'
+import { bnError, translateServerText } from '@/lib/serverText'
 
 type AuthTab = 'signin' | 'request'
 
@@ -123,7 +124,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
+    <div className="min-h-svh flex flex-col page-bg">
       <AmbientGlow />
       <Navbar />
 
@@ -137,25 +138,25 @@ export default function HomePage() {
             <div className="lg:col-start-1 lg:row-start-1 lg:self-end">
               <p className="eyebrow-badge mb-4 sm:mb-6">
                 <GraduationCap className="w-3.5 h-3.5" aria-hidden="true" />
-                Free for approved students
+                অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি
               </p>
               <h1
                 id="hero-title"
                 className="text-[1.875rem] leading-[1.1] sm:text-5xl lg:text-[3.4rem] font-extrabold text-white max-w-2xl"
                 style={{ letterSpacing: '-0.025em' }}
               >
-                Save YouTube, Facebook and Instagram videos{' '}
+                YouTube, Facebook ও Instagram ভিডিও সেভ করুন{' '}
                 <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-violet-400 bg-clip-text text-transparent">
-                  in up to 4K.
+                  4K পর্যন্ত কোয়ালিটিতে।
                 </span>
               </h1>
               <p className="mt-3 sm:mt-5 text-[15px] sm:text-base leading-relaxed text-slate-400 max-w-xl">
-                Simple and fast: paste a link, choose a quality and download. Free for approved students, with unlimited
-                downloads per day depending on your account.
+                সহজ আর দ্রুত: লিংক পেস্ট করুন, কোয়ালিটি বেছে নিন, ডাউনলোড করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি, আর
+                অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।
               </p>
               <p className="mt-3 inline-flex items-start gap-2 text-[13px] sm:text-sm leading-relaxed text-violet-200/90">
                 <Sparkles className="w-4 h-4 mt-px flex-shrink-0 text-violet-300" aria-hidden="true" />
-                <span>Now up to 4K on YouTube, Facebook and Instagram.</span>
+                <span>এখন YouTube, Facebook ও Instagram — তিনটিতেই 4K পর্যন্ত।</span>
               </p>
             </div>
 
@@ -176,10 +177,10 @@ export default function HomePage() {
             <div className="lg:col-start-1 lg:row-start-2 lg:self-start">
               <ul className="grid gap-2.5 sm:grid-cols-2 max-w-xl text-[14px] text-slate-300">
                 {[
-                  'Unlimited downloads per day (depends on your account)',
-                  'Up to 4K Ultra HD, or audio only (MP3)',
-                  'Works in your phone’s browser',
-                  'No ads, no app to install',
+                  'প্রতিদিন আনলিমিটেড ডাউনলোড (অ্যাকাউন্ট অনুযায়ী)',
+                  '4K Ultra HD পর্যন্ত, অথবা শুধু অডিও (MP3)',
+                  'ফোনের ব্রাউজারেই চলে',
+                  'কোনো বিজ্ঞাপন নেই, অ্যাপ ইনস্টলের ঝামেলা নেই',
                 ].map(item => (
                   <li key={item} className="flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 mt-[3px] flex-shrink-0 text-emerald-400" aria-hidden="true" />
@@ -188,7 +189,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <div className="mt-6 flex flex-wrap items-center gap-2">
-                <span className="text-[12px] text-slate-500 mr-1">Works with</span>
+                <span className="text-[12px] text-slate-500 mr-1">যেখান থেকে ডাউনলোড করা যায়</span>
                 <span className="platform-pill">
                   <Youtube className="w-3.5 h-3.5 text-red-400" aria-hidden="true" /> YouTube
                 </span>
@@ -220,11 +221,11 @@ function AmbientGlow() {
     <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
       <div
         className="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[480px] rounded-full"
-        style={{ background: 'radial-gradient(ellipse, rgba(79,70,229,0.13) 0%, transparent 65%)' }}
+        style={{ background: 'radial-gradient(ellipse, rgb(var(--accent-rgb) / 0.10) 0%, transparent 65%)' }}
       />
       <div
         className="absolute top-[12%] -right-24 w-[420px] h-[420px] rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.07) 0%, transparent 65%)' }}
+        style={{ background: 'radial-gradient(circle, rgb(var(--tw-sky-400) / 0.07) 0%, transparent 65%)' }}
       />
     </div>
   )
@@ -245,8 +246,8 @@ interface AuthCardProps {
 }
 
 const TABS: { id: AuthTab; label: string; Icon: LucideIcon }[] = [
-  { id: 'signin', label: 'Sign in', Icon: LogIn },
-  { id: 'request', label: 'Request access', Icon: UserPlus },
+  { id: 'signin', label: 'সাইন ইন', Icon: LogIn },
+  { id: 'request', label: 'অ্যাক্সেসের অনুরোধ', Icon: UserPlus },
 ]
 
 function AuthCard({ tab, onTabChange, loginValue, onLoginValueChange, user, redirecting, onOpenAuth }: AuthCardProps) {
@@ -275,7 +276,7 @@ function AuthCard({ tab, onTabChange, loginValue, onLoginValueChange, user, redi
     <div className="portal-card p-4 sm:p-7 shadow-2xl shadow-black/30">
       <div
         role="tablist"
-        aria-label="Sign in or request access"
+        aria-label="সাইন ইন অথবা অ্যাক্সেসের অনুরোধ"
         className="relative grid grid-cols-2 gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]"
       >
         {TABS.map(({ id, label, Icon }) => {
@@ -293,10 +294,10 @@ function AuthCard({ tab, onTabChange, loginValue, onLoginValueChange, user, redi
               onKeyDown={onTabKeyDown}
               className={`inline-flex items-center justify-center gap-2 min-h-11 px-2 rounded-lg text-[13px] sm:text-sm font-semibold transition-colors ${
                 selected
-                  ? 'bg-indigo-500/90 text-white shadow-sm shadow-indigo-900/40'
+                  ? 'bg-indigo-600 text-[#fff] shadow-sm shadow-indigo-900/30'
                   : 'text-slate-400 hover:text-white hover:bg-white/[0.05]'
               }`}
-              style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+              style={{ fontFamily: 'var(--font-display)' }}
             >
               <Icon className="w-4 h-4 flex-shrink-0 max-[359px]:hidden" aria-hidden="true" />
               <span className="whitespace-nowrap">{label}</span>
@@ -338,8 +339,8 @@ function SessionExpiredNotice() {
   const [dismissed, setDismissed] = useState(false)
   if (dismissed || params.get('session') !== 'expired') return null
   return (
-    <Alert tone="warning" title="Your session has ended" onDismiss={() => setDismissed(true)} className="mb-5">
-      For your security you&apos;ve been signed out. Please sign in again to continue.
+    <Alert tone="warning" title="আপনার সেশন শেষ হয়েছে" onDismiss={() => setDismissed(true)} className="mb-5">
+      নিরাপত্তার জন্য আপনাকে সাইন আউট করা হয়েছে। চালিয়ে যেতে আবার সাইন ইন করুন।
     </Alert>
   )
 }
@@ -350,9 +351,9 @@ function SignedInPanel({ user, redirecting }: { user: PublicUser; redirecting: b
     return (
       <div className="flex flex-col items-center text-center py-6 gap-3" role="status">
         <Spinner size="lg" label={null} className="text-indigo-400" />
-        <p className="text-sm text-slate-300">Signed in — taking you to your downloads…</p>
+        <p className="text-sm text-slate-300">সাইন ইন হয়েছে — ডাউনলোড পেজে নিয়ে যাচ্ছি…</p>
         <Link href="/download" className="text-[13px] text-indigo-300 hover:text-indigo-200 underline underline-offset-4">
-          Continue now
+          এখনই যান
         </Link>
       </div>
     )
@@ -362,17 +363,17 @@ function SignedInPanel({ user, redirecting }: { user: PublicUser; redirecting: b
       <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mb-4">
         <CheckCircle2 className="w-5 h-5 text-emerald-400" aria-hidden="true" />
       </div>
-      <h2 className="text-xl font-bold text-white">{name ? `Welcome back, ${name}` : 'You’re signed in'}</h2>
+      <h2 className="text-xl font-bold text-white">{name ? `আবার স্বাগতম, ${name}` : 'আপনি সাইন ইন করে আছেন'}</h2>
       <p className="mt-1.5 text-sm text-slate-400">
-        Signed in as <span className="text-slate-200">{user.email || formatPhone(user.phone)}</span>.
+        সাইন ইন করা আছে: <span className="text-slate-200">{user.email || formatPhone(user.phone)}</span>
       </p>
       <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
         <Link href="/download" className="btn-primary">
           <Download className="w-4 h-4" aria-hidden="true" />
-          Download videos
+          ভিডিও ডাউনলোড করুন
         </Link>
         <Link href="/account" className="btn-secondary">
-          Account
+          অ্যাকাউন্ট
         </Link>
       </div>
     </div>
@@ -406,8 +407,8 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
   const focusAfterRef = useFocusWhenIdle(submitting)
 
   const loginCheck = classifyLogin(value)
-  const loginError = (submitted || (loginTouched && value.trim())) && !loginCheck.ok ? loginCheck.error : null
-  const passwordError = submitted && !password ? 'Please enter your password.' : null
+  const loginError = (submitted || (loginTouched && value.trim())) && !loginCheck.ok ? bnError(loginCheck.error) : null
+  const passwordError = submitted && !password ? 'পাসওয়ার্ড লিখুন।' : null
   const forgotHref =
     loginCheck.ok && loginCheck.kind === 'email'
       ? `/forgot-password?email=${encodeURIComponent(loginCheck.value)}`
@@ -432,18 +433,18 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
       const { user } = await login(loginCheck.value, password)
       const name = firstName(user.name)
       if (user.temp_password) {
-        toast.warning('You’re using a temporary password', {
-          description: 'Set your own password to keep your account safe.',
+        toast.warning('আপনি অস্থায়ী পাসওয়ার্ড ব্যবহার করছেন', {
+          description: 'অ্যাকাউন্ট নিরাপদ রাখতে নিজের পাসওয়ার্ড সেট করুন।',
           duration: 12000,
-          action: { label: 'Change now', onClick: () => router.push('/account#password') },
+          action: { label: 'এখনই বদলান', onClick: () => router.push('/account#password') },
         })
       } else {
-        toast.success(name ? `Welcome back, ${name}!` : 'Welcome back!')
+        toast.success(name ? `আবার স্বাগতম, ${name}!` : 'আবার স্বাগতম!')
       }
       router.replace('/download')
     } catch (err) {
       const status = apiErrorStatus(err)
-      setFormError({ message: apiErrorMessage(err, 'Sign in failed. Please try again.'), status })
+      setFormError({ message: apiErrorMessage(err, 'সাইন ইন হয়নি। আবার চেষ্টা করুন।'), status })
       if (status === 401) {
         // Clear the wrong password without flagging the now-empty field as
         // "Please enter your password." under the "Incorrect…" message.
@@ -460,14 +461,14 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
 
   // 403 covers "waiting for approval", "blocked" and "no password yet": not
   // the visitor's mistake, so it's shown as a notice rather than an error.
-  const needsPassword = formError ? /password yet|forgot password/i.test(formError.message) : false
+  const needsPassword = formError ? /password yet|forgot password|পাসওয়ার্ড সেট|পাসওয়ার্ড ভুলে/i.test(formError.message) : false
   const errorTone = formError?.status === 403 || formError?.status === 429 ? 'warning' : 'danger'
 
   return (
     <form onSubmit={onSubmit} noValidate className="relative" aria-describedby="signin-intro">
-      <h2 className="text-lg sm:text-xl font-bold text-white">Welcome back</h2>
+      <h2 className="text-lg sm:text-xl font-bold text-white">আবার স্বাগতম</h2>
       <p id="signin-intro" className="mt-1 mb-5 text-[13px] sm:text-sm text-slate-400">
-        Sign in with the email or phone number you registered with.
+        রেজিস্ট্রেশনের সময় দেওয়া ইমেইল বা মোবাইল নম্বর দিয়ে সাইন ইন করুন।
       </p>
 
       {formError && (
@@ -479,7 +480,7 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
             needsPassword ? (
               <Link href={forgotHref} className="btn-outline btn-sm">
                 <KeyRound className="w-4 h-4" aria-hidden="true" />
-                Set a password
+                পাসওয়ার্ড সেট করুন
               </Link>
             ) : undefined
           }
@@ -489,7 +490,7 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
       )}
 
       <div className="space-y-4">
-        <Field htmlFor="signin-login" label="Email or phone number" error={loginError}>
+        <Field htmlFor="signin-login" label="ইমেইল বা মোবাইল নম্বর" error={loginError}>
           <input
             id="signin-login"
             name="login"
@@ -499,7 +500,7 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="you@example.com or 01XXXXXXXXX"
+            placeholder="you@example.com অথবা 01XXXXXXXXX"
             value={value}
             onChange={e => {
               onValueChange(e.target.value)
@@ -517,13 +518,13 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
           ref={passwordRef}
           id="signin-password"
           name="password"
-          label="Password"
+          label="পাসওয়ার্ড"
           labelAside={
             <Link
               href={forgotHref}
               className="text-[13px] font-medium text-indigo-300 hover:text-indigo-200 rounded py-1"
             >
-              Forgot password?
+              পাসওয়ার্ড ভুলে গেছেন?
             </Link>
           }
           autoComplete="current-password"
@@ -540,26 +541,26 @@ function SignInForm({ value, onValueChange, onRequestAccess }: SignInFormProps) 
       <button ref={submitRef} type="submit" className="btn-primary w-full mt-5" disabled={submitting}>
         {submitting ? (
           <>
-            <Spinner size="sm" label={null} /> Signing in…
+            <Spinner size="sm" label={null} /> সাইন ইন হচ্ছে…
           </>
         ) : (
           <>
-            Sign in <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            সাইন ইন <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </>
         )}
       </button>
       <p aria-live="polite" className="empty:hidden mt-3 text-center text-xs text-slate-400">
-        {slow ? 'The server is waking up. The first sign-in of the day can take up to a minute.' : ''}
+        {slow ? 'সার্ভার চালু হচ্ছে। দিনের প্রথম সাইন ইনে এক মিনিট পর্যন্ত লাগতে পারে।' : ''}
       </p>
 
       <p className="mt-5 pt-4 border-t border-white/[0.06] text-center text-[13px] text-slate-400">
-        New here?{' '}
+        নতুন?{' '}
         <button
           type="button"
           onClick={onRequestAccess}
           className="font-semibold text-indigo-300 hover:text-indigo-200 underline-offset-4 hover:underline py-2"
         >
-          Request access — it&apos;s free
+          অ্যাক্সেসের অনুরোধ করুন — একদম ফ্রি
         </button>
       </p>
     </form>
@@ -600,14 +601,14 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
   }
   const show = (field: RequestField) => submitted || (touched[field] && (field === 'name' ? name : field === 'email' ? email : phone).trim() !== '')
   const errors: Record<RequestField, string | null> = {
-    name: show('name') ? errorOf(checks.name) : null,
-    email: show('email') ? errorOf(checks.email) : null,
-    phone: show('phone') ? errorOf(checks.phone) : null,
+    name: show('name') ? bnError(errorOf(checks.name)) : null,
+    email: show('email') ? bnError(errorOf(checks.email)) : null,
+    phone: show('phone') ? bnError(errorOf(checks.phone)) : null,
   }
-  const agreeError = submitted && !agreed ? 'Please accept the Terms of Use and Privacy Policy to continue.' : null
+  const agreeError = submitted && !agreed ? 'চালিয়ে যেতে ব্যবহারের শর্তাবলি ও প্রাইভেসি পলিসিতে সম্মতি দিন।' : null
   const phoneHint = checks.phone.ok
-    ? `We'll save it as ${formatPhone(checks.phone.value)}.`
-    : 'Bangladeshi mobile, e.g. 01712-345678. Outside Bangladesh? Start with + and your country code.'
+    ? `এভাবে সেভ হবে: ${formatPhone(checks.phone.value)}`
+    : 'বাংলাদেশি মোবাইল নম্বর, যেমন 01712-345678। বিদেশি নম্বর হলে + আর দেশের কোড দিয়ে শুরু করুন।'
 
   const touch = (field: RequestField) => setTouched(t => (t[field] ? t : { ...t, [field]: true }))
 
@@ -639,7 +640,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
       setSuccess({ name: body.name, email: body.email, phone: body.phone, message })
     } catch (err) {
       setFormError({
-        message: apiErrorMessage(err, 'We couldn’t send your request. Please try again.'),
+        message: apiErrorMessage(err, 'অনুরোধ পাঠানো যায়নি। আবার চেষ্টা করুন।'),
         status: apiErrorStatus(err),
       })
       focusAfterRef.current = submitRef.current
@@ -668,7 +669,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
   const isDuplicate = formError?.status === 409
   // Prefill the sign-in form with whichever value is already registered.
   const duplicatePrefill =
-    /phone/i.test(formError?.message ?? '') && checks.phone.ok
+    /phone|মোবাইল|ফোন/i.test(formError?.message ?? '') && checks.phone.ok
       ? checks.phone.value
       : checks.email.ok
       ? checks.email.value
@@ -676,9 +677,9 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
 
   return (
     <form onSubmit={onSubmit} noValidate className="relative" aria-describedby="request-intro">
-      <h2 className="text-lg sm:text-xl font-bold text-white">Request access</h2>
+      <h2 className="text-lg sm:text-xl font-bold text-white">অ্যাক্সেসের অনুরোধ</h2>
       <p id="request-intro" className="mt-1 mb-5 text-[13px] sm:text-sm text-slate-400">
-        Free for students. Once an admin approves you, we email you a password.
+        শিক্ষার্থীদের জন্য ফ্রি। অ্যাডমিন অনুমোদন দিলেই ইমেইলে পাসওয়ার্ড পাঠিয়ে দেব।
       </p>
 
       {formError && (
@@ -695,7 +696,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
                   onClick={() => onSignIn(duplicatePrefill)}
                 >
                   <LogIn className="w-4 h-4" aria-hidden="true" />
-                  Sign in
+                  সাইন ইন
                 </button>
                 <Link
                   href={
@@ -706,7 +707,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
                   className="btn-outline btn-sm"
                 >
                   <KeyRound className="w-4 h-4" aria-hidden="true" />
-                  Reset password
+                  পাসওয়ার্ড রিসেট
                 </Link>
               </>
             ) : undefined
@@ -717,7 +718,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
       )}
 
       <div className="space-y-4">
-        <Field htmlFor="request-name" label="Full name" error={errors.name}>
+        <Field htmlFor="request-name" label="পুরো নাম" error={errors.name}>
           <input
             id="request-name"
             name="name"
@@ -725,7 +726,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
             autoComplete="name"
             autoCapitalize="words"
             maxLength={NAME_MAX + 20}
-            placeholder="e.g. Nusrat Jahan"
+            placeholder="যেমন: নুসরাত জাহান"
             value={name}
             onChange={e => {
               setName(e.target.value)
@@ -741,9 +742,9 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
 
         <Field
           htmlFor="request-email"
-          label="Email"
+          label="ইমেইল"
           error={errors.email}
-          hint="Your approval and password are sent here, so use an inbox you check."
+          hint="অনুমোদন আর পাসওয়ার্ড এখানেই যাবে, তাই নিয়মিত দেখেন এমন ইমেইল দিন।"
         >
           <input
             id="request-email"
@@ -767,13 +768,13 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
             aria-describedby={describedBy(
               'request-email',
               errors.email,
-              'Your approval and password are sent here, so use an inbox you check.',
+              'অনুমোদন আর পাসওয়ার্ড এখানেই যাবে, তাই নিয়মিত দেখেন এমন ইমেইল দিন।',
             )}
             className="input-field"
           />
         </Field>
 
-        <Field htmlFor="request-phone" label="Mobile number" error={errors.phone} hint={phoneHint}>
+        <Field htmlFor="request-phone" label="মোবাইল নম্বর" error={errors.phone} hint={phoneHint}>
           <input
             id="request-phone"
             name="phone"
@@ -797,9 +798,9 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
 
         <Field
           htmlFor="request-note"
-          label="Institution / department"
+          label="প্রতিষ্ঠান / বিভাগ"
           optional
-          hint="Helps the admin recognise you."
+          hint="অ্যাডমিনকে আপনাকে চিনতে সাহায্য করে।"
         >
           <input
             id="request-note"
@@ -807,11 +808,11 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
             type="text"
             autoComplete="organization"
             maxLength={NOTE_MAX}
-            placeholder="e.g. University of Dhaka, CSE"
+            placeholder="যেমন: ঢাকা বিশ্ববিদ্যালয়, CSE"
             value={note}
             onChange={e => setNote(e.target.value)}
             disabled={submitting}
-            aria-describedby={describedBy('request-note', null, 'Helps the admin recognise you.')}
+            aria-describedby={describedBy('request-note', null, 'অ্যাডমিনকে আপনাকে চিনতে সাহায্য করে।')}
             className="input-field"
           />
         </Field>
@@ -832,27 +833,27 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
                 disabled={submitting}
                 aria-invalid={agreeError ? true : undefined}
                 aria-describedby={agreeError ? `${agreeId}-error` : undefined}
-                className={`peer block w-5 h-5 appearance-none rounded-md border bg-[#0d0f1a] cursor-pointer transition-colors
-                            checked:bg-indigo-500 checked:border-indigo-500 hover:border-white/40 disabled:opacity-50 ${
+                className={`peer block w-5 h-5 appearance-none rounded-md border bg-page cursor-pointer transition-colors
+                            checked:bg-indigo-600 checked:border-indigo-600 hover:border-white/40 disabled:opacity-50 ${
                               agreeError ? 'border-red-400/70' : 'border-white/25'
                             }`}
               />
               <Check
-                className="pointer-events-none absolute inset-0 m-auto w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100"
+                className="pointer-events-none absolute inset-0 m-auto w-3.5 h-3.5 text-[#fff] opacity-0 peer-checked:opacity-100"
                 strokeWidth={3}
                 aria-hidden="true"
               />
             </span>
             <span>
-              I agree to the{' '}
+              আমি{' '}
               <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
-                Terms of Use
+                ব্যবহারের শর্তাবলি
               </Link>{' '}
-              and{' '}
+              ও{' '}
               <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
-                Privacy Policy
-              </Link>
-              , and will only download videos for personal or educational use.
+                প্রাইভেসি পলিসি
+              </Link>{' '}
+              মেনে নিচ্ছি, এবং শুধু ব্যক্তিগত বা পড়াশোনার কাজে ভিডিও ডাউনলোড করব।
             </span>
           </label>
           <div id={`${agreeId}-error`} aria-live="polite" className="empty:hidden">
@@ -864,16 +865,16 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
       <button ref={submitRef} type="submit" className="btn-primary w-full mt-5" disabled={submitting}>
         {submitting ? (
           <>
-            <Spinner size="sm" label={null} /> Sending request…
+            <Spinner size="sm" label={null} /> অনুরোধ পাঠানো হচ্ছে…
           </>
         ) : (
           <>
-            Request access <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            অনুরোধ পাঠান <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </>
         )}
       </button>
       <p aria-live="polite" className="empty:hidden mt-3 text-center text-xs text-slate-400">
-        {slow ? 'The server is waking up. This can take up to a minute the first time.' : ''}
+        {slow ? 'সার্ভার চালু হচ্ছে। প্রথমবার এক মিনিট পর্যন্ত লাগতে পারে।' : ''}
       </p>
     </form>
   )
@@ -898,24 +899,24 @@ function RequestSuccessPanel({
 
   const steps: { title: string; body: ReactNode }[] = [
     {
-      title: 'An admin reviews your request',
-      body: 'Every request is checked by hand, so how long it takes depends on the admin.',
+      title: 'অ্যাডমিন আপনার অনুরোধ দেখবেন',
+      body: 'প্রতিটি অনুরোধ হাতে যাচাই করা হয়, তাই কত সময় লাগবে তা অ্যাডমিনের ওপর নির্ভর করে।',
     },
     {
-      title: 'You get an email with your password',
+      title: 'ইমেইলে পাসওয়ার্ড পাবেন',
       body: (
         <>
-          We&apos;ll send it to <span className="text-slate-200 break-all">{success.email}</span>. Check your Spam or
-          Promotions folder if it doesn&apos;t arrive.
+          পাঠানো হবে <span className="text-slate-200 break-all">{success.email}</span> ঠিকানায়। না পেলে Spam বা
+          Promotions ফোল্ডার দেখুন।
         </>
       ),
     },
     {
-      title: 'Sign in and set your own password',
+      title: 'সাইন ইন করে নিজের পাসওয়ার্ড সেট করুন',
       body: (
         <>
-          Use your email or <span className="text-slate-200 whitespace-nowrap">{formatPhone(success.phone)}</span> with
-          the temporary password, then change it on your Account page.
+          ইমেইল বা <span className="text-slate-200 whitespace-nowrap">{formatPhone(success.phone)}</span> আর অস্থায়ী
+          পাসওয়ার্ড দিয়ে সাইন ইন করুন, তারপর অ্যাকাউন্ট পেজে পাসওয়ার্ড বদলে নিন।
         </>
       ),
     },
@@ -927,10 +928,10 @@ function RequestSuccessPanel({
         <MailCheck className="w-6 h-6 text-emerald-400" aria-hidden="true" />
       </div>
       <h2 ref={headingRef} tabIndex={-1} className="text-xl font-bold text-white outline-none">
-        Request sent{name ? `, ${name}` : ''}!
+        অনুরোধ পাঠানো হয়েছে{name ? `, ${name}` : ''}!
       </h2>
       <p role="status" className="mt-1.5 text-sm text-slate-400">
-        {success.message || 'Your request is waiting for admin approval.'}
+        {translateServerText(success.message) || 'আপনার অনুরোধ অ্যাডমিনের অনুমোদনের অপেক্ষায় আছে।'}
       </p>
 
       <ol className="mt-5 space-y-4">
@@ -951,17 +952,17 @@ function RequestSuccessPanel({
       </ol>
 
       <p className="mt-5 rounded-lg bg-white/[0.03] border border-white/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-slate-400">
-        Until you&apos;re approved, signing in will say your account is waiting for approval. That&apos;s expected —
-        no need to send another request.
+        অনুমোদন না হওয়া পর্যন্ত সাইন ইন করলে দেখাবে যে অ্যাকাউন্ট অনুমোদনের অপেক্ষায় আছে। এটাই স্বাভাবিক — নতুন
+        করে অনুরোধ পাঠানোর দরকার নেই।
       </p>
 
       <div className="mt-5 grid gap-2.5">
         <button type="button" onClick={onSignIn} className="btn-primary w-full">
           <LogIn className="w-4 h-4" aria-hidden="true" />
-          Go to sign in
+          সাইন ইন করতে যান
         </button>
         <button type="button" onClick={onStartOver} className="btn-ghost w-full">
-          Request access for someone else
+          অন্য কারও জন্য অনুরোধ করুন
         </button>
       </div>
     </div>
@@ -975,7 +976,7 @@ function RequestSuccessPanel({
 function SectionHeading({ id, eyebrow, title, intro }: { id: string; eyebrow: string; title: string; intro?: ReactNode }) {
   return (
     <div className="max-w-2xl mb-8 sm:mb-10">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-400">{eyebrow}</p>
+      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-400">{eyebrow}</p>
       <h2 id={id} className="mt-2 text-2xl sm:text-3xl font-bold text-white">
         {title}
       </h2>
@@ -990,24 +991,24 @@ const PLATFORM_CARDS: { name: string; Icon: LucideIcon; tone: string; ring: stri
     Icon: Youtube,
     tone: 'text-red-400',
     ring: 'bg-red-500/10 border-red-500/20',
-    what: 'Lectures, tutorials, Shorts',
-    detail: 'Choose anything from data-saving 360p up to 4K Ultra HD, or save just the audio as an MP3.',
+    what: 'লেকচার, টিউটোরিয়াল, Shorts',
+    detail: 'ডেটা বাঁচানো 360p থেকে 4K Ultra HD পর্যন্ত যেকোনো কোয়ালিটি, অথবা শুধু অডিও MP3 হিসেবে।',
   },
   {
     name: 'Facebook',
     Icon: Facebook,
     tone: 'text-blue-400',
     ring: 'bg-blue-500/10 border-blue-500/20',
-    what: 'Public videos and Reels',
-    detail: 'Paste the link from the Share button. Works with videos and Reels that are shared publicly.',
+    what: 'পাবলিক ভিডিও ও Reels',
+    detail: 'Share বাটন থেকে লিংক কপি করে পেস্ট করুন। পাবলিকলি শেয়ার করা ভিডিও ও Reels-এ কাজ করে।',
   },
   {
     name: 'Instagram',
     Icon: Instagram,
     tone: 'text-pink-400',
     ring: 'bg-pink-500/10 border-pink-500/20',
-    what: 'Public Reels and video posts',
-    detail: 'Copy the post or Reel link and paste it in. Videos from public accounts only.',
+    what: 'পাবলিক Reels ও ভিডিও পোস্ট',
+    detail: 'পোস্ট বা Reel-এর লিংক কপি করে পেস্ট করুন। শুধু পাবলিক অ্যাকাউন্টের ভিডিও।',
   },
 ]
 
@@ -1017,9 +1018,9 @@ function PlatformsSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
         <SectionHeading
           id="platforms-title"
-          eyebrow="Supported platforms"
-          title="Download from the platforms you already use"
-          intro="Paste a link from any of these and choose the quality that suits your device and data plan."
+          eyebrow="যেসব প্ল্যাটফর্ম চলে"
+          title="আপনার চেনা প্ল্যাটফর্ম থেকেই ডাউনলোড"
+          intro="এগুলোর যেকোনোটির লিংক পেস্ট করুন, তারপর আপনার ডিভাইস আর ডেটা প্ল্যান অনুযায়ী কোয়ালিটি বেছে নিন।"
         />
         <ul className="grid gap-4 md:grid-cols-3">
           {PLATFORM_CARDS.map(({ name, Icon, tone, ring, what, detail }) => (
@@ -1038,7 +1039,7 @@ function PlatformsSection() {
           ))}
         </ul>
         <p className="mt-5 text-[13px] text-slate-500">
-          Private, members-only and age-restricted videos may not work. Other sites aren&apos;t supported yet.
+          প্রাইভেট, মেম্বারশিপ-অনলি ও বয়সসীমা দেওয়া ভিডিও কাজ নাও করতে পারে। অন্য সাইট এখনো চালু হয়নি।
         </p>
       </div>
     </section>
@@ -1049,31 +1050,31 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
   const steps: { Icon: LucideIcon; title: string; body: string }[] = [
     {
       Icon: UserPlus,
-      title: 'Request access',
-      body: 'Tell us your name, email and mobile number. It takes less than a minute.',
+      title: 'অ্যাক্সেসের অনুরোধ করুন',
+      body: 'নাম, ইমেইল আর মোবাইল নম্বর দিন। এক মিনিটও লাগে না।',
     },
     {
       Icon: MailCheck,
-      title: 'Get your password by email',
-      body: 'When an admin approves you, we email you a temporary password. Not in your inbox? Check your spam folder.',
+      title: 'ইমেইলে পাসওয়ার্ড পান',
+      body: 'অ্যাডমিন অনুমোদন দিলে ইমেইলে একটি অস্থায়ী পাসওয়ার্ড পাঠানো হবে। ইনবক্সে না পেলে Spam ফোল্ডার দেখুন।',
     },
     {
       Icon: ClipboardPaste,
-      title: 'Paste a link and download',
-      body: 'Choose a quality and save it to your device. Downloads per day are unlimited, depending on your account.',
+      title: 'লিংক পেস্ট করে ডাউনলোড করুন',
+      body: 'কোয়ালিটি বেছে নিয়ে ডিভাইসে সেভ করুন। অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।',
     },
   ]
   return (
     <section aria-labelledby="how-title" className="border-t border-white/[0.05] bg-white/[0.012]">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
-        <SectionHeading id="how-title" eyebrow="How it works" title="From sign-up to saved video in three steps" />
+        <SectionHeading id="how-title" eyebrow="কীভাবে কাজ করে" title="তিন ধাপে সাইন আপ থেকে ভিডিও সেভ" />
         <ol className="grid gap-4 md:grid-cols-3">
           {steps.map(({ Icon, title, body }, index) => (
             <li key={title} className="relative feature-card">
               <div className="flex items-center gap-3">
                 <span
-                  className="w-8 h-8 rounded-full bg-indigo-500 text-white text-sm font-bold flex items-center justify-center"
-                  style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+                  className="w-8 h-8 rounded-full bg-indigo-600 text-[#fff] text-sm font-bold flex items-center justify-center"
+                  style={{ fontFamily: 'var(--font-display)' }}
                   aria-hidden="true"
                 >
                   {index + 1}
@@ -1081,7 +1082,7 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
                 <Icon className="w-5 h-5 text-indigo-300" aria-hidden="true" />
               </div>
               <h3 className="mt-4 text-base font-semibold text-white">
-                <span className="sr-only">Step {index + 1}: </span>
+                <span className="sr-only">ধাপ {index + 1}: </span>
                 {title}
               </h3>
               <p className="mt-1.5 text-[14px] leading-relaxed text-slate-400">{body}</p>
@@ -1090,7 +1091,7 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
         </ol>
         <div className="mt-8">
           <button type="button" onClick={onRequestAccess} className="btn-primary w-full sm:w-auto">
-            Request access <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            অ্যাক্সেসের অনুরোধ করুন <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -1102,33 +1103,33 @@ function FeaturesSection() {
   const features: { Icon: LucideIcon; title: string; body: string; tone: string }[] = [
     {
       Icon: SlidersHorizontal,
-      title: 'Choose your quality',
-      body: 'Up to 4K Ultra HD for a big screen, a small file to save mobile data, or audio only (MP3) for lectures you just want to hear.',
+      title: 'নিজের মতো কোয়ালিটি',
+      body: 'বড় স্ক্রিনের জন্য 4K Ultra HD, মোবাইল ডেটা বাঁচাতে ছোট ফাইল, অথবা শুধু শোনার জন্য লেকচারের অডিও (MP3)।',
       tone: 'text-sky-300 bg-sky-500/10 border-sky-500/20',
     },
     {
       Icon: Gauge,
-      title: 'Unlimited daily downloads',
-      body: 'Approved students get unlimited downloads per day, depending on their account. Only finished downloads count.',
+      title: 'প্রতিদিন আনলিমিটেড ডাউনলোড',
+      body: 'অনুমোদিত শিক্ষার্থীরা অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড পান। শুধু সম্পূর্ণ ডাউনলোডই গোনা হয়।',
       tone: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20',
     },
     {
       Icon: ShieldCheck,
-      title: 'Private by design',
-      body: 'We keep only what the service needs. Passwords are stored as secure hashes, so no one, not even the admin, can read them.',
+      title: 'প্রাইভেসি সবার আগে',
+      body: 'সার্ভিস চালাতে যা দরকার শুধু সেটুকুই রাখি। পাসওয়ার্ড নিরাপদ hash হিসেবে রাখা হয় — অ্যাডমিনও তা দেখতে পারেন না।',
       tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20',
     },
     {
       Icon: MonitorSmartphone,
-      title: 'Made for phones first',
-      body: 'Works in any modern browser on your phone, tablet or laptop. Nothing to install, no ads.',
+      title: 'ফোনের জন্যই বানানো',
+      body: 'ফোন, ট্যাবলেট বা ল্যাপটপের যেকোনো আধুনিক ব্রাউজারে চলে। কিছু ইনস্টল করতে হয় না, কোনো বিজ্ঞাপন নেই।',
       tone: 'text-violet-300 bg-violet-500/10 border-violet-500/20',
     },
   ]
   return (
     <section aria-labelledby="features-title" className="border-t border-white/[0.05]">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
-        <SectionHeading id="features-title" eyebrow="Why UniStream Saver" title="Built for students, kept simple" />
+        <SectionHeading id="features-title" eyebrow="কেন UniStream Saver" title="শিক্ষার্থীদের জন্য, একদম সহজ" />
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {features.map(({ Icon, title, body, tone }) => (
             <li key={title} className="feature-card">
@@ -1159,113 +1160,111 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
   const faqs: { id: string; q: string; a: ReactNode }[] = [
     {
       id: 'faq-who',
-      q: 'Who can use UniStream Saver?',
+      q: 'কারা UniStream Saver ব্যবহার করতে পারবেন?',
       a: (
         <>
-          We&apos;re opening to students first. {inlineButton('Request access', 'request')} with your name, email and
-          mobile number, and an admin approves each request so the service stays fast and fair for everyone.
+          আপাতত শিক্ষার্থীদের জন্য চালু করা হয়েছে। নাম, ইমেইল আর মোবাইল নম্বর দিয়ে{' '}
+          {inlineButton('অ্যাক্সেসের অনুরোধ করুন', 'request')}। সবার জন্য সার্ভিস দ্রুত আর ন্যায্য রাখতে অ্যাডমিন প্রতিটি অনুরোধ অনুমোদন করেন।
         </>
       ),
     },
     {
       id: 'faq-approval',
-      q: 'How long does approval take?',
+      q: 'অনুমোদন পেতে কত সময় লাগে?',
       a: (
         <>
-          The admin reviews every request by hand, so it depends on when they get to yours. You don&apos;t need to send
-          another request: when you&apos;re approved, we email you a temporary password. Until then, signing in shows
-          that your account is waiting for approval.
+          অ্যাডমিন প্রতিটি অনুরোধ হাতে দেখেন, তাই আপনার অনুরোধে কখন পৌঁছাবেন তার ওপর নির্ভর করে। নতুন করে অনুরোধ
+          পাঠানোর দরকার নেই: অনুমোদন হলেই ইমেইলে অস্থায়ী পাসওয়ার্ড পাঠানো হবে। ততক্ষণ সাইন ইন করলে দেখাবে যে
+          অ্যাকাউন্ট অনুমোদনের অপেক্ষায় আছে।
         </>
       ),
     },
     {
       id: 'faq-password',
-      q: 'I was approved. Where is my password?',
+      q: 'অনুমোদন পেয়েছি। পাসওয়ার্ড কোথায়?',
       a: (
         <>
-          It&apos;s in the email we sent to the address you registered with. If it isn&apos;t in your inbox, check your
-          spam or promotions folder. Sign in with your email or mobile number and that password, then set your own
-          password on the{' '}
+          রেজিস্ট্রেশনের ইমেইল ঠিকানায় পাঠানো মেইলেই আছে। ইনবক্সে না পেলে Spam বা Promotions ফোল্ডার দেখুন। ইমেইল
+          বা মোবাইল নম্বর আর ওই পাসওয়ার্ড দিয়ে সাইন ইন করুন, তারপর{' '}
           <Link href="/account" className={linkClass}>
-            Account
+            অ্যাকাউন্ট
           </Link>{' '}
-          page. Still can&apos;t find it? Use{' '}
+          পেজে নিজের পাসওয়ার্ড সেট করুন। তবুও খুঁজে না পেলে{' '}
           <Link href="/forgot-password" className={linkClass}>
-            Forgot password?
+            পাসওয়ার্ড ভুলে গেছেন?
           </Link>{' '}
-          to get a new link.
+          থেকে নতুন লিংক নিন।
         </>
       ),
     },
     {
       id: 'faq-limit',
-      q: 'How many videos can I download?',
+      q: 'কতগুলো ভিডিও ডাউনলোড করতে পারব?',
       a: (
         <>
-          Downloads per day are <strong className="text-slate-200">unlimited, depending on your account</strong>. If
-          your account has a daily limit, it resets at midnight Bangladesh time. Only finished downloads count: looking up a link, cancelling or a failed download
-          doesn&apos;t use one. Your account&apos;s allowance is always shown at the top of the download page.
+          অ্যাকাউন্ট অনুযায়ী প্রতিদিন <strong className="text-slate-200">আনলিমিটেড ডাউনলোড</strong>। আপনার
+          অ্যাকাউন্টে দৈনিক সীমা থাকলে তা বাংলাদেশ সময় রাত ১২টায় নতুন করে শুরু হয়। শুধু সম্পূর্ণ ডাউনলোড গোনা হয়:
+          লিংক দেখা, বাতিল করা বা ব্যর্থ ডাউনলোড গোনা হয় না। আপনার সীমা সবসময় ডাউনলোড পেজের ওপরে দেখা যায়।
         </>
       ),
     },
     {
       id: 'faq-quality',
-      q: 'Which sites and qualities are supported?',
+      q: 'কোন সাইট আর কোন কোয়ালিটি চলে?',
       a: (
         <>
-          YouTube, Facebook and Instagram, in any quality up to{' '}
-          <strong className="text-slate-200">4K Ultra HD</strong> that the video itself has, or just the audio as an
-          MP3. Private, members-only and age-restricted videos may not
-          work.
+          YouTube, Facebook ও Instagram — ভিডিওতে যা আছে তার মধ্যে{' '}
+          <strong className="text-slate-200">4K Ultra HD</strong> পর্যন্ত যেকোনো কোয়ালিটি, অথবা শুধু অডিও MP3
+          হিসেবে। প্রাইভেট, মেম্বারশিপ-অনলি ও বয়সসীমা দেওয়া ভিডিও কাজ নাও করতে পারে।
         </>
       ),
     },
     {
       id: 'faq-forgot',
-      q: 'I forgot my password. What now?',
+      q: 'পাসওয়ার্ড ভুলে গেছি। এখন কী করব?',
       a: (
         <>
-          Tap <strong className="text-slate-200">Forgot password?</strong> on the sign-in form and enter your email.
-          We&apos;ll send a reset link that works for 60 minutes (check your spam folder if you don&apos;t see it). Once
-          you set a new password you&apos;re signed in straight away.
+          সাইন ইন ফর্মে <strong className="text-slate-200">পাসওয়ার্ড ভুলে গেছেন?</strong> চাপুন আর ইমেইল দিন।
+          ৬০ মিনিট কার্যকর একটি রিসেট লিংক পাঠানো হবে (না দেখলে Spam ফোল্ডার দেখুন)। নতুন পাসওয়ার্ড সেট করলেই সরাসরি
+          সাইন ইন হয়ে যাবেন।
         </>
       ),
     },
     {
       id: 'faq-premium',
-      q: 'Is it free? Will there be a paid plan?',
+      q: 'এটা কি ফ্রি? পেইড প্ল্যান আসবে?',
       a: (
         <>
-          Yes, it&apos;s free for approved students, with unlimited downloads per day depending on your account. If a
-          paid plan ever comes, it will be optional, and nothing will be charged without your clear agreement.
+          হ্যাঁ, অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি, অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড। কখনো পেইড প্ল্যান
+          এলে তা হবে ঐচ্ছিক, আর আপনার স্পষ্ট সম্মতি ছাড়া কোনো টাকা নেওয়া হবে না।
         </>
       ),
     },
     {
       id: 'faq-use',
-      q: 'What am I allowed to download?',
+      q: 'কী ধরনের ভিডিও ডাউনলোড করা যাবে?',
       a: (
         <>
-          Videos for your own personal or educational use, such as offline study. Please respect copyright and each
-          platform&apos;s rules: don&apos;t re-upload, share or sell other people&apos;s videos. Read the{' '}
+          নিজের ব্যক্তিগত বা পড়াশোনার কাজের ভিডিও, যেমন অফলাইনে পড়ার জন্য। কপিরাইট আর প্রতিটি প্ল্যাটফর্মের নিয়ম
+          মেনে চলুন: অন্যের ভিডিও আবার আপলোড, শেয়ার বা বিক্রি করবেন না। বিস্তারিত জানতে{' '}
           <Link href="/terms" className={linkClass}>
-            Terms of Use
+            ব্যবহারের শর্তাবলি
           </Link>{' '}
-          for details.
+          পড়ুন।
         </>
       ),
     },
     {
       id: 'faq-data',
-      q: 'What do you do with my information?',
+      q: 'আমার তথ্য দিয়ে কী করা হয়?',
       a: (
         <>
-          We store your name, email, mobile number and download history to run your account, send account emails and
-          apply the daily limit. We don&apos;t sell your data or send marketing emails. See the{' '}
+          অ্যাকাউন্ট চালানো, অ্যাকাউন্টের ইমেইল পাঠানো আর দৈনিক সীমা প্রয়োগের জন্য আপনার নাম, ইমেইল, মোবাইল নম্বর
+          ও ডাউনলোড হিস্টোরি রাখা হয়। আপনার তথ্য বিক্রি করা হয় না, মার্কেটিং ইমেইলও পাঠানো হয় না। বিস্তারিত দেখুন{' '}
           <Link href="/privacy" className={linkClass}>
-            Privacy Policy
+            প্রাইভেসি পলিসি
           </Link>
-          .
+          -তে।
         </>
       ),
     },
@@ -1274,7 +1273,7 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
   return (
     <section id="faq" aria-labelledby="faq-title" className="border-t border-white/[0.05] bg-white/[0.012] scroll-mt-14">
       <div className="max-w-3xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
-        <SectionHeading id="faq-title" eyebrow="Help & FAQ" title="Questions, answered" />
+        <SectionHeading id="faq-title" eyebrow="সাহায্য ও প্রশ্নোত্তর" title="আপনার প্রশ্নের উত্তর" />
         <div className="space-y-2.5">
           {faqs.map(item => (
             <details
@@ -1304,19 +1303,19 @@ function CtaSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
         <div className="portal-card px-5 py-8 sm:px-10 sm:py-12 text-center">
           <h2 id="cta-title" className="relative text-2xl sm:text-3xl font-bold text-white">
-            Ready to save your first video?
+            প্রথম ভিডিও সেভ করতে প্রস্তুত?
           </h2>
           <p className="relative mt-3 text-[15px] text-slate-400 max-w-xl mx-auto">
-            Request access in under a minute. You&apos;ll get an email as soon as you&apos;re approved.
+            এক মিনিটেরও কম সময়ে অনুরোধ করুন। অনুমোদন হলেই ইমেইল পাবেন।
           </p>
           <div className="relative mt-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
             <button type="button" onClick={() => onOpenAuth('request')} className="btn-primary">
               <UserPlus className="w-4 h-4" aria-hidden="true" />
-              Request access
+              অ্যাক্সেসের অনুরোধ করুন
             </button>
             <button type="button" onClick={() => onOpenAuth('signin')} className="btn-secondary">
               <LogIn className="w-4 h-4" aria-hidden="true" />
-              Sign in
+              সাইন ইন
             </button>
           </div>
         </div>

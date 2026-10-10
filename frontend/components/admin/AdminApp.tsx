@@ -42,6 +42,16 @@ export default function AdminApp() {
   // so the forced setup form doesn't ask for it again. Bound to that session.
   const [setupPassword, setSetupPassword] = useState<{ token: string; password: string } | null>(null)
 
+  // The admin panel keeps the dark English theme; the public site is light.
+  // (app/layout.tsx sets it before the first paint; this covers in-app navigation.)
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.theme = 'dark'
+    return () => {
+      root.dataset.theme = 'light'
+    }
+  }, [])
+
   const onSignedIn = useCallback((auth: AdminAuthResponse, password: string) => {
     setSetupPassword(auth.must_change_password ? { token: auth.token, password } : null)
   }, [])

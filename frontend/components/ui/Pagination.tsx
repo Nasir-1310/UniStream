@@ -83,7 +83,7 @@ export function Pagination({
               value={pageSize}
               disabled={disabled}
               onChange={e => onPageSizeChange(Number(e.target.value))}
-              className="h-10 rounded-lg border border-white/10 bg-[#0d0f1a] px-2 text-slate-200 outline-none focus:border-indigo-500/70"
+              className="h-10 rounded-lg border border-white/10 bg-page px-2 text-slate-200 outline-none focus:border-indigo-500/70"
             >
               {pageSizeOptions.map(size => (
                 <option key={size} value={size}>

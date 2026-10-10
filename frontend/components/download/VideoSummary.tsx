@@ -28,7 +28,7 @@ function uploadDate(value: string | undefined): string | null {
   const match = /^(\d{4})(\d{2})(\d{2})$/.exec(value ?? '')
   if (!match) return value || null
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date)
+  return new Intl.DateTimeFormat('bn-BD-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date)
 }
 
 function Thumbnail({ src, title, duration }: { src: string; title: string; duration: string }) {
@@ -40,7 +40,7 @@ function Thumbnail({ src, title, duration }: { src: string; title: string; durat
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
-          alt={title ? `Thumbnail: ${title}` : 'Video thumbnail'}
+          alt={title ? `থাম্বনেইল: ${title}` : 'ভিডিওর থাম্বনেইল'}
           className="w-full h-full object-cover"
           referrerPolicy="no-referrer"
           loading="eager"
@@ -53,8 +53,8 @@ function Thumbnail({ src, title, duration }: { src: string; title: string; durat
         </div>
       )}
       {duration && (
-        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold font-mono text-white">
-          <span className="sr-only">Duration </span>
+        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold font-mono text-[#fff]">
+          <span className="sr-only">দৈর্ঘ্য </span>
           {duration}
         </span>
       )}
@@ -79,11 +79,11 @@ function MetaRow({ icon, label, children }: { icon: ReactNode; label: string; ch
 export function VideoSummary({ info, platform, url, onReset, resetDisabled }: VideoSummaryProps) {
   const duration = formatDuration(info.duration)
   const uploaded = uploadDate(info.upload_date)
-  const platformName = platform ? PLATFORM_LABELS[platform] : info.platform || 'the original site'
-  const title = info.title?.trim() || 'Untitled video'
+  const platformName = platform ? PLATFORM_LABELS[platform] : info.platform || 'মূল সাইট'
+  const title = info.title?.trim() || 'শিরোনামহীন ভিডিও'
 
   return (
-    <aside aria-label="Video details" className="space-y-3 lg:space-y-4">
+    <aside aria-label="ভিডিওর বিবরণ" className="space-y-3 lg:space-y-4">
       <div className="surface-card p-3 sm:p-4 lg:p-0 lg:bg-transparent lg:border-0">
         <div className="flex gap-3 sm:gap-4 lg:flex-col">
           <div className="w-32 sm:w-48 lg:w-full flex-shrink-0">
@@ -111,30 +111,30 @@ export function VideoSummary({ info, platform, url, onReset, resetDisabled }: Vi
       {/* Full details only where there is room for them. */}
       <div className="hidden lg:block surface-card overflow-hidden">
         <p className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 border-b border-white/[0.05]">
-          Video details
+          ভিডিওর বিবরণ
         </p>
         <dl className="divide-y divide-white/[0.05]">
           {duration && (
-            <MetaRow icon={<Clock className="w-3.5 h-3.5" />} label="Duration">
+            <MetaRow icon={<Clock className="w-3.5 h-3.5" />} label="দৈর্ঘ্য">
               {duration}
             </MetaRow>
           )}
           {Boolean(info.view_count) && (
-            <MetaRow icon={<Eye className="w-3.5 h-3.5" />} label="Views">
+            <MetaRow icon={<Eye className="w-3.5 h-3.5" />} label="ভিউ">
               {formatCompact(info.view_count)}
             </MetaRow>
           )}
           {Boolean(info.like_count) && (
-            <MetaRow icon={<ThumbsUp className="w-3.5 h-3.5" />} label="Likes">
+            <MetaRow icon={<ThumbsUp className="w-3.5 h-3.5" />} label="লাইক">
               {formatCompact(info.like_count)}
             </MetaRow>
           )}
           {uploaded && (
-            <MetaRow icon={<Calendar className="w-3.5 h-3.5" />} label="Uploaded">
+            <MetaRow icon={<Calendar className="w-3.5 h-3.5" />} label="আপলোড">
               {uploaded}
             </MetaRow>
           )}
-          <MetaRow icon={<Layers className="w-3.5 h-3.5" />} label="Download options">
+          <MetaRow icon={<Layers className="w-3.5 h-3.5" />} label="ডাউনলোড অপশন">
             {formatNumber(info.formats.length)}
           </MetaRow>
         </dl>
@@ -145,22 +145,22 @@ export function VideoSummary({ info, platform, url, onReset, resetDisabled }: Vi
           type="button"
           onClick={onReset}
           disabled={resetDisabled}
-          title={resetDisabled ? 'Wait for the download to finish' : undefined}
+          title={resetDisabled ? 'ডাউনলোড শেষ হওয়া পর্যন্ত অপেক্ষা করুন' : undefined}
           className="btn-secondary btn-sm flex-1"
         >
           <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          Try another link
+          অন্য লিংক দিন
         </button>
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
           className="btn-ghost border-white/[0.08] flex-shrink-0"
-          aria-label={`View original on ${platformName} (opens in a new tab)`}
-          title={`View on ${platformName}`}
+          aria-label={`${platformName}-এ মূল ভিডিও দেখুন (নতুন ট্যাবে খুলবে)`}
+          title={`${platformName}-এ দেখুন`}
         >
           <ExternalLink className="w-4 h-4" aria-hidden="true" />
-          <span className="hidden sm:inline lg:hidden xl:inline">Original</span>
+          <span className="hidden sm:inline lg:hidden xl:inline">মূল ভিডিও</span>
         </a>
       </div>
     </aside>

@@ -1,6 +1,6 @@
 // frontend/app/privacy/page.tsx
-// Privacy Policy. Static server component; describes what the app actually
-// stores (see backend/storage.py) in plain language.
+// Privacy Policy (Bangla). Static server component; describes what the app
+// actually stores (see backend/storage.py) in plain language.
 
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
@@ -10,12 +10,12 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy',
+  title: 'প্রাইভেসি পলিসি',
   description:
-    'What UniStream Saver stores (name, email, phone and download history), why, who can see it and how to have it deleted.',
+    'UniStream Saver কী তথ্য রাখে (নাম, ইমেইল, মোবাইল নম্বর ও ডাউনলোড হিস্টোরি), কেন রাখে, কারা দেখতে পারে, আর কীভাবে মুছে ফেলতে বলবেন।',
 }
 
-const LAST_UPDATED = '7 October 2026'
+const LAST_UPDATED = '10 অক্টোবর 2026'
 
 const P = 'mt-3 text-[15px] leading-7 text-slate-300'
 const UL = 'mt-3 space-y-2 pl-5 list-disc marker:text-slate-600 text-[15px] leading-7 text-slate-300'
@@ -25,198 +25,194 @@ const B = 'text-white font-semibold'
 const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
   {
     id: 'who',
-    title: 'Who we are',
+    title: 'আমরা কারা',
     body: (
       <p className={P}>
-        UniStream Saver is an independently run service that lets approved members save YouTube, Facebook and
-        Instagram videos for study and offline viewing. This policy explains what information we keep about you, why,
-        and the choices you have. It applies together with our{' '}
+        UniStream Saver একটি স্বাধীনভাবে পরিচালিত সার্ভিস, যা অনুমোদিত সদস্যদের পড়াশোনা আর অফলাইনে দেখার জন্য YouTube,
+        Facebook ও Instagram ভিডিও সেভ করতে দেয়। আপনার সম্পর্কে আমরা কী তথ্য রাখি, কেন রাখি, আর আপনার কী কী সুযোগ আছে —
+        এই পলিসিতে তা বলা হয়েছে। এটি আমাদের{' '}
         <Link href="/terms" className={A}>
-          Terms of Use
+          ব্যবহারের শর্তাবলি
         </Link>
-        .
+        -র সাথে একসাথে প্রযোজ্য।
       </p>
     ),
   },
   {
     id: 'collect',
-    title: 'Information we collect',
+    title: 'যে তথ্য আমরা রাখি',
     body: (
       <>
         <ul className={UL}>
           <li>
-            <span className={B}>Account details</span> you give when requesting access: full name, email address, mobile
-            number and, if you add it, your institution or department.
+            <span className={B}>অ্যাকাউন্টের তথ্য</span> যা অ্যাক্সেসের অনুরোধের সময় দেন: পুরো নাম, ইমেইল, মোবাইল নম্বর,
+            আর দিলে আপনার প্রতিষ্ঠান বা বিভাগ।
           </li>
           <li>
-            <span className={B}>Your password</span>, stored only as a one-way scrypt hash. Nobody, including the
-            administrator, can see your actual password.
+            <span className={B}>আপনার পাসওয়ার্ড</span>, শুধু একমুখী scrypt hash হিসেবে রাখা হয়। অ্যাডমিনসহ কেউই আপনার আসল
+            পাসওয়ার্ড দেখতে পারেন না।
           </li>
           <li>
-            <span className={B}>Account activity</span>: when your account was created and approved, when you last signed
-            in and downloaded, how many downloads you&apos;ve made today and in total, and your daily limit.
+            <span className={B}>অ্যাকাউন্টের কার্যকলাপ</span>: অ্যাকাউন্ট কবে তৈরি ও অনুমোদিত হয়েছে, শেষ কবে সাইন ইন ও
+            ডাউনলোড করেছেন, আজ আর মোট কতগুলো ডাউনলোড করেছেন, আর আপনার দৈনিক সীমা।
           </li>
           <li>
-            <span className={B}>Download history</span>: for each completed download, the video link, its title, the
-            platform, the quality you chose, the file size and the time.
+            <span className={B}>ডাউনলোড হিস্টোরি</span>: প্রতিটি সম্পূর্ণ ডাউনলোডের ভিডিও লিংক, শিরোনাম, প্ল্যাটফর্ম, বেছে
+            নেওয়া কোয়ালিটি, ফাইলের সাইজ ও সময়।
+          </li>
+          <li>
+            <span className={B}>আপনার পাঠানো মতামত ও সমস্যার বিবরণ</span>: আপনার লেখা বার্তা, দেওয়া লিংক, আর ব্যর্থ ডাউনলোড
+            থেকে জানালে তার কোয়ালিটি ও এরর মেসেজ।
           </li>
         </ul>
         <p className={P}>
-          We don&apos;t keep copies of the videos you download. Each file is deleted from our server as soon as it&apos;s
-          delivered to you, or within a few minutes if it isn&apos;t collected. Links you only look up (without
-          downloading) aren&apos;t added to your history.
+          আপনার ডাউনলোড করা ভিডিওর কোনো কপি আমরা রাখি না। প্রতিটি ফাইল আপনাকে দেওয়ার সঙ্গে সঙ্গে, আর না নিলে কয়েক মিনিটের
+          মধ্যে, আমাদের সার্ভার থেকে মুছে ফেলা হয়। শুধু দেখা লিংক (ডাউনলোড না করলে) হিস্টোরিতে যোগ হয় না।
         </p>
         <p className={P}>
-          Like any website, our servers see your IP address. We use it briefly in memory to block abuse such as repeated
-          sign-in attempts; it isn&apos;t saved with your account. Our hosting provider may keep standard server logs for
-          a short time for security and troubleshooting.
+          যেকোনো ওয়েবসাইটের মতো আমাদের সার্ভারও আপনার IP ঠিকানা দেখে। বারবার সাইন ইনের চেষ্টার মতো অপব্যবহার ঠেকাতে আমরা এটি
+          অল্প সময়ের জন্য মেমোরিতে ব্যবহার করি; এটি আপনার অ্যাকাউন্টের সাথে সংরক্ষণ করা হয় না। নিরাপত্তা ও সমস্যা সমাধানের জন্য
+          আমাদের হোস্টিং প্রোভাইডার স্বল্প সময়ের জন্য সাধারণ সার্ভার লগ রাখতে পারে।
         </p>
       </>
     ),
   },
   {
     id: 'use',
-    title: 'How we use it',
+    title: 'তথ্য যেভাবে ব্যবহার করি',
     body: (
       <ul className={UL}>
-        <li>To review your access request and run your account, including signing in with your email or phone.</li>
-        <li>To send account emails: your approval with a temporary password, and password-reset links you request.</li>
-        <li>To apply the daily download limit fairly.</li>
-        <li>To keep the service secure and to spot and stop misuse of the service or of other people&apos;s content.</li>
-        <li>
-          To understand overall usage, such as downloads per day or per platform, so we can keep the service running
-          well.
-        </li>
+        <li>আপনার অ্যাক্সেসের অনুরোধ যাচাই আর অ্যাকাউন্ট চালাতে, ইমেইল বা মোবাইল নম্বর দিয়ে সাইন ইনসহ।</li>
+        <li>অ্যাকাউন্টের ইমেইল পাঠাতে: অস্থায়ী পাসওয়ার্ডসহ অনুমোদনের ইমেইল, আর আপনার চাওয়া পাসওয়ার্ড রিসেট লিংক।</li>
+        <li>দৈনিক ডাউনলোড সীমা ন্যায্যভাবে প্রয়োগ করতে।</li>
+        <li>সার্ভিস নিরাপদ রাখতে, আর সার্ভিস বা অন্যের কনটেন্টের অপব্যবহার ধরতে ও ঠেকাতে।</li>
+        <li>সার্ভিস ভালোভাবে চালু রাখতে সামগ্রিক ব্যবহার বুঝতে, যেমন প্রতিদিন বা প্রতি প্ল্যাটফর্মে কতগুলো ডাউনলোড।</li>
+        <li>আপনার জানানো সমস্যা ঠিক করতে আর পরের সংস্করণে সার্ভিস আরও ভালো করতে।</li>
       </ul>
     ),
   },
   {
     id: 'emails',
-    title: 'Emails we send',
+    title: 'যে ইমেইল পাঠাই',
     body: (
       <p className={P}>
-        We only send emails about your account: your approval and temporary password, password-reset links, and
-        important notices about the service. We don&apos;t send marketing or newsletters, and we don&apos;t sell or share
-        your email address for anyone else&apos;s marketing.
+        আমরা শুধু আপনার অ্যাকাউন্ট সংক্রান্ত ইমেইল পাঠাই: অনুমোদন ও অস্থায়ী পাসওয়ার্ড, পাসওয়ার্ড রিসেট লিংক, আর সার্ভিস নিয়ে
+        গুরুত্বপূর্ণ নোটিশ। কোনো মার্কেটিং ইমেইল বা নিউজলেটার পাঠাই না, আর অন্য কারও মার্কেটিংয়ের জন্য আপনার ইমেইল বিক্রি বা
+        শেয়ার করি না।
       </p>
     ),
   },
   {
     id: 'sharing',
-    title: 'Who can see your information',
+    title: 'কারা আপনার তথ্য দেখতে পারেন',
     body: (
       <>
         <ul className={UL}>
           <li>
-            <span className={B}>The administrator</span> can see your account details and download history to approve
-            accounts, set limits and prevent abuse.
+            <span className={B}>অ্যাডমিন</span> অ্যাকাউন্ট অনুমোদন, সীমা নির্ধারণ আর অপব্যবহার ঠেকাতে আপনার অ্যাকাউন্টের তথ্য,
+            ডাউনলোড হিস্টোরি আর পাঠানো মতামত দেখতে পারেন।
           </li>
           <li>
-            <span className={B}>Service providers</span> that run the service for us: our application host, our database
-            host and our email delivery provider. They process data only to provide their service to us.
+            <span className={B}>সার্ভিস প্রোভাইডার</span> যারা আমাদের হয়ে সার্ভিস চালায়: অ্যাপ্লিকেশন হোস্ট, ডাটাবেস হোস্ট আর
+            ইমেইল পাঠানোর প্রোভাইডার। তারা শুধু আমাদের সেবা দিতেই তথ্য ব্যবহার করে।
           </li>
           <li>
-            <span className={B}>Video platforms</span>: when you download, our server requests the video from YouTube,
-            Facebook or Instagram. The platform sees our server, not your name, email or phone number.
+            <span className={B}>ভিডিও প্ল্যাটফর্ম</span>: ডাউনলোডের সময় আমাদের সার্ভার YouTube, Facebook বা Instagram থেকে
+            ভিডিও চায়। প্ল্যাটফর্মটি আমাদের সার্ভারকে দেখে, আপনার নাম, ইমেইল বা মোবাইল নম্বর নয়।
           </li>
           <li>
-            <span className={B}>Fonts</span>: the site loads its typefaces from Google Fonts, so Google receives your IP
-            address when your browser fetches them.
+            <span className={B}>ফন্ট</span>: সাইটের ফন্ট Google Fonts থেকে লোড হয়, তাই আপনার ব্রাউজার ফন্ট আনার সময় Google
+            আপনার IP ঠিকানা পায়।
           </li>
         </ul>
-        <p className={P}>
-          We never sell your personal information. We&apos;ll only share it with others if the law requires us to.
-        </p>
+        <p className={P}>আমরা কখনো আপনার ব্যক্তিগত তথ্য বিক্রি করি না। আইন বাধ্য করলেই শুধু অন্যদের সাথে শেয়ার করা হবে।</p>
       </>
     ),
   },
   {
     id: 'device',
-    title: 'Stored on your device',
+    title: 'আপনার ডিভাইসে যা রাখা হয়',
     body: (
       <p className={P}>
-        To keep you signed in, your browser stores a sign-in token and a copy of your basic profile in local storage.
-        Signing out removes them. We don&apos;t use advertising cookies, analytics trackers or third-party ads.
+        আপনাকে সাইন ইন অবস্থায় রাখতে আপনার ব্রাউজার একটি সাইন ইন টোকেন আর আপনার প্রোফাইলের সাধারণ তথ্যের কপি local storage-এ
+        রাখে। সাইন আউট করলে এগুলো মুছে যায়। আমরা কোনো বিজ্ঞাপনী কুকি, অ্যানালিটিক্স ট্র্যাকার বা থার্ড-পার্টি বিজ্ঞাপন ব্যবহার
+        করি না।
       </p>
     ),
   },
   {
     id: 'retention',
-    title: 'How long we keep it',
+    title: 'কতদিন রাখি',
     body: (
       <ul className={UL}>
-        <li>Your account details are kept while your account exists.</li>
+        <li>অ্যাকাউন্ট যতদিন থাকে, অ্যাকাউন্টের তথ্যও ততদিন রাখা হয়।</li>
+        <li>রেকর্ড রাখার জন্য ডাউনলোড হিস্টোরি রাখা হয়, আর অ্যাডমিন মাঝে মাঝে তা মুছে ফেলেন। আপনি আগেই মুছে ফেলতে বলতে পারেন।</li>
         <li>
-          Download history is kept for record-keeping and is cleared from time to time by the administrator. You can ask
-          for yours to be deleted sooner.
+          অ্যাকাউন্ট মুছে ফেললে প্রোফাইল আর পাসওয়ার্ড সরিয়ে ফেলা হয়। থেকে যাওয়া হিস্টোরি আর কোনো অ্যাকাউন্টের সাথে যুক্ত থাকে
+          না, আর নিয়মিত পরিষ্কারের সময় মুছে যায়।
         </li>
-        <li>
-          When an account is deleted, its profile and password are removed. Any history entries that remain are no longer
-          linked to an account and are cleared in the regular clean-ups.
-        </li>
-        <li>Sign-in sessions expire after 30 days; password-reset links expire after 60 minutes.</li>
+        <li>মতামত ও সমস্যার বিবরণ সমাধান হওয়া পর্যন্ত রাখা হয়, তারপর অ্যাডমিন মুছে ফেলতে পারেন।</li>
+        <li>সাইন ইন সেশনের মেয়াদ ৩০ দিন; পাসওয়ার্ড রিসেট লিংকের মেয়াদ ৬০ মিনিট।</li>
       </ul>
     ),
   },
   {
     id: 'security',
-    title: 'Security',
+    title: 'নিরাপত্তা',
     body: (
       <p className={P}>
-        Passwords are hashed with scrypt, sign-in attempts are rate-limited, and changing your password immediately signs
-        out every other device. Your sign-in token is never put in a web address: each download starts with a
-        short-lived, single-use download link instead. Data travels over encrypted (HTTPS) connections. No system is
-        perfectly secure, so please use a password you don&apos;t use anywhere else and tell the administrator if you
-        notice anything unusual.
+        পাসওয়ার্ড scrypt দিয়ে hash করা হয়, সাইন ইনের চেষ্টার সংখ্যা সীমিত রাখা হয়, আর পাসওয়ার্ড বদলালে সঙ্গে সঙ্গে অন্য সব
+        ডিভাইস থেকে সাইন আউট হয়ে যায়। আপনার সাইন ইন টোকেন কখনো ওয়েব ঠিকানায় রাখা হয় না: প্রতিটি ডাউনলোড শুরু হয় স্বল্পমেয়াদি,
+        একবার ব্যবহারযোগ্য একটি ডাউনলোড লিংক দিয়ে। তথ্য এনক্রিপ্টেড (HTTPS) সংযোগে আদান-প্রদান হয়। কোনো সিস্টেমই শতভাগ নিরাপদ
+        নয়, তাই অন্য কোথাও ব্যবহার করেন না এমন পাসওয়ার্ড দিন, আর অস্বাভাবিক কিছু দেখলে অ্যাডমিনকে জানান।
       </p>
     ),
   },
   {
     id: 'choices',
-    title: 'Your choices and rights',
+    title: 'আপনার সুযোগ ও অধিকার',
     body: (
       <ul className={UL}>
         <li>
-          See your details and today&apos;s usage on your{' '}
+          আপনার{' '}
           <Link href="/account" className={A}>
-            Account
+            অ্যাকাউন্ট
           </Link>{' '}
-          page, and change your password there at any time.
+          পেজে নিজের তথ্য আর আজকের ব্যবহার দেখুন, আর যেকোনো সময় সেখান থেকে পাসওয়ার্ড বদলান।
         </li>
-        <li>Ask the administrator to correct your name, email or mobile number.</li>
-        <li>Ask the administrator to delete your download history or your whole account.</li>
-        <li>Stop using the service at any time.</li>
+        <li>নাম, ইমেইল বা মোবাইল নম্বর ঠিক করতে অ্যাডমিনকে বলুন।</li>
+        <li>ডাউনলোড হিস্টোরি বা পুরো অ্যাকাউন্ট মুছে ফেলতে অ্যাডমিনকে বলুন।</li>
+        <li>যেকোনো সময় সার্ভিস ব্যবহার বন্ধ করুন।</li>
       </ul>
     ),
   },
   {
     id: 'children',
-    title: 'Children',
+    title: 'শিশু',
     body: (
       <p className={P}>
-        UniStream Saver is meant for students. If you&apos;re under 18, please use it only with a parent&apos;s or
-        guardian&apos;s permission. We don&apos;t knowingly accept accounts from children under 13.
+        UniStream Saver শিক্ষার্থীদের জন্য। আপনার বয়স ১৮-র কম হলে শুধু বাবা-মা বা অভিভাবকের অনুমতি নিয়ে ব্যবহার করুন। ১৩
+        বছরের কম বয়সী শিশুদের অ্যাকাউন্ট আমরা জেনেশুনে গ্রহণ করি না।
       </p>
     ),
   },
   {
     id: 'changes',
-    title: 'Changes to this policy',
+    title: 'এই পলিসির পরিবর্তন',
     body: (
       <p className={P}>
-        We&apos;ll update this policy if what we collect or how we use it changes, for example when the premium plan
-        launches. The date at the top shows the latest version, and we&apos;ll give notice in the app for important
-        changes.
+        আমরা কী তথ্য রাখি বা কীভাবে ব্যবহার করি তা বদলালে এই পলিসি হালনাগাদ করা হবে। ওপরের তারিখে সর্বশেষ সংস্করণ দেখা যায়, আর
+        গুরুত্বপূর্ণ পরিবর্তন হলে অ্যাপে জানানো হবে।
       </p>
     ),
   },
   {
     id: 'contact',
-    title: 'Contact',
+    title: 'যোগাযোগ',
     body: (
       <p className={P}>
-        For any privacy question or request, reply to any email you&apos;ve received from UniStream Saver, or contact the
-        administrator who approved your account.
+        প্রাইভেসি নিয়ে কোনো প্রশ্ন বা অনুরোধ থাকলে UniStream Saver থেকে পাওয়া যেকোনো ইমেইলের উত্তর দিন, অথবা যে অ্যাডমিন আপনার
+        অ্যাকাউন্ট অনুমোদন করেছেন তার সাথে যোগাযোগ করুন।
       </p>
     ),
   },
@@ -224,43 +220,43 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
+    <div className="min-h-svh flex flex-col page-bg">
       <Navbar />
       <main id="main" className="relative z-10 flex-1 px-4 sm:px-8 py-8 sm:py-14">
         <div className="max-w-5xl mx-auto lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-14">
           <aside className="hidden lg:block">
-            <nav aria-label="On this page" className="sticky top-24">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3">On this page</p>
+            <nav aria-label="এই পেজে" className="sticky top-24">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3">এই পেজে</p>
               <TableOfContents />
             </nav>
           </aside>
 
           <article className="min-w-0 max-w-3xl">
             <header>
-              <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-400">
+              <p className="inline-flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-400">
                 <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                Legal
+                আইনি তথ্য
               </p>
-              <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">Privacy Policy</h1>
-              <p className="mt-2 text-sm text-slate-500">Last updated {LAST_UPDATED}</p>
+              <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">প্রাইভেসি পলিসি</h1>
+              <p className="mt-2 text-sm text-slate-500">সর্বশেষ হালনাগাদ: {LAST_UPDATED}</p>
             </header>
 
             <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 sm:p-5">
-              <h2 className="text-sm font-semibold text-white">The short version</h2>
+              <h2 className="text-sm font-semibold text-white">সংক্ষেপে</h2>
               <ul className="mt-2 space-y-1.5 pl-5 list-disc marker:text-emerald-400 text-[14px] leading-relaxed text-slate-300">
-                <li>We store your name, email, mobile number and download history, and nothing more than we need.</li>
-                <li>Your password is hashed. Nobody can read it, not even the administrator.</li>
-                <li>We don&apos;t keep the videos, don&apos;t sell your data and don&apos;t send marketing emails.</li>
-                <li>You can ask for your history or your whole account to be deleted.</li>
+                <li>আপনার নাম, ইমেইল, মোবাইল নম্বর আর ডাউনলোড হিস্টোরি রাখি — প্রয়োজনের বেশি কিছু নয়।</li>
+                <li>আপনার পাসওয়ার্ড hash করা থাকে। কেউ পড়তে পারে না, অ্যাডমিনও না।</li>
+                <li>ভিডিও রাখি না, আপনার তথ্য বিক্রি করি না, মার্কেটিং ইমেইলও পাঠাই না।</li>
+                <li>হিস্টোরি বা পুরো অ্যাকাউন্ট মুছে ফেলতে বলতে পারেন।</li>
               </ul>
             </div>
 
             <details className="group lg:hidden mt-6 rounded-xl border border-white/[0.08] bg-white/[0.02]">
               <summary className="flex items-center justify-between gap-3 min-h-12 px-4 cursor-pointer list-none [&::-webkit-details-marker]:hidden text-sm font-semibold text-slate-200">
-                On this page
+                এই পেজে
                 <ChevronDown className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
               </summary>
-              <nav aria-label="On this page" className="px-4 pb-3">
+              <nav aria-label="এই পেজে" className="px-4 pb-3">
                 <TableOfContents />
               </nav>
             </details>
@@ -276,15 +272,15 @@ export default function PrivacyPage() {
             ))}
 
             <p className="mt-12 pt-6 border-t border-white/[0.06] text-[13px] text-slate-500">
-              See also our{' '}
+              আরও দেখুন:{' '}
               <Link href="/terms" className={A}>
-                Terms of Use
+                ব্যবহারের শর্তাবলি
               </Link>{' '}
-              and the{' '}
+              ও{' '}
               <Link href="/#faq" className={A}>
-                FAQ
+                প্রশ্নোত্তর
               </Link>
-              .
+              ।
             </p>
           </article>
         </div>

@@ -3,8 +3,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Download a video',
-  description: 'Paste a YouTube, Facebook or Instagram link, choose a quality and download the video or just the audio (MP3).',
+  title: 'ভিডিও ডাউনলোড',
+  description: 'YouTube, Facebook বা Instagram-এর লিংক পেস্ট করুন, কোয়ালিটি বেছে নিন, আর ভিডিও বা শুধু অডিও (MP3) ডাউনলোড করুন।',
   robots: { index: false, follow: false },
 }
 

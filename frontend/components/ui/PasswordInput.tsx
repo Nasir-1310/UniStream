@@ -4,6 +4,7 @@
 import { forwardRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
 import { AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { passwordStrength } from '@/lib/validation'
+import { isBanglaPage, translateServerText } from '@/lib/serverText'
 import { describedBy } from './Field'
 
 export interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
@@ -45,7 +46,12 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(fu
   const [visible, setVisible] = useState(false)
   const [innerValue, setInnerValue] = useState(typeof rest.defaultValue === 'string' ? rest.defaultValue : '')
   const value = typeof rest.value === 'string' ? rest.value : innerValue
-  const strength = showStrength && value ? passwordStrength(value, strengthMinLength) : null
+  const rawStrength = showStrength && value ? passwordStrength(value, strengthMinLength) : null
+  // The meter's words follow the page: Bangla on the public site, English in the admin panel.
+  const strength =
+    rawStrength && isBanglaPage()
+      ? { ...rawStrength, label: translateServerText(rawStrength.label), hint: translateServerText(rawStrength.hint) }
+      : rawStrength
   const strengthId = `${id}-strength`
   const describedIds = [describedBy(id, error, hint), strength ? strengthId : undefined].filter(Boolean).join(' ') || undefined
 
@@ -85,7 +91,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(fu
         <button
           type="button"
           onClick={() => setVisible(v => !v)}
-          aria-label={visible ? 'Hide password' : 'Show password'}
+          aria-label={visible ? 'পাসওয়ার্ড লুকান' : 'পাসওয়ার্ড দেখান'}
           aria-pressed={visible}
           aria-controls={id}
           disabled={rest.disabled}

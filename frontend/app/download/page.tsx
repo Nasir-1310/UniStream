@@ -48,19 +48,20 @@ import {
   type VideoInfo,
 } from '@/lib/api'
 import { clearSession, getCachedUser, getToken, refreshSession, useSession } from '@/lib/auth'
-import { pluralize } from '@/lib/format'
+import { countBn } from '@/lib/format'
+import { bnError, translateServerText } from '@/lib/serverText'
 import { validateVideoUrl, type Platform } from '@/lib/validation'
 
-/** Matches the API's message for an expired or revoked session. */
-const SESSION_EXPIRED_TEXT = 'Your session has expired. Please sign in again.'
+/** The API's message for an expired or revoked session, as the page shows it (in Bangla). */
+const SESSION_EXPIRED_TEXT = translateServerText('Your session has expired. Please sign in again.')
 /** The stream's refusal of a spent or expired ticket ("This download link has expired…"). */
-const TICKET_EXPIRED_RE = /download link has expired/i
+const TICKET_EXPIRED_RE = /download link has expired|ডাউনলোড লিংকের মেয়াদ শেষ/i
 /** Show the "server is waking up" hint after this long. */
 const SLOW_ANALYSIS_MS = 8000
 /** Reconnect attempts after a dropped progress stream (the server keeps the download for 10 minutes). */
 const MAX_RECONNECTS = 8
 /** The server's refusal of a download it no longer has (older servers sent it with code "auth"). */
-const JOB_GONE_RE = /interrupted for too long|stopped while the page was away/i
+const JOB_GONE_RE = /interrupted for too long|stopped while the page was away|ডাউনলোড থেমে গেছে/i
 const RECONNECT_DELAY_MS = 2000
 
 const STARTING: DownloadProgressEvent = {
@@ -97,8 +98,8 @@ function saveFile(href: string): void {
 function remainingText(usage: Usage): string {
   if (usage.limit === null) return ''
   const remaining = usage.remaining ?? Math.max(0, usage.limit - usage.used)
-  if (remaining <= 0) return 'That was today’s last download.'
-  return `${pluralize(remaining, 'download')} left today.`
+  if (remaining <= 0) return 'এটাই ছিল আজকের শেষ ডাউনলোড।'
+  return `আজ আরও ${countBn(remaining, 'ডাউনলোড')} বাকি।`
 }
 
 function prefersReducedMotion(): boolean {
@@ -119,21 +120,21 @@ export default function DownloadPage() {
   } else if (error && !loading) {
     content = (
       <div className="max-w-md mx-auto mt-6 surface-card p-5 sm:p-6">
-        <Alert tone="danger" title="We couldn’t load your account">
+        <Alert tone="danger" title="আপনার অ্যাকাউন্ট লোড করা যায়নি">
           {error}
         </Alert>
         <button type="button" onClick={() => refresh().catch(() => undefined)} className="btn-primary w-full mt-4">
           <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          Try again
+          আবার চেষ্টা করুন
         </button>
       </div>
     )
   } else {
-    content = <PageLoader label="Loading your account…" />
+    content = <PageLoader label="আপনার অ্যাকাউন্ট লোড হচ্ছে…" />
   }
 
   return (
-    <div className="min-h-svh flex flex-col bg-[#0d0f1a] text-white">
+    <div className="min-h-svh flex flex-col page-bg text-white">
       {/* Ambient glow */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] max-w-[200vw] h-[350px] rounded-full bg-indigo-600/[0.05] blur-[140px]" />
@@ -274,12 +275,12 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     if (activeRef.current) return
     const check = validateVideoUrl(extractLink(raw))
     if (!check.ok) {
-      setUrlError(check.error)
+      setUrlError(bnError(check.error))
       inputRef.current?.focus()
       return
     }
     if (!online) {
-      setUrlError('You’re offline. Reconnect to the internet and try again.')
+      setUrlError('আপনি অফলাইনে আছেন। ইন্টারনেটে যুক্ত হয়ে আবার চেষ্টা করুন।')
       return
     }
 
@@ -302,12 +303,12 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       setResult({ info, url: check.value, platform: check.platform ?? null })
       setAnnouncement(
         info.formats.length
-          ? `Found ${pluralize(info.formats.length, 'download option')} for ${info.title || 'this video'}.`
-          : 'This link has nothing to download.',
+          ? `${info.title || 'এই ভিডিও'}-এর জন্য ${countBn(info.formats.length, 'ডাউনলোড অপশন')} পাওয়া গেছে।`
+          : 'এই লিংকে ডাউনলোড করার মতো কিছু নেই।',
       )
     } catch (err) {
       if (controller.signal.aborted || analysisRef.current !== controller) return
-      setUrlError(apiErrorMessage(err, 'We couldn’t get this video. Check the link and try again.'))
+      setUrlError(apiErrorMessage(err, 'ভিডিওটি আনা যায়নি। লিংকটি দেখে আবার চেষ্টা করুন।'))
       focusInputWhenIdle.current = true
     } finally {
       window.clearTimeout(slowTimer)
@@ -325,7 +326,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     setAnalyzing(false)
     setSlow(false)
     focusInputWhenIdle.current = true
-    setAnnouncement('Stopped looking up the video.')
+    setAnnouncement('ভিডিও খোঁজা বন্ধ করা হয়েছে।')
   }
 
   async function pasteFromClipboard() {
@@ -334,12 +335,12 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       if (!navigator.clipboard?.readText) throw new Error('Clipboard unavailable')
       text = (await navigator.clipboard.readText()).trim()
     } catch {
-      toast.info('Couldn’t open your clipboard', { description: 'Long-press the link box and choose Paste instead.' })
+      toast.info('ক্লিপবোর্ড খোলা যায়নি', { description: 'লিংকের বক্সে চেপে ধরে Paste বেছে নিন।' })
       inputRef.current?.focus()
       return
     }
     if (!text) {
-      toast.info('Your clipboard is empty', { description: 'Copy a video link first, then tap Paste.' })
+      toast.info('ক্লিপবোর্ড খালি', { description: 'আগে একটি ভিডিওর লিংক কপি করুন, তারপর পেস্ট চাপুন।' })
       return
     }
     const link = extractLink(text)
@@ -347,7 +348,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     // A supported link starts straight away; anything else stays in the box with the reason.
     const check = validateVideoUrl(link)
     if (check.ok) void analyze(link)
-    else setUrlError(check.error)
+    else setUrlError(bnError(check.error))
   }
 
   function clearLink() {
@@ -398,7 +399,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     if (!analysed || activeRef.current) return
     const formatId = format.format_id
     if (!online) {
-      toast.error('You’re offline', { description: 'Reconnect to the internet and try again.' })
+      toast.error('আপনি অফলাইনে আছেন', { description: 'ইন্টারনেটে যুক্ত হয়ে আবার চেষ্টা করুন।' })
       return
     }
     // The cache can be fresher than this render (another tab finished a download).
@@ -412,7 +413,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     setActiveId(formatId)
     setLimitNotice(null)
     setRow(formatId, { status: 'active', progress: STARTING })
-    if (!isRetry) setAnnouncement(`Starting download: ${formatName(format)}.`)
+    if (!isRetry) setAnnouncement(`ডাউনলোড শুরু হচ্ছে: ${formatName(format)}।`)
 
     let ticket: string
     try {
@@ -484,9 +485,9 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
         if (event.status !== lastStatus) {
           lastStatus = event.status
           if (event.status === 'merging') {
-            setAnnouncement(format.type === 'audio' ? 'Converting to MP3.' : 'Almost done: preparing your file.')
+            setAnnouncement(format.type === 'audio' ? 'MP3-তে রূপান্তর হচ্ছে।' : 'প্রায় শেষ: ফাইল প্রস্তুত হচ্ছে।')
           } else if (event.status === 'queued') {
-            setAnnouncement('Many people are downloading. Your download is waiting in line and starts by itself.')
+            setAnnouncement('অনেকে ডাউনলোড করছেন। আপনার ডাউনলোড লাইনে আছে, নিজে থেকেই শুরু হবে।')
           }
         }
         setRow(formatId, { status: 'active', progress: event })
@@ -503,7 +504,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           // The download keeps running on the server; reconnect when the user
           // comes back instead of spending the retries while the page sleeps.
           const resumeUrl = downloadResumeUrl(jobId, resumeCode)
-          setAnnouncement('Download continues on the server. Progress resumes when you come back.')
+          setAnnouncement('সার্ভারে ডাউনলোড চলছে। পেজে ফিরলে অগ্রগতি আবার দেখাবে।')
           const onVisible = () => {
             if (document.visibilityState !== 'visible') return
             document.removeEventListener('visibilitychange', onVisible)
@@ -516,7 +517,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
         if (jobId && resumeCode && reconnects < MAX_RECONNECTS) {
           reconnects += 1
           const resumeUrl = downloadResumeUrl(jobId, resumeCode)
-          setAnnouncement('Connection lost. Reconnecting…')
+          setAnnouncement('সংযোগ বিচ্ছিন্ন। আবার যুক্ত হচ্ছে…')
           window.setTimeout(() => {
             // Cancelled, or another stream took over, while waiting.
             if (settled || streamRef.current !== stream) return
@@ -535,17 +536,17 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       endStream()
       const message =
         navigator.onLine === false
-          ? 'You went offline, so the download stopped. Reconnect and try again.'
+          ? 'আপনি অফলাইন হয়ে যাওয়ায় ডাউনলোড থেমে গেছে। ইন্টারনেটে যুক্ত হয়ে আবার চেষ্টা করুন।'
           : received
-          ? 'The connection dropped before the download finished. Please try again. Interrupted downloads don’t count toward your limit.'
-          : 'We couldn’t reach the download server. Please try again in a moment.'
+          ? 'ডাউনলোড শেষ হওয়ার আগেই সংযোগ বিচ্ছিন্ন হয়েছে। আবার চেষ্টা করুন। অসম্পূর্ণ ডাউনলোড সীমায় গোনা হয় না।'
+          : 'ডাউনলোড সার্ভারে পৌঁছানো যায়নি। একটু পর আবার চেষ্টা করুন।'
       setRow(formatId, { status: 'error', message, retryable: true })
-      setAnnouncement(`Download failed. ${message}`)
+      setAnnouncement(`ডাউনলোড ব্যর্থ হয়েছে। ${message}`)
     }
 
     if (!open(downloadProgressUrl(ticket))) {
       endStream()
-      setRow(formatId, { status: 'error', message: 'The download couldn’t start. Please try again.', retryable: true })
+      setRow(formatId, { status: 'error', message: 'ডাউনলোড শুরু করা যায়নি। আবার চেষ্টা করুন।', retryable: true })
     }
   }
 
@@ -553,7 +554,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   function refuseDownload(format: VideoFormat, err: unknown) {
     const formatId = format.format_id
     const status = apiErrorStatus(err)
-    const message = apiErrorMessage(err, 'The download couldn’t start. Please try again.')
+    const message = apiErrorMessage(err, 'ডাউনলোড শুরু করা যায়নি। আবার চেষ্টা করুন।')
     if (status === 401) {
       // lib/api has already ended the session and is taking the user to sign in.
       setRow(formatId, { status: 'error', message, retryable: false })
@@ -574,13 +575,13 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       // 5xx: worth another try.
       setRow(formatId, { status: 'error', message, retryable: status !== 400 && status !== 422 })
     }
-    setAnnouncement(`Download not started. ${message}`)
+    setAnnouncement(`ডাউনলোড শুরু হয়নি। ${message}`)
   }
 
   function finishDownload(format: VideoFormat, event: DownloadProgressEvent) {
     const formatId = format.format_id
     if (!event.token) {
-      setRow(formatId, { status: 'error', message: 'The file wasn’t ready. Please try again.', retryable: true })
+      setRow(formatId, { status: 'error', message: 'ফাইল প্রস্তুত হয়নি। আবার চেষ্টা করুন।', retryable: true })
       return
     }
     saveFile(downloadFileUrl(event.token))
@@ -592,25 +593,26 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       if (latest) setUser({ ...latest, usage: event.usage })
     }
     const left = event.usage ? remainingText(event.usage) : ''
-    toast.success('Download complete', {
-      description: `Saved to your device.${left ? ` ${left}` : ''}`,
+    toast.success('ডাউনলোড সম্পূর্ণ', {
+      description: `আপনার ডিভাইসে সেভ হয়েছে।${left ? ` ${left}` : ''}`,
     })
-    setAnnouncement(`Download complete: ${formatName(format)}. ${left}`)
+    setAnnouncement(`ডাউনলোড সম্পূর্ণ: ${formatName(format)}। ${left}`)
   }
 
   function failDownload(format: VideoFormat, event: DownloadProgressEvent, isRetry: boolean) {
     const formatId = format.format_id
-    const message = event.error?.trim() || 'The download failed. Please try again.'
-    if (event.code === 'gone' || (event.code === 'auth' && JOB_GONE_RE.test(message))) {
+    // The stream's messages come from the API in English: shown in Bangla.
+    const message = translateServerText(event.error?.trim()) || 'ডাউনলোড ব্যর্থ হয়েছে। আবার চেষ্টা করুন।'
+    if (event.code === 'gone' || (event.code === 'auth' && JOB_GONE_RE.test(`${event.error ?? ''} ${message}`))) {
       // The server no longer has this download (left too long, or it
       // restarted). Nothing is wrong with the account: offer Retry, never
       // sign-out, and don't silently start a long download over again.
       setRow(formatId, {
         status: 'error',
-        message: 'This download stopped before it finished (the page was away too long, or the server restarted). It didn’t count toward your limit. Please try again.',
+        message: 'ডাউনলোড শেষ হওয়ার আগেই থেমে গেছে (পেজটি দীর্ঘক্ষণ বন্ধ ছিল, বা সার্ভার রিস্টার্ট হয়েছে)। এটি সীমায় গোনা হয়নি। আবার চেষ্টা করুন।',
         retryable: true,
       })
-      setAnnouncement('Download failed. Please try again.')
+      setAnnouncement('ডাউনলোড ব্যর্থ হয়েছে। আবার চেষ্টা করুন।')
       return
     }
     switch (event.code) {
@@ -644,7 +646,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
         // ordinary failures: worth another try.
         setRow(formatId, { status: 'error', message, retryable: true })
     }
-    setAnnouncement(`Download failed. ${message}`)
+    setAnnouncement(`ডাউনলোড ব্যর্থ হয়েছে। ${message}`)
   }
 
   function cancelDownload() {
@@ -652,8 +654,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     if (!formatId) return
     endStream()
     setRow(formatId, IDLE)
-    toast.info('Download cancelled', { description: 'It didn’t count toward today’s limit.' })
-    setAnnouncement('Download cancelled.')
+    toast.info('ডাউনলোড বাতিল হয়েছে', { description: 'এটি আজকের সীমায় গোনা হয়নি।' })
+    setAnnouncement('ডাউনলোড বাতিল হয়েছে।')
   }
 
   /** "Report this problem" on a failed download: the link, quality and error go along. */
@@ -688,16 +690,16 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
 
   const exhausted = !hasDownloadsLeft(usage)
   const blockedReason = !online
-    ? 'You’re offline. Reconnect to the internet to download.'
+    ? 'আপনি অফলাইনে আছেন। ডাউনলোড করতে ইন্টারনেটে যুক্ত হন।'
     : exhausted
     ? usage.limit === 0
-      ? 'Downloads are turned off for your account. Contact the administrator if this is a mistake.'
-      : `You’ve used all of today’s downloads. More unlock at ${resetTimeText(usage)}.`
+      ? 'আপনার অ্যাকাউন্টে ডাউনলোড বন্ধ আছে। ভুল মনে হলে অ্যাডমিনের সাথে যোগাযোগ করুন।'
+      : `আজকের সব ডাউনলোড ব্যবহার হয়ে গেছে। আবার চালু হবে ${resetTimeText(usage)}-এ।`
     : null
   const lockedReason = activeId
-    ? 'A download is running. Wait for it to finish, or cancel it, before getting another video.'
+    ? 'একটি ডাউনলোড চলছে। আরেকটি ভিডিও আনার আগে এটি শেষ হওয়া পর্যন্ত অপেক্ষা করুন, অথবা বাতিল করুন।'
     : !online
-    ? 'You’re offline. Reconnect to get videos.'
+    ? 'আপনি অফলাইনে আছেন। ভিডিও আনতে ইন্টারনেটে যুক্ত হন।'
     : null
   const sessionExpired = authIssue === SESSION_EXPIRED_TEXT
 
@@ -709,10 +711,10 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
 
       <header className="mb-4 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          {firstName && <p className="text-[13px] font-medium text-indigo-300/90">Hi, {firstName}</p>}
-          <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold text-white">Download a video</h1>
+          {firstName && <p className="text-[13px] font-medium text-indigo-300/90">হ্যালো, {firstName}</p>}
+          <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold text-white">ভিডিও ডাউনলোড করুন</h1>
           <p className="mt-1.5 text-sm sm:text-[15px] leading-relaxed text-slate-400 max-w-2xl">
-            Paste a YouTube, Facebook or Instagram link, choose a quality up to 4K, and save it for offline viewing.
+            YouTube, Facebook বা Instagram-এর লিংক পেস্ট করুন, 4K পর্যন্ত কোয়ালিটি বেছে নিন, আর অফলাইনে দেখার জন্য সেভ করুন।
           </p>
         </div>
         <button
@@ -721,39 +723,39 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           className="btn-outline btn-sm self-start sm:self-auto whitespace-nowrap"
         >
           <MessageSquareHeart className="w-4 h-4" aria-hidden="true" />
-          Report a problem / Feedback
+          সমস্যা জানান / মতামত দিন
         </button>
       </header>
 
       <div className="space-y-3 mb-4 sm:mb-5 empty:hidden">
         {!online && (
-          <Alert tone="warning" title="You’re offline">
-            Reconnect to the internet to get videos and download them.
+          <Alert tone="warning" title="আপনি অফলাইনে আছেন">
+            ভিডিও আনতে ও ডাউনলোড করতে ইন্টারনেটে যুক্ত হন।
           </Alert>
         )}
         {user.temp_password && !hideTempNotice && (
           <Alert
             tone="warning"
-            title="You’re using a temporary password"
+            title="আপনি অস্থায়ী পাসওয়ার্ড ব্যবহার করছেন"
             onDismiss={() => setHideTempNotice(true)}
             action={
               <Link href="/account#password" className="btn-outline btn-sm">
                 <KeyRound className="w-4 h-4" aria-hidden="true" />
-                Set my own password
+                নিজের পাসওয়ার্ড সেট করুন
               </Link>
             }
           >
-            The password from your approval email is temporary. Replace it with one only you know.
+            অনুমোদনের ইমেইলে পাওয়া পাসওয়ার্ডটি অস্থায়ী। শুধু আপনি জানেন এমন একটি পাসওয়ার্ড দিয়ে বদলে নিন।
           </Alert>
         )}
         {inAppBrowser && !hideInAppNotice && (
-          <Alert tone="info" title="Open this page in Chrome or Safari" onDismiss={() => setHideInAppNotice(true)}>
-            Browsers built into Facebook, Messenger and Instagram often block file downloads. Tap the ⋮ or ··· menu and
-            choose “Open in browser”.
+          <Alert tone="info" title="পেজটি Chrome বা Safari-তে খুলুন" onDismiss={() => setHideInAppNotice(true)}>
+            Facebook, Messenger আর Instagram-এর ভেতরের ব্রাউজার প্রায়ই ফাইল ডাউনলোড আটকে দেয়। ⋮ বা ··· মেনু থেকে
+            “Open in browser” বেছে নিন।
           </Alert>
         )}
         {limitNotice && (
-          <Alert tone="warning" title="Download not started" onDismiss={() => setLimitNotice(null)}>
+          <Alert tone="warning" title="ডাউনলোড শুরু হয়নি" onDismiss={() => setLimitNotice(null)}>
             {limitNotice}
           </Alert>
         )}
@@ -784,7 +786,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           <>
             {result.info.notice && (
               <Alert tone="warning" className="mb-4">
-                {result.info.notice}
+                {translateServerText(result.info.notice)}
               </Alert>
             )}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-6 lg:items-start">
@@ -831,16 +833,16 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
             <LogIn className="w-5 h-5 text-amber-300" aria-hidden="true" />
           </span>
         }
-        title={sessionExpired ? 'Please sign in again' : 'Downloads aren’t available'}
+        title={sessionExpired ? 'আবার সাইন ইন করুন' : 'ডাউনলোড করা যাচ্ছে না'}
         description={authIssue}
         footer={
           <>
             <button type="button" onClick={() => setAuthIssue(null)} className="btn-secondary">
-              Not now
+              এখন না
             </button>
             <button type="button" onClick={goToSignIn} className="btn-primary" data-autofocus>
               <LogIn className="w-4 h-4" aria-hidden="true" />
-              {sessionExpired ? 'Sign in again' : 'Sign out'}
+              {sessionExpired ? 'আবার সাইন ইন করুন' : 'সাইন আউট'}
             </button>
           </>
         }

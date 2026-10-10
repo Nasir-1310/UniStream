@@ -213,7 +213,7 @@ function ModalPanel({
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={`ui-sheet relative flex w-full ${SIZES[size]} max-h-[92dvh] sm:max-h-[88dvh] flex-col
-                    rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#111322] shadow-2xl shadow-black/50
+                    rounded-t-2xl sm:rounded-2xl border border-white/10 bg-panel shadow-2xl shadow-black/50
                     outline-none ${className}`}
       >
         {/* Grab handle: signals "bottom sheet" on phones. */}
@@ -236,7 +236,7 @@ function ModalPanel({
               type="button"
               onClick={() => onCloseRef.current()}
               disabled={!dismissible}
-              aria-label="Close"
+              aria-label="বন্ধ করুন"
               className="-mr-2 -mt-1 w-10 h-10 flex-shrink-0 inline-flex items-center justify-center rounded-lg
                          text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition-colors"
             >

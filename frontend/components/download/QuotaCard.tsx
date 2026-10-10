@@ -9,10 +9,10 @@ import type { ReactNode } from 'react'
 import { Download, Infinity as InfinityIcon } from 'lucide-react'
 import { Badge } from '@/components/ui'
 import type { Usage } from '@/lib/api'
-import { formatNumber, formatTime, formatTimeUntil, pluralize, usagePercent } from '@/lib/format'
+import { countBn, formatNumber, formatTime, formatTimeUntilBn, usagePercent } from '@/lib/format'
 
 export function timezoneLabel(tz: string): string {
-  return tz === 'Asia/Dhaka' ? 'Bangladesh time' : tz.replace(/_/g, ' ')
+  return tz === 'Asia/Dhaka' ? '(বাংলাদেশ সময়)' : tz.replace(/_/g, ' ')
 }
 
 /** "12:00 am Bangladesh time" — when today's count starts again. */
@@ -35,7 +35,7 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
   const unlimited = usage.limit === null
   const limit = usage.limit ?? 0
   const remaining = unlimited ? null : Math.max(0, usage.remaining ?? limit - usage.used)
-  const resetsIn = now > 0 && now < Date.parse(usage.resets_at) ? formatTimeUntil(usage.resets_at, now) : null
+  const resetsIn = now > 0 && now < Date.parse(usage.resets_at) ? formatTimeUntilBn(usage.resets_at, now) : null
   const resetText = resetTimeText(usage)
 
   const tone = unlimited
@@ -51,34 +51,33 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
   if (unlimited) {
     headline = (
       <span className="inline-flex items-center gap-2">
-        Unlimited downloads
-        <Badge tone="brand">Unlimited</Badge>
+        আনলিমিটেড ডাউনলোড
+        <Badge tone="brand">আনলিমিটেড</Badge>
       </span>
     )
-    detail = `Unlimited downloads per day for your account · ${pluralize(usage.used, 'download')} today.`
+    detail = `আপনার অ্যাকাউন্টে প্রতিদিন আনলিমিটেড ডাউনলোড · আজ ${countBn(usage.used, 'ডাউনলোড')}।`
   } else if (limit === 0) {
-    headline = 'Downloads are turned off'
-    detail = 'Downloads are turned off for your account right now. Contact the administrator if this is a mistake.'
+    headline = 'ডাউনলোড বন্ধ আছে'
+    detail = 'আপনার অ্যাকাউন্টে এখন ডাউনলোড বন্ধ রাখা হয়েছে। ভুল মনে হলে অ্যাডমিনের সাথে যোগাযোগ করুন।'
   } else if (remaining === 0) {
-    headline = 'Daily limit reached'
+    headline = 'আজকের সীমা শেষ'
     detail = (
       <>
-        You&apos;ve used {limit === 1 ? 'today’s download' : `all ${formatNumber(limit)} of today’s downloads`}. More
-        unlock at {resetText}
-        {resetsIn ? ` (in ${resetsIn})` : ''}.
+        আজকের {limit === 1 ? 'ডাউনলোডটি' : `${formatNumber(limit)}টি ডাউনলোডই`} ব্যবহার হয়ে গেছে। আবার চালু হবে{' '}
+        {resetText}-এ{resetsIn ? ` (${resetsIn} পর)` : ''}।
       </>
     )
   } else {
     headline = (
       <>
-        <span className="tabular-nums">{formatNumber(remaining ?? 0)}</span> of{' '}
-        <span className="tabular-nums">{formatNumber(limit)}</span> {limit === 1 ? 'download' : 'downloads'} left today
+        আজ <span className="tabular-nums">{formatNumber(limit)}</span>টির মধ্যে{' '}
+        <span className="tabular-nums">{formatNumber(remaining ?? 0)}</span>টি ডাউনলোড বাকি
       </>
     )
     detail = (
       <>
-        Resets at {resetText}
-        {resetsIn ? <span className="text-slate-500"> · in {resetsIn}</span> : null}
+        নতুন করে শুরু: {resetText}
+        {resetsIn ? <span className="text-slate-500"> · {resetsIn} পর</span> : null}
       </>
     )
   }
@@ -112,7 +111,7 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
             <div
               className="flex gap-1.5"
               role="img"
-              aria-label={`${formatNumber(usage.used)} of ${formatNumber(limit)} downloads used today`}
+              aria-label={`আজ ${formatNumber(limit)}টির মধ্যে ${formatNumber(usage.used)}টি ডাউনলোড ব্যবহার হয়েছে`}
             >
               {Array.from({ length: limit }, (_, i) => (
                 <span
@@ -125,7 +124,7 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
             <div
               className="h-1.5 rounded-full bg-white/[0.08] overflow-hidden"
               role="progressbar"
-              aria-label="Downloads used today"
+              aria-label="আজ ব্যবহার করা ডাউনলোড"
               aria-valuemin={0}
               aria-valuemax={limit}
               aria-valuenow={Math.min(usage.used, limit)}
@@ -133,7 +132,7 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
               <div className={`h-full rounded-full ${tone.fill}`} style={{ width: `${percent}%` }} />
             </div>
           )}
-          <p className="mt-2 text-[11px] text-slate-500">Only completed downloads count. Checking a link is free.</p>
+          <p className="mt-2 text-[11px] text-slate-500">শুধু সম্পূর্ণ ডাউনলোড গোনা হয়। লিংক দেখা ফ্রি।</p>
         </div>
       )}
     </section>

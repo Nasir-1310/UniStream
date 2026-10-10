@@ -10,7 +10,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { LogIn, ShieldCheck } from 'lucide-react'
 import Navbar from '@/components/Navbar'
-import Footer from '@/components/Footer'
 import { Alert, Field, PasswordInput, Spinner, describedBy } from '@/components/ui'
 import { adminLogin, apiErrorMessage, apiErrorStatus, warmBackend, type AdminAuthResponse } from '@/lib/api'
 import { ADMIN_LOGIN_PASSWORD_MAX, ADMIN_LOGIN_USERNAME_MAX } from './adminValidation'
@@ -229,7 +228,7 @@ export function AdminLogin({
           </p>
         </div>
       </main>
-      <Footer />
+      {/* No site footer here: it is the Bangla public site's; the admin panel is English. */}
     </div>
   )
 }

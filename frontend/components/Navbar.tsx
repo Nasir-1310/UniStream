@@ -33,17 +33,17 @@ export default function Navbar({ showAuth = true, rightSlot, homeHref }: NavbarP
   const { user, loading, signOut } = useSession()
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#0d0f1a]/85 backdrop-blur-md supports-[backdrop-filter]:bg-[#0d0f1a]/70">
+    <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-page/85 backdrop-blur-md supports-[backdrop-filter]:bg-page/70">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 h-14 flex items-center justify-between gap-3">
         <Link
           href={homeHref ?? (user ? '/download' : '/')}
           className="flex items-center gap-2 flex-shrink-0 rounded-lg py-2 -my-2"
-          aria-label="UniStream Saver home"
+          aria-label="UniStream Saver হোম"
         >
           <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-sm shadow-indigo-900/50">
-            <Download className="w-4 h-4 text-white" strokeWidth={2.5} aria-hidden="true" />
+            <Download className="w-4 h-4 text-[#fff]" strokeWidth={2.5} aria-hidden="true" />
           </span>
-          <span className="max-[359px]:sr-only font-semibold text-[14px] text-white tracking-tight" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
+          <span className="max-[359px]:sr-only font-semibold text-[14px] text-white tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
             UniStream<span className="text-sky-400">Saver</span>
           </span>
         </Link>
@@ -61,7 +61,7 @@ export default function Navbar({ showAuth = true, rightSlot, homeHref }: NavbarP
             ) : (
               <Link href="/#auth" className="btn-outline">
                 <LogIn className="w-4 h-4" aria-hidden="true" />
-                Sign in
+                সাইন ইন
               </Link>
             ))}
         </div>
@@ -84,20 +84,20 @@ function UsagePill({ usage }: { usage: Usage | undefined }) {
     ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
     : 'border-white/10 bg-white/[0.04] text-slate-200'
   const description = unlimited
-    ? `Unlimited downloads. ${usage.used} today.`
-    : `${remaining} of ${usage.limit} downloads left today. Resets at ${formatTime(usage.resets_at, usage.timezone)}.`
+    ? `আনলিমিটেড ডাউনলোড। আজ ${usage.used}টি।`
+    : `আজ ${usage.limit}টির মধ্যে ${remaining}টি ডাউনলোড বাকি। নতুন করে শুরু হবে ${formatTime(usage.resets_at, usage.timezone)}-এ।`
 
   return (
     <Link
       href="/account"
       title={description}
-      aria-label={`${description} Open account.`}
+      aria-label={`${description} অ্যাকাউন্ট খুলুন।`}
       className={`inline-flex items-center gap-1.5 h-10 px-3 rounded-full border text-[12px] font-semibold tabular-nums transition-colors hover:brightness-125 ${tone}`}
     >
       {unlimited ? (
         <>
           <InfinityIcon className="w-4 h-4" aria-hidden="true" />
-          <span className="hidden sm:inline">Unlimited</span>
+          <span className="hidden sm:inline">আনলিমিটেড</span>
         </>
       ) : (
         <>
@@ -105,8 +105,8 @@ function UsagePill({ usage }: { usage: Usage | undefined }) {
           {/* Downloads left today: "2 left" on phones, "2 of 4 left" from sm up. */}
           <span className="whitespace-nowrap">
             {remaining}
-            <span className="hidden sm:inline"> of {usage.limit}</span>
-            <span className="font-normal opacity-70"> left</span>
+            <span className="hidden sm:inline">/{usage.limit}</span>
+            <span className="font-normal opacity-70"> বাকি</span>
           </span>
         </>
       )}
@@ -126,7 +126,7 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
   const menuRef = useRef<HTMLDivElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
-  const displayName = user.name || user.email || formatPhone(user.phone) || 'Account'
+  const displayName = user.name || user.email || formatPhone(user.phone) || 'অ্যাকাউন্ট'
 
   // While open: close on outside press, and move focus into the menu.
   useEffect(() => {
@@ -192,13 +192,13 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={`Account menu for ${displayName}`}
+        aria-label={`${displayName}-এর অ্যাকাউন্ট মেনু`}
         className="flex items-center gap-2 h-10 pl-1 pr-2 sm:pr-3 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
       >
-        <span className="relative w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center text-[12px] font-bold text-white">
+        <span className="relative w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center text-[12px] font-bold text-[#fff]">
           {initials(user.name || user.email)}
           {user.temp_password && (
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-[#0d0f1a]" aria-hidden="true" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-page" aria-hidden="true" />
           )}
         </span>
         <span className="hidden md:block max-w-[140px] truncate text-[13px] font-medium text-slate-200">{displayName}</span>
@@ -210,12 +210,12 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
           ref={menuRef}
           id={menuId}
           role="menu"
-          aria-label="Account"
+          aria-label="অ্যাকাউন্ট"
           onKeyDown={onMenuKeyDown}
-          className="ui-menu absolute right-0 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-white/10 bg-[#141729] p-1.5 shadow-2xl shadow-black/50 z-40"
+          className="ui-menu absolute right-0 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-white/10 bg-raised p-1.5 shadow-2xl shadow-black/50 z-40"
         >
           <div className="px-3 pt-2 pb-2.5 mb-1 border-b border-white/[0.06]">
-            <p className="text-sm font-semibold text-white truncate">{user.name || 'Account'}</p>
+            <p className="text-sm font-semibold text-white truncate">{user.name || 'অ্যাকাউন্ট'}</p>
             <p className="text-xs text-slate-500 truncate">{user.email || formatPhone(user.phone)}</p>
           </div>
 
@@ -228,17 +228,17 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
               className="flex items-start gap-2.5 mx-0.5 mb-1 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-200 outline-none focus:ring-2 focus:ring-amber-400/50"
             >
               <AlertTriangle className="w-4 h-4 mt-px flex-shrink-0 text-amber-400" aria-hidden="true" />
-              <span>You&apos;re using a temporary password. Change it now.</span>
+              <span>আপনি অস্থায়ী পাসওয়ার্ড ব্যবহার করছেন। এখনই বদলে নিন।</span>
             </Link>
           )}
 
           <Link href="/download" role="menuitem" tabIndex={-1} onClick={() => setOpen(false)} className={itemClass}>
             <Download className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            Download videos
+            ভিডিও ডাউনলোড
           </Link>
           <Link href="/account" role="menuitem" tabIndex={-1} onClick={() => setOpen(false)} className={itemClass}>
             <UserCircle className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            Account
+            অ্যাকাউন্ট
           </Link>
           <div className="my-1 border-t border-white/[0.06]" role="separator" />
           <button
@@ -252,7 +252,7 @@ function AccountMenu({ user, onSignOut }: { user: PublicUser; onSignOut: () => v
             className={`${itemClass} text-red-300 hover:text-red-200`}
           >
             <LogOut className="w-4 h-4" aria-hidden="true" />
-            Sign out
+            সাইন আউট
           </button>
         </div>
       )}

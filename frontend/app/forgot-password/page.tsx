@@ -14,11 +14,12 @@ import Footer from '@/components/Footer'
 import { Alert, Field, PageLoader, Spinner, describedBy } from '@/components/ui'
 import { apiErrorMessage, apiErrorStatus, forgotPassword } from '@/lib/api'
 import { validateEmail } from '@/lib/validation'
+import { bnError, translateServerText } from '@/lib/serverText'
 
 /** Seconds before "Resend" is offered again (the API allows 3 links per email per hour). */
 const RESEND_COOLDOWN = 60
 const FALLBACK_MESSAGE =
-  'If an approved account uses this email, a reset link is on its way. Check your inbox and spam folder.'
+  'এই ইমেইলে কোনো অনুমোদিত অ্যাকাউন্ট থাকলে রিসেট লিংক পাঠানো হচ্ছে। ইনবক্স আর Spam ফোল্ডার দেখুন।'
 
 /**
  * Set `.current` to an element in a submit handler; it gets focus once `busy`
@@ -36,7 +37,7 @@ function useFocusWhenIdle(busy: boolean) {
 
 export default function ForgotPasswordPage() {
   return (
-    <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
+    <div className="min-h-svh flex flex-col page-bg">
       <Navbar />
       <main id="main" className="relative z-10 flex-1 px-4 sm:px-8 py-8 sm:py-16">
         <div className="w-full max-w-md mx-auto">
@@ -45,10 +46,10 @@ export default function ForgotPasswordPage() {
             className="inline-flex items-center gap-1.5 min-h-10 mb-3 text-[13px] text-slate-400 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            Back to sign in
+            সাইন ইনে ফিরে যান
           </Link>
           <div className="portal-card p-5 sm:p-8">
-            <Suspense fallback={<PageLoader fullScreen={false} label="Loading…" />}>
+            <Suspense fallback={<PageLoader fullScreen={false} label="লোড হচ্ছে…" />}>
               <ForgotPasswordForm />
             </Suspense>
           </div>
@@ -75,7 +76,7 @@ function ForgotPasswordForm() {
   const focusAfterRef = useFocusWhenIdle(submitting)
 
   const check = validateEmail(email)
-  const emailError = (submitted || (touched && email.trim())) && !check.ok ? check.error : null
+  const emailError = (submitted || (touched && email.trim())) && !check.ok ? bnError(check.error) : null
 
   // Count the resend cooldown down once a second.
   useEffect(() => {
@@ -94,14 +95,14 @@ function ForgotPasswordForm() {
     setError(null)
     try {
       const res = await forgotPassword(address)
-      setMessage(res.message || FALLBACK_MESSAGE)
+      setMessage(translateServerText(res.message) || FALLBACK_MESSAGE)
       setSentTo(address)
       setCooldown(RESEND_COOLDOWN)
       // A resend keeps the confirmation on screen; its button is now on cooldown.
       if (sentTo) focusAfterRef.current = headingRef.current
     } catch (err) {
       setError({
-        message: apiErrorMessage(err, 'We couldn’t send the link. Please try again.'),
+        message: apiErrorMessage(err, 'লিংক পাঠানো যায়নি। আবার চেষ্টা করুন।'),
         status: apiErrorStatus(err),
       })
       focusAfterRef.current = sentTo ? headingRef.current : emailRef.current
@@ -127,7 +128,7 @@ function ForgotPasswordForm() {
           <MailCheck className="w-6 h-6 text-emerald-400" aria-hidden="true" />
         </div>
         <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-bold text-white outline-none">
-          Check your email
+          ইমেইল দেখুন
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">{message}</p>
 
@@ -135,19 +136,19 @@ function ForgotPasswordForm() {
           <li className="flex gap-2.5">
             <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" aria-hidden="true" />
             <span>
-              We sent it to <span className="text-slate-200 break-all">{sentTo}</span>. The link works for{' '}
-              <strong className="text-slate-200">60 minutes</strong> and can be used once.
+              পাঠানো হয়েছে <span className="text-slate-200 break-all">{sentTo}</span> ঠিকানায়। লিংকটি{' '}
+              <strong className="text-slate-200">৬০ মিনিট</strong> কার্যকর থাকবে, আর একবারই ব্যবহার করা যাবে।
             </span>
           </li>
           <li className="flex gap-2.5">
             <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" aria-hidden="true" />
-            <span>Nothing after a few minutes? Look in Spam or Promotions, then try resending.</span>
+            <span>কয়েক মিনিটেও না এলে Spam বা Promotions দেখুন, তারপর আবার পাঠান।</span>
           </li>
           <li className="flex gap-2.5">
             <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" aria-hidden="true" />
             <span>
-              Links are only sent to approved accounts. Still waiting for approval? You&apos;ll get your password by
-              email once an admin approves you.
+              লিংক শুধু অনুমোদিত অ্যাকাউন্টে পাঠানো হয়। এখনো অনুমোদনের অপেক্ষায়? অ্যাডমিন অনুমোদন দিলেই ইমেইলে
+              পাসওয়ার্ড পাবেন।
             </span>
           </li>
         </ul>
@@ -160,7 +161,7 @@ function ForgotPasswordForm() {
 
         <div className="mt-6 grid gap-2.5">
           <Link href="/#auth" className="btn-primary w-full">
-            Back to sign in
+            সাইন ইনে ফিরে যান
           </Link>
           <button
             type="button"
@@ -171,10 +172,10 @@ function ForgotPasswordForm() {
             {submitting ? <Spinner size="sm" label={null} /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
             {cooldown > 0 ? (
               <span>
-                Resend link in <span className="tabular-nums">{cooldown}</span>s
+                <span className="tabular-nums">{cooldown}</span> সেকেন্ড পর আবার পাঠানো যাবে
               </span>
             ) : (
-              'Resend link'
+              'আবার লিংক পাঠান'
             )}
           </button>
           <button
@@ -186,7 +187,7 @@ function ForgotPasswordForm() {
             }}
             className="btn-ghost w-full"
           >
-            Use a different email
+            অন্য ইমেইল দিন
           </button>
         </div>
       </div>
@@ -198,9 +199,9 @@ function ForgotPasswordForm() {
       <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center mb-4">
         <KeyRound className="w-6 h-6 text-indigo-300" aria-hidden="true" />
       </div>
-      <h1 className="text-2xl font-bold text-white">Forgot your password?</h1>
+      <h1 className="text-2xl font-bold text-white">পাসওয়ার্ড ভুলে গেছেন?</h1>
       <p id="forgot-intro" className="mt-2 mb-6 text-sm leading-relaxed text-slate-400">
-        Enter the email address on your account and we&apos;ll send you a link to set a new password.
+        অ্যাকাউন্টের ইমেইল ঠিকানা দিন, নতুন পাসওয়ার্ড সেট করার লিংক পাঠিয়ে দেব।
       </p>
 
       {error && (
@@ -211,9 +212,9 @@ function ForgotPasswordForm() {
 
       <Field
         htmlFor="forgot-email"
-        label="Email address"
+        label="ইমেইল ঠিকানা"
         error={emailError}
-        hint="Signed up with your phone number? Use the email you gave with it."
+        hint="মোবাইল নম্বর দিয়ে রেজিস্ট্রেশন করেছিলেন? তখন দেওয়া ইমেইলটি লিখুন।"
       >
         <input
           ref={emailRef}
@@ -238,7 +239,7 @@ function ForgotPasswordForm() {
           aria-describedby={describedBy(
             'forgot-email',
             emailError,
-            'Signed up with your phone number? Use the email you gave with it.',
+            'মোবাইল নম্বর দিয়ে রেজিস্ট্রেশন করেছিলেন? তখন দেওয়া ইমেইলটি লিখুন।',
           )}
           className="input-field"
         />
@@ -247,17 +248,17 @@ function ForgotPasswordForm() {
       <button type="submit" className="btn-primary w-full mt-6" disabled={submitting}>
         {submitting ? (
           <>
-            <Spinner size="sm" label={null} /> Sending link…
+            <Spinner size="sm" label={null} /> লিংক পাঠানো হচ্ছে…
           </>
         ) : (
-          'Send reset link'
+          'রিসেট লিংক পাঠান'
         )}
       </button>
 
       <p className="mt-6 pt-5 border-t border-white/[0.06] text-center text-[13px] text-slate-400">
-        Remembered it?{' '}
+        মনে পড়েছে?{' '}
         <Link href="/#auth" className="font-semibold text-indigo-300 hover:text-indigo-200 hover:underline underline-offset-4">
-          Sign in
+          সাইন ইন
         </Link>
       </p>
     </form>

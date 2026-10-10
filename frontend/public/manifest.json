@@ -1,11 +1,11 @@
 {
   "name": "UniStream Saver",
   "short_name": "UniStream",
-  "description": "Save YouTube, Facebook and Instagram videos in up to 1080p HD. Free for approved students.",
+  "description": "YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f1117",
-  "theme_color": "#23a567",
+  "background_color": "#fbf6ec",
+  "theme_color": "#0b6b4b",
   "orientation": "portrait",
   "icons": [
     { "src": "/unistream-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }

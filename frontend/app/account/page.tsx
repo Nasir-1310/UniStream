@@ -25,8 +25,9 @@ import Footer from '@/components/Footer'
 import { Alert, PageLoader, PasswordInput, Spinner, StatusBadge, useToast } from '@/components/ui'
 import { apiErrorMessage, apiErrorStatus, changePassword, type PublicUser, type Usage } from '@/lib/api'
 import { useSession } from '@/lib/auth'
-import { EMPTY, formatDate, formatNumber, formatPhone, formatTime, formatTimeUntil, initials, usagePercent } from '@/lib/format'
+import { EMPTY, formatDateBn, formatNumber, formatPhone, formatTime, formatTimeUntilBn, initials, usagePercent } from '@/lib/format'
 import { PASSWORD_MIN, validatePassword, validatePasswordConfirm } from '@/lib/validation'
+import { bnError } from '@/lib/serverText'
 
 // ── Clock (for "resets in 7 h 20 min") ────────────────────────────────────────
 // A coarse external store: the snapshot only changes every 30 s, so renders
@@ -64,7 +65,7 @@ function useFocusWhenIdle(busy: boolean) {
 }
 
 function timezoneLabel(tz: string): string {
-  return tz === 'Asia/Dhaka' ? 'Bangladesh time' : tz.replace(/_/g, ' ')
+  return tz === 'Asia/Dhaka' ? '(বাংলাদেশ সময়)' : tz.replace(/_/g, ' ')
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -80,21 +81,21 @@ export default function AccountPage() {
   } else if (error && !loading) {
     content = (
       <div className="max-w-md mx-auto surface-card p-5 sm:p-6">
-        <Alert tone="danger" title="We couldn’t load your account">
+        <Alert tone="danger" title="আপনার অ্যাকাউন্ট লোড করা যায়নি">
           {error}
         </Alert>
         <button type="button" onClick={() => refresh().catch(() => undefined)} className="btn-primary w-full mt-4">
           <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          Try again
+          আবার চেষ্টা করুন
         </button>
       </div>
     )
   } else {
-    content = <PageLoader label="Loading your account…" />
+    content = <PageLoader label="আপনার অ্যাকাউন্ট লোড হচ্ছে…" />
   }
 
   return (
-    <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
+    <div className="min-h-svh flex flex-col page-bg">
       <Navbar />
       <main id="main" className="relative z-10 flex-1 px-4 sm:px-8 py-6 sm:py-12">
         <div className="max-w-5xl mx-auto">{content}</div>
@@ -127,25 +128,25 @@ function AccountContent({ user, refresh, signOut }: AccountContentProps) {
   return (
     <>
       <header className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">Account</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-white">অ্যাকাউন্ট</h1>
         <p className="mt-1.5 text-sm sm:text-[15px] text-slate-400">
-          Your details, downloads left today and your password.
+          আপনার তথ্য, আজকের ডাউনলোড আর পাসওয়ার্ড।
         </p>
       </header>
 
       {user.temp_password && (
         <Alert
           tone="warning"
-          title="You’re using a temporary password"
+          title="আপনি অস্থায়ী পাসওয়ার্ড ব্যবহার করছেন"
           className="mb-6"
           action={
             <button type="button" onClick={goToPasswordForm} className="btn-outline btn-sm">
               <KeyRound className="w-4 h-4" aria-hidden="true" />
-              Set my own password
+              নিজের পাসওয়ার্ড সেট করুন
             </button>
           }
         >
-          Your approval email included a temporary password. Replace it with one only you know to keep your account safe.
+          অনুমোদনের ইমেইলে একটি অস্থায়ী পাসওয়ার্ড দেওয়া হয়েছিল। অ্যাকাউন্ট নিরাপদ রাখতে শুধু আপনি জানেন এমন পাসওয়ার্ড দিয়ে বদলে নিন।
         </Alert>
       )}
 
@@ -162,16 +163,16 @@ function AccountContent({ user, refresh, signOut }: AccountContentProps) {
       >
         <div className="min-w-0">
           <h2 id="signout-title" className="text-base font-semibold text-white">
-            Sign out
+            সাইন আউট
           </h2>
           <p className="mt-1 text-[13px] leading-relaxed text-slate-400 max-w-xl">
-            You stay signed in on this device for up to 30 days. Lost a phone or used a shared computer? Changing your
-            password signs out every other device.
+            এই ডিভাইসে ৩০ দিন পর্যন্ত সাইন ইন থাকবেন। ফোন হারিয়েছেন বা অন্যের কম্পিউটার ব্যবহার করেছেন? পাসওয়ার্ড
+            বদলালে অন্য সব ডিভাইস থেকে সাইন আউট হয়ে যাবে।
           </p>
         </div>
         <button type="button" onClick={signOut} className="btn-secondary w-full sm:w-auto flex-shrink-0">
           <LogOut className="w-4 h-4" aria-hidden="true" />
-          Sign out
+          সাইন আউট
         </button>
       </section>
     </>
@@ -197,34 +198,34 @@ function ProfileCard({ user, className = '' }: { user: PublicUser; className?: s
     <section aria-labelledby="profile-title" className={`surface-card p-5 sm:p-6 ${className}`}>
       <div className="flex items-center gap-4">
         <span
-          className="w-14 h-14 flex-shrink-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center text-lg font-bold text-white"
+          className="w-14 h-14 flex-shrink-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center text-lg font-bold text-[#fff]"
           aria-hidden="true"
         >
           {initials(user.name || user.email)}
         </span>
         <div className="min-w-0">
           <h2 id="profile-title" className="text-lg font-semibold text-white truncate">
-            {user.name || 'Your profile'}
+            {user.name || 'আপনার প্রোফাইল'}
           </h2>
           <div className="mt-1">
-            <StatusBadge status={user.status} />
+            <StatusBadge status={user.status} label={{ approved: 'অনুমোদিত', pending: 'অপেক্ষমাণ', blocked: 'ব্লক করা' }[user.status]} />
           </div>
         </div>
       </div>
 
       <dl className="mt-4 divide-y divide-white/[0.06] border-t border-white/[0.06]">
-        <DetailRow Icon={Mail} label="Email">
+        <DetailRow Icon={Mail} label="ইমেইল">
           {user.email || EMPTY}
         </DetailRow>
-        <DetailRow Icon={Phone} label="Mobile number">
+        <DetailRow Icon={Phone} label="মোবাইল নম্বর">
           {formatPhone(user.phone)}
         </DetailRow>
-        <DetailRow Icon={CalendarDays} label="Member since">
-          {formatDate(user.created_at, { time: false })}
+        <DetailRow Icon={CalendarDays} label="সদস্য হয়েছেন">
+          {formatDateBn(user.created_at, { time: false })}
         </DetailRow>
       </dl>
       <p className="mt-3 text-xs leading-relaxed text-slate-500">
-        You can sign in with your email or mobile number. To change these details, contact the administrator.
+        ইমেইল বা মোবাইল নম্বর দিয়ে সাইন ইন করতে পারবেন। এই তথ্য বদলাতে অ্যাডমিনের সাথে যোগাযোগ করুন।
       </p>
     </section>
   )
@@ -252,7 +253,7 @@ function UsageCard({
   const percent = usagePercent(usage)
   const resetsAt = formatTime(usage.resets_at, usage.timezone)
   const resetPassed = now > 0 && now >= Date.parse(usage.resets_at)
-  const resetsIn = now > 0 && !resetPassed ? formatTimeUntil(usage.resets_at, now) : null
+  const resetsIn = now > 0 && !resetPassed ? formatTimeUntilBn(usage.resets_at, now) : null
 
   // Past midnight the cached numbers are yesterday's: fetch today's once.
   useEffect(() => {
@@ -266,7 +267,7 @@ function UsageCard({
     try {
       await refresh()
     } catch (err) {
-      toast.error('Couldn’t refresh your usage', { description: apiErrorMessage(err) })
+      toast.error('ব্যবহারের তথ্য রিফ্রেশ করা যায়নি', { description: apiErrorMessage(err) })
     } finally {
       setRefreshing(false)
     }
@@ -277,16 +278,15 @@ function UsageCard({
 
   let status: ReactNode
   if (unlimited) {
-    status = 'Your account has unlimited downloads.'
+    status = 'আপনার অ্যাকাউন্টে আনলিমিটেড ডাউনলোড।'
   } else if (limit === 0) {
-    status = 'Downloads are turned off for your account. Contact the administrator if you think this is a mistake.'
+    status = 'আপনার অ্যাকাউন্টে ডাউনলোড বন্ধ আছে। ভুল মনে হলে অ্যাডমিনের সাথে যোগাযোগ করুন।'
   } else if (remaining === 0) {
-    status = "You've used all of today's downloads. More unlock after the reset."
+    status = 'আজকের সব ডাউনলোড ব্যবহার হয়ে গেছে। সীমা নতুন করে শুরু হলে আবার পাবেন।'
   } else {
     status = (
       <>
-        <strong className="text-white">{formatNumber(remaining ?? 0)}</strong> {remaining === 1 ? 'download' : 'downloads'}{' '}
-        left today.
+        আজ আরও <strong className="text-white">{formatNumber(remaining ?? 0)}</strong>টি ডাউনলোড বাকি।
       </>
     )
   }
@@ -296,17 +296,17 @@ function UsageCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="usage-title" className="text-base font-semibold text-white">
-            Today&apos;s downloads
+            আজকের ডাউনলোড
           </h2>
-          <p className="mt-0.5 text-xs text-slate-500">Only finished downloads count. Looking up a link is free.</p>
+          <p className="mt-0.5 text-xs text-slate-500">শুধু সম্পূর্ণ ডাউনলোড গোনা হয়। লিংক দেখা ফ্রি।</p>
         </div>
         <button
           type="button"
           onClick={onRefresh}
           disabled={refreshing}
           className="btn-icon -mr-2 -mt-1"
-          aria-label="Refresh today’s usage"
-          title="Refresh"
+          aria-label="আজকের ব্যবহার রিফ্রেশ করুন"
+          title="রিফ্রেশ"
         >
           {refreshing ? <Spinner size="sm" label={null} /> : <RefreshCw className="w-4 h-4" aria-hidden="true" />}
         </button>
@@ -317,15 +317,15 @@ function UsageCard({
           <>
             <InfinityIcon className="w-9 h-9 text-indigo-300" />
             <span className="pb-1 text-sm text-slate-400">
-              Unlimited · {formatNumber(usage.used)} today
+              আনলিমিটেড · আজ {formatNumber(usage.used)}টি
             </span>
           </>
         ) : (
           <>
-            <span className="text-4xl sm:text-5xl font-bold text-white tabular-nums leading-none" style={{ fontFamily: "'Source Sans 3', sans-serif" }}>
+            <span className="text-4xl sm:text-5xl font-bold text-white tabular-nums leading-none" style={{ fontFamily: 'var(--font-display)' }}>
               {formatNumber(usage.used)}
             </span>
-            <span className="pb-1 text-lg text-slate-500 tabular-nums">/ {formatNumber(limit)} used</span>
+            <span className="pb-1 text-lg text-slate-500 tabular-nums">/ {formatNumber(limit)} ব্যবহৃত</span>
           </>
         )}
       </div>
@@ -333,11 +333,11 @@ function UsageCard({
       {!unlimited && (
         <div
           role="progressbar"
-          aria-label="Downloads used today"
+          aria-label="আজ ব্যবহার করা ডাউনলোড"
           aria-valuemin={0}
           aria-valuemax={limit}
           aria-valuenow={Math.min(usage.used, limit)}
-          aria-valuetext={`${usage.used} of ${limit} used`}
+          aria-valuetext={`${limit}টির মধ্যে ${usage.used}টি ব্যবহৃত`}
           className="mt-4 h-2.5 rounded-full bg-white/[0.07] overflow-hidden"
         >
           <div className={`h-full rounded-full transition-[width] duration-500 ${barColor}`} style={{ width: `${percent}%` }} />
@@ -349,8 +349,8 @@ function UsageCard({
       </p>
       {!unlimited && (
         <p className="mt-1 text-[13px] text-slate-500">
-          Resets at <span className="text-slate-300">{resetsAt}</span> {timezoneLabel(usage.timezone)}
-          {resetsIn && <> · in {resetsIn}</>}
+          নতুন করে শুরু: <span className="text-slate-300">{resetsAt}</span> {timezoneLabel(usage.timezone)}
+          {resetsIn && <> · {resetsIn} পর</>}
         </p>
       )}
 
@@ -360,14 +360,14 @@ function UsageCard({
         {!unlimited ? (
           <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500">
             <Sparkles className="w-4 h-4 flex-shrink-0 text-violet-300" aria-hidden="true" />
-            <span>Need more? Premium with unlimited downloads is coming soon.</span>
+            <span>আরও ডাউনলোড দরকার? অ্যাডমিনের সাথে যোগাযোগ করুন।</span>
           </p>
         ) : (
           <span />
         )}
         <Link href="/download" className="btn-primary btn-sm flex-shrink-0">
           <Download className="w-4 h-4" aria-hidden="true" />
-          Download videos
+          ভিডিও ডাউনলোড
         </Link>
       </div>
     </section>
@@ -397,15 +397,15 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
   const confirmCheck = validatePasswordConfirm(next, confirm)
   const sameAsCurrent = Boolean(next) && next === current
 
-  const currentError = currentServerError ?? (submitted && !current ? 'Enter your current password.' : null)
+  const currentError = currentServerError ?? (submitted && !current ? 'বর্তমান পাসওয়ার্ড লিখুন।' : null)
   const nextError =
     nextServerError ??
     (submitted && !nextCheck.ok
-      ? nextCheck.error
+      ? bnError(nextCheck.error)
       : submitted && sameAsCurrent
-      ? 'Choose a password that’s different from your current one.'
+      ? 'বর্তমান পাসওয়ার্ড থেকে আলাদা একটি পাসওয়ার্ড দিন।'
       : null)
-  const confirmError = submitted && nextCheck.ok && !sameAsCurrent && !confirmCheck.ok ? confirmCheck.error : null
+  const confirmError = submitted && nextCheck.ok && !sameAsCurrent && !confirmCheck.ok ? bnError(confirmCheck.error) : null
 
   const forgotHref = user.email ? `/forgot-password?email=${encodeURIComponent(user.email)}` : '/forgot-password'
   const temp = user.temp_password
@@ -432,11 +432,11 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
       setConfirm('')
       setSubmitted(false)
       setSaved(true)
-      toast.success('Password changed', { description: 'Other devices have been signed out.' })
+      toast.success('পাসওয়ার্ড বদলানো হয়েছে', { description: 'অন্য সব ডিভাইস থেকে সাইন আউট করা হয়েছে।' })
     } catch (err) {
       const status = apiErrorStatus(err)
-      const message = apiErrorMessage(err, 'We couldn’t change your password. Please try again.')
-      if (status === 400 && /current password/i.test(message) && /incorrect/i.test(message)) {
+      const message = apiErrorMessage(err, 'পাসওয়ার্ড বদলানো যায়নি। আবার চেষ্টা করুন।')
+      if (status === 400 && /current password|বর্তমান পাসওয়ার্ড/i.test(message) && /incorrect|ভুল/i.test(message)) {
         setCurrentServerError(message)
         focusAfterRef.current = currentRef.current
       } else if (status === 400) {
@@ -463,14 +463,14 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
             <ShieldCheck className="w-5 h-5 text-indigo-300" aria-hidden="true" />
           </span>
           <h2 id="password-title" className="text-base sm:text-lg font-semibold text-white">
-            {temp ? 'Set your own password' : 'Change password'}
+            {temp ? 'নিজের পাসওয়ার্ড সেট করুন' : 'পাসওয়ার্ড বদলান'}
           </h2>
         </div>
         <ul className="mt-4 space-y-2 text-[13px] leading-relaxed text-slate-400">
-          <li>• At least {PASSWORD_MIN} characters, with a letter and a number.</li>
-          <li>• Longer is stronger: try a short phrase of 3–4 words.</li>
-          <li>• Don&apos;t reuse a password from another site.</li>
-          <li>• You stay signed in here; other devices are signed out.</li>
+          <li>• অন্তত {PASSWORD_MIN}টি অক্ষর, তার মধ্যে একটি অক্ষর আর একটি সংখ্যা।</li>
+          <li>• যত লম্বা, তত শক্তিশালী: ৩–৪ শব্দের ছোট একটি বাক্য দিন।</li>
+          <li>• অন্য সাইটের পাসওয়ার্ড এখানে আবার ব্যবহার করবেন না।</li>
+          <li>• এখানে সাইন ইন থাকবেন; অন্য ডিভাইস থেকে সাইন আউট হবে।</li>
         </ul>
       </div>
 
@@ -487,7 +487,7 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
 
         {saved && (
           <Alert tone="success" className="mb-4" onDismiss={() => setSaved(false)}>
-            Password changed. Use your new password next time you sign in.
+            পাসওয়ার্ড বদলানো হয়েছে। পরেরবার নতুন পাসওয়ার্ড দিয়ে সাইন ইন করবেন।
           </Alert>
         )}
         {formError && (
@@ -501,13 +501,13 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
             ref={currentRef}
             id="current-password"
             name="current-password"
-            label={temp ? 'Temporary password' : 'Current password'}
+            label={temp ? 'অস্থায়ী পাসওয়ার্ড' : 'বর্তমান পাসওয়ার্ড'}
             labelAside={
               <Link href={forgotHref} className="text-[13px] font-medium text-indigo-300 hover:text-indigo-200 rounded py-1">
-                Forgot it?
+                ভুলে গেছেন?
               </Link>
             }
-            hint={temp ? 'The password from your approval email.' : undefined}
+            hint={temp ? 'অনুমোদনের ইমেইলে পাওয়া পাসওয়ার্ড।' : undefined}
             autoComplete="current-password"
             value={current}
             onChange={e => {
@@ -522,7 +522,7 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
             ref={nextRef}
             id="new-password"
             name="new-password"
-            label="New password"
+            label="নতুন পাসওয়ার্ড"
             showStrength
             autoComplete="new-password"
             value={next}
@@ -538,7 +538,7 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
             ref={confirmRef}
             id="confirm-password"
             name="confirm-password"
-            label="Confirm new password"
+            label="নতুন পাসওয়ার্ড আবার লিখুন"
             autoComplete="new-password"
             value={confirm}
             onChange={e => {
@@ -553,12 +553,12 @@ function ChangePasswordSection({ user }: { user: PublicUser }) {
         <button ref={submitRef} type="submit" className="btn-primary w-full sm:w-auto mt-5" disabled={submitting}>
           {submitting ? (
             <>
-              <Spinner size="sm" label={null} /> Saving…
+              <Spinner size="sm" label={null} /> সেভ হচ্ছে…
             </>
           ) : temp ? (
-            'Save my password'
+            'পাসওয়ার্ড সেভ করুন'
           ) : (
-            'Update password'
+            'পাসওয়ার্ড আপডেট করুন'
           )}
         </button>
       </form>

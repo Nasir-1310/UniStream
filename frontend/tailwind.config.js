@@ -1,5 +1,8 @@
 // tailwind.config.js (or tailwind.config.ts)
 /** @type {import('tailwindcss').Config} */
+// Colours follow the light/dark theme through CSS variables (theme/).
+const { themedColors } = require('./theme/families')
+
 module.exports = {
   darkMode: 'class',
   content: [
@@ -11,12 +14,20 @@ module.exports = {
     extend: {
       // ── Font families ──────────────────────────────────────────
       fontFamily: {
-        sans:    ['Source Sans 3', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['Source Sans 3', 'system-ui', '-apple-system', 'sans-serif'],
+        // Bangla fonts on the public site, Source Sans 3 in the admin panel
+        // (set per theme in globals.css).
+        sans:    ['var(--font-body)'],
+        display: ['var(--font-display)'],
       },
 
       // ── Brand green palette ────────────────────────────────────
       colors: {
+        ...themedColors(),
+        // Theme surfaces: page background, cards, menus/toasts/dialogs, footer.
+        page:   'rgb(var(--page-rgb) / <alpha-value>)',
+        panel:  'rgb(var(--panel-rgb) / <alpha-value>)',
+        raised: 'rgb(var(--raised-rgb) / <alpha-value>)',
+        footer: 'rgb(var(--footer-rgb) / <alpha-value>)',
         brand: {
           300: '#6ee7a8',
           400: '#4ade80',

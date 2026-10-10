@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { Badge, EmptyState, Spinner, type BadgeTone } from '@/components/ui'
 import type { DownloadProgressEvent, VideoFormat } from '@/lib/api'
-import { pluralize } from '@/lib/format'
+import { countBn } from '@/lib/format'
 import { IDLE, formatName, heightOf, isVideoExt, type RowState } from './types'
 
 type Filter = 'all' | 'audio' | string
@@ -68,7 +68,7 @@ function ExtTag({ ext, className = '' }: { ext: string; className?: string }) {
 }
 
 function sectionTitle(ext: string): string {
-  return isVideoExt(ext) ? `Video (${ext.toUpperCase()})` : `Audio only (${ext.toUpperCase()})`
+  return isVideoExt(ext) ? `ভিডিও (${ext.toUpperCase()})` : `শুধু অডিও (${ext.toUpperCase()})`
 }
 
 /** "12.4 MB", or null when the API couldn't tell. */
@@ -114,14 +114,14 @@ function qualityBadges(formats: VideoFormat[]): Record<string, QualityBadge> {
   const badges: Record<string, QualityBadge> = {}
   if (!videos.length) return badges
   const top = videos[0]
-  badges[top.format_id] = { label: 'Best quality', tone: 'brand', hint: 'The sharpest version available' }
+  badges[top.format_id] = { label: 'সেরা কোয়ালিটি', tone: 'brand', hint: 'সবচেয়ে ঝকঝকে সংস্করণ' }
   const hd = videos.find(f => heightOf(f.resolution) === 720)
   if (hd && hd !== top) {
-    badges[hd.format_id] = { label: 'Recommended', tone: 'success', hint: 'Sharp on phones and laptops at a moderate size' }
+    badges[hd.format_id] = { label: 'প্রস্তাবিত', tone: 'success', hint: 'মাঝারি সাইজে ফোন আর ল্যাপটপে পরিষ্কার' }
   }
   const lowest = videos[videos.length - 1]
   if (videos.length >= 3 && (heightOf(lowest.resolution) ?? 0) <= 360 && !badges[lowest.format_id]) {
-    badges[lowest.format_id] = { label: 'Data saver', tone: 'info', hint: 'Smallest file, uses the least mobile data' }
+    badges[lowest.format_id] = { label: 'ডেটা সেভার', tone: 'info', hint: 'সবচেয়ে ছোট ফাইল, সবচেয়ে কম মোবাইল ডেটা' }
   }
   return badges
 }
@@ -142,14 +142,14 @@ function ProgressDetails({
   const phase =
     status === 'queued'
       ? progress.position && progress.position > 1
-        ? `Waiting in line: you’re number ${progress.position}. It starts by itself.`
-        : 'Waiting in line: you’re next. It starts by itself.'
+        ? `লাইনে অপেক্ষা: আপনি ${progress.position} নম্বরে। নিজে থেকেই শুরু হবে।`
+        : 'লাইনে অপেক্ষা: এরপরই আপনার পালা। নিজে থেকেই শুরু হবে।'
       : status === 'starting'
-      ? 'Preparing your download…'
+      ? 'ডাউনলোড প্রস্তুত হচ্ছে…'
       : status === 'merging'
       ? audio
-        ? 'Converting to MP3…'
-        : 'Merging video and audio…'
+        ? 'MP3-তে রূপান্তর হচ্ছে…'
+        : 'ভিডিও আর অডিও জোড়া লাগানো হচ্ছে…'
       : null
   const showEta = progress.eta && progress.eta !== '--:--'
   const showTotal = progress.total_fmt && progress.total_fmt !== '?'
@@ -159,7 +159,7 @@ function ProgressDetails({
       <div
         className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden"
         role="progressbar"
-        aria-label="Download progress"
+        aria-label="ডাউনলোডের অগ্রগতি"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={phase ? undefined : percent}
@@ -188,10 +188,10 @@ function ProgressDetails({
             <>
               <span className="font-semibold text-slate-200">{percent}%</span>
               {progress.speed && <span>{progress.speed}</span>}
-              {showEta && <span>{progress.eta} left</span>}
+              {showEta && <span>{progress.eta} বাকি</span>}
               {showTotal && (
                 <span className="text-slate-500">
-                  {progress.downloaded_fmt} of {progress.total_fmt}
+                  {progress.total_fmt}-এর মধ্যে {progress.downloaded_fmt}
                 </span>
               )}
             </>
@@ -199,7 +199,7 @@ function ProgressDetails({
         </p>
         <button type="button" onClick={onCancel} className="btn-ghost -mr-2 flex-shrink-0 text-xs">
           <X className="w-3.5 h-3.5" aria-hidden="true" />
-          Cancel
+          বাতিল
         </button>
       </div>
     </div>
@@ -238,15 +238,15 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
         {state.progress.status === 'downloading'
           ? `${percent}%`
           : state.progress.status === 'queued'
-          ? `In line #${state.progress.position ?? 1}`
-          : 'Working…'}
+          ? `লাইনে #${state.progress.position ?? 1}`
+          : 'কাজ চলছে…'}
       </span>
     )
   } else if (state.status === 'complete') {
     action = (
       <span className="inline-flex items-center gap-1.5 h-10 px-1 text-xs font-semibold text-emerald-300 whitespace-nowrap">
         <CircleCheck className="w-4 h-4" aria-hidden="true" />
-        Saved
+        সেভ হয়েছে
       </span>
     )
   } else if (state.status === 'error' && state.retryable) {
@@ -255,12 +255,12 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
         type="button"
         onClick={() => onDownload(format)}
         disabled={disabled}
-        aria-label={`Try again: download ${name}`}
+        aria-label={`আবার চেষ্টা: ${name} ডাউনলোড`}
         aria-describedby={blockedReason ? BLOCKED_ID : undefined}
         className="btn-outline btn-sm whitespace-nowrap text-red-200 border-red-500/30"
       >
         <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-        Retry
+        আবার চেষ্টা
       </button>
     )
   } else {
@@ -269,9 +269,9 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
         type="button"
         onClick={() => onDownload(format)}
         disabled={disabled}
-        aria-label={`Download ${name}`}
+        aria-label={`${name} ডাউনলোড করুন`}
         aria-describedby={blockedReason ? BLOCKED_ID : undefined}
-        title={locked ? 'Wait for the current download to finish' : blockedReason ?? undefined}
+        title={locked ? 'চলমান ডাউনলোড শেষ হওয়া পর্যন্ত অপেক্ষা করুন' : blockedReason ?? undefined}
         className="btn-primary btn-sm whitespace-nowrap"
       >
         {blockedReason ? (
@@ -279,7 +279,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
         ) : (
           <Download className="w-3.5 h-3.5" aria-hidden="true" />
         )}
-        <span className="max-[359px]:sr-only">Download</span>
+        <span className="max-[359px]:sr-only">ডাউনলোড</span>
       </button>
     )
   }
@@ -327,12 +327,12 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
             <ExtTag ext={format.ext} />
             {resolution && <span>{resolution}</span>}
             {resolution && <span aria-hidden="true">·</span>}
-            <span className={size ? 'text-slate-300' : ''}>{size ?? 'Size unknown'}</span>
+            <span className={size ? 'text-slate-300' : ''}>{size ?? 'সাইজ অজানা'}</span>
           </p>
         </div>
 
         <span className="hidden sm:block text-xs font-mono text-slate-400">{format.resolution || '—'}</span>
-        <span className="hidden sm:block text-xs text-slate-300 tabular-nums">{size ?? <span className="text-slate-500">Unknown</span>}</span>
+        <span className="hidden sm:block text-xs text-slate-300 tabular-nums">{size ?? <span className="text-slate-500">অজানা</span>}</span>
         <div className="flex justify-end">{action}</div>
       </div>
 
@@ -340,7 +340,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
       {state.status === 'complete' && (
         <p className="mt-2.5 flex items-start gap-1.5 text-xs text-emerald-300">
           <CheckCircle2 className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />
-          Saved to your device. Check your Downloads folder or the browser&apos;s downloads list.
+          ডিভাইসে সেভ হয়েছে। Downloads ফোল্ডার বা ব্রাউজারের ডাউনলোড তালিকায় দেখুন।
         </p>
       )}
       {state.status === 'error' && (
@@ -357,7 +357,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
                   className="inline-flex items-center gap-1 font-semibold text-red-200 underline underline-offset-2 hover:text-white"
                 >
                   <Flag className="w-3 h-3" aria-hidden="true" />
-                  Report this problem
+                  সমস্যাটি জানান
                 </button>
               </>
             )}
@@ -415,15 +415,15 @@ export function FormatMatrix({
             className="text-base font-semibold text-white outline-none"
             style={{ letterSpacing: 0 }}
           >
-            Choose a quality
+            কোয়ালিটি বেছে নিন
           </h2>
-          <span className="text-xs text-slate-500">· {pluralize(formats.length, 'option')}</span>
+          <span className="text-xs text-slate-500">· {countBn(formats.length, 'অপশন')}</span>
         </div>
 
         {tabs.length > 2 && (
           <div
             role="group"
-            aria-label="Show"
+            aria-label="দেখান"
             className="no-scrollbar -mx-1 px-1 flex gap-1.5 overflow-x-auto"
           >
             {tabs.map(tab => {
@@ -436,12 +436,12 @@ export function FormatMatrix({
                   aria-pressed={selected}
                   className={`h-10 px-3.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex-shrink-0 ${
                     selected
-                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/40'
+                      ? 'bg-indigo-600 text-[#fff] shadow-sm shadow-indigo-900/40'
                       : 'border border-white/[0.08] bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]'
                   }`}
                 >
                   {tab.label}
-                  <span className={`ml-1.5 tabular-nums ${selected ? 'text-indigo-200' : 'text-slate-600'}`}>{tab.count}</span>
+                  <span className={`ml-1.5 tabular-nums ${selected ? 'text-[#fff]/75' : 'text-slate-600'}`}>{tab.count}</span>
                 </button>
               )
             })}
@@ -462,7 +462,7 @@ export function FormatMatrix({
       {activeId && (
         <p className="mb-3 flex items-start gap-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] px-3.5 py-2.5 text-[13px] leading-relaxed text-indigo-200">
           <Spinner size="sm" label={null} className="mt-0.5 text-indigo-300" />
-          <span>Downloading. Keep this page open until it finishes; the other qualities unlock when it&apos;s done.</span>
+          <span>ডাউনলোড চলছে। শেষ না হওয়া পর্যন্ত এই পেজ খোলা রাখুন; শেষ হলে অন্য কোয়ালিটিগুলোও আবার চালু হবে।</span>
         </p>
       )}
 
@@ -470,8 +470,8 @@ export function FormatMatrix({
         <div className="surface-card">
           <EmptyState
             icon={Video}
-            title="Nothing to download here"
-            description="This post has no downloadable video or audio. Photo posts, live streams and private videos aren't supported."
+            title="এখানে ডাউনলোড করার মতো কিছু নেই"
+            description="এই পোস্টে ডাউনলোডযোগ্য ভিডিও বা অডিও নেই। ছবির পোস্ট, লাইভ স্ট্রিম আর প্রাইভেট ভিডিও সাপোর্ট করে না।"
           />
         </div>
       ) : (
@@ -482,7 +482,7 @@ export function FormatMatrix({
                 <h3 className="text-[13px] font-medium text-slate-300" style={{ letterSpacing: 0 }}>
                   {sectionTitle(ext)}
                 </h3>
-                <span className="text-[11px] text-slate-500">· {pluralize(groups[ext].length, 'option')}</span>
+                <span className="text-[11px] text-slate-500">· {countBn(groups[ext].length, 'অপশন')}</span>
               </div>
 
               {/* Column headings: table layout only. */}
@@ -491,9 +491,9 @@ export function FormatMatrix({
                 aria-hidden="true"
               >
                 <span className="w-10" />
-                <span>Quality</span>
-                <span>Detail</span>
-                <span>Size</span>
+                <span>কোয়ালিটি</span>
+                <span>বিবরণ</span>
+                <span>সাইজ</span>
                 <span className="text-right">&nbsp;</span>
               </div>
 
@@ -518,8 +518,8 @@ export function FormatMatrix({
       )}
 
       <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
-        Sizes are estimates. Only finished downloads count toward your daily limit — cancelled or failed ones don&apos;t.
-        Download only videos you have the right to keep.
+        সাইজগুলো আনুমানিক। শুধু সম্পূর্ণ ডাউনলোড দৈনিক সীমায় গোনা হয় — বাতিল বা ব্যর্থ ডাউনলোড গোনা হয় না। শুধু
+        সেসব ভিডিও ডাউনলোড করুন যেগুলো রাখার অধিকার আপনার আছে।
       </p>
     </section>
   )

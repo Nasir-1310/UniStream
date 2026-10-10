@@ -26,15 +26,15 @@ export interface FeedbackDialogProps {
 }
 
 const KINDS: { id: FeedbackKind; label: string; hint: string; Icon: typeof Bug }[] = [
-  { id: 'problem', label: 'Report a problem', hint: 'A download failed or something didn’t work.', Icon: Bug },
-  { id: 'feedback', label: 'Feedback', hint: 'Tell us what you like or what could be better.', Icon: MessageSquareHeart },
-  { id: 'idea', label: 'Suggest an idea', hint: 'A feature or site you would like us to add.', Icon: Lightbulb },
+  { id: 'problem', label: 'সমস্যা জানান', hint: 'ডাউনলোড ব্যর্থ হয়েছে বা কিছু কাজ করেনি।', Icon: Bug },
+  { id: 'feedback', label: 'মতামত', hint: 'কী ভালো লেগেছে বা কী আরও ভালো হতে পারে।', Icon: MessageSquareHeart },
+  { id: 'idea', label: 'আইডিয়া দিন', hint: 'যে ফিচার বা সাইট আমরা যোগ করতে পারি।', Icon: Lightbulb },
 ]
 
 const PLACEHOLDERS: Record<FeedbackKind, string> = {
-  problem: 'What happened? For example: “The 4K download stopped at 99% while merging.”',
-  feedback: 'What do you like, and what could be better?',
-  idea: 'What would you like UniStream Saver to do?',
+  problem: 'কী হয়েছিল? যেমন: “4K ডাউনলোড 99%-এ এসে merging-এর সময় থেমে গেছে।”',
+  feedback: 'কী ভালো লেগেছে, আর কী আরও ভালো হতে পারে?',
+  idea: 'UniStream Saver-এ আর কী চান?',
 }
 
 const MAX_MESSAGE = 2000
@@ -58,7 +58,7 @@ export function FeedbackDialog({ open, onClose, prefill }: FeedbackDialogProps) 
     event.preventDefault()
     const text = message.trim()
     if (text.length < 3) {
-      setMessageError('Please write a few words about it.')
+      setMessageError('বিষয়টি নিয়ে কয়েকটা কথা লিখুন।')
       return
     }
     setMessageError(null)
@@ -66,12 +66,12 @@ export function FeedbackDialog({ open, onClose, prefill }: FeedbackDialogProps) 
     setSending(true)
     try {
       await sendFeedback({ kind, message: text, url: url.trim() || null, details: details || null })
-      toast.success(kind === 'problem' ? 'Problem reported' : 'Thanks for your feedback', {
-        description: 'Your message reached the UniStream team. We read every one.',
+      toast.success(kind === 'problem' ? 'সমস্যাটি জানানো হয়েছে' : 'মতামতের জন্য ধন্যবাদ', {
+        description: 'আপনার বার্তা UniStream টিমের কাছে পৌঁছেছে। আমরা প্রতিটি বার্তা পড়ি।',
       })
       onClose()
     } catch (err) {
-      setError(apiErrorMessage(err, 'Your message couldn’t be sent. Please try again.'))
+      setError(apiErrorMessage(err, 'বার্তা পাঠানো যায়নি। আবার চেষ্টা করুন।'))
     } finally {
       setSending(false)
     }
@@ -88,23 +88,23 @@ export function FeedbackDialog({ open, onClose, prefill }: FeedbackDialogProps) 
           <MessageSquareHeart className="w-5 h-5 text-indigo-300" aria-hidden="true" />
         </span>
       }
-      title="Report a problem or send feedback"
-      description="Tell us what went wrong or how we can improve. We use it to fix problems in the next version."
+      title="সমস্যা জানান বা মতামত দিন"
+      description="কী সমস্যা হয়েছে বা কীভাবে আরও ভালো করা যায় জানান। পরের সংস্করণে সমস্যা ঠিক করতে আমরা এগুলো কাজে লাগাই।"
       footer={
         <>
           <button type="button" onClick={onClose} disabled={sending} className="btn-secondary">
-            Cancel
+            বাতিল
           </button>
           <button type="submit" form="feedback-form" disabled={sending} className="btn-primary">
             {sending ? <Spinner size="sm" label={null} /> : <Send className="w-4 h-4" aria-hidden="true" />}
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? 'পাঠানো হচ্ছে…' : 'পাঠান'}
           </button>
         </>
       }
     >
       <form id="feedback-form" onSubmit={onSubmit} noValidate className="space-y-4">
         <fieldset>
-          <legend className="text-[13px] font-medium text-slate-300 mb-1.5">What is it about?</legend>
+          <legend className="text-[13px] font-medium text-slate-300 mb-1.5">কোন বিষয়ে?</legend>
           <div className="grid gap-2 sm:grid-cols-3">
             {KINDS.map(({ id, label, hint, Icon }) => {
               const checked = kind === id
@@ -138,7 +138,7 @@ export function FeedbackDialog({ open, onClose, prefill }: FeedbackDialogProps) 
 
         <Field
           htmlFor="feedback-message"
-          label="Your message"
+          label="আপনার বার্তা"
           error={messageError}
           hint={`${message.length}/${MAX_MESSAGE}`}
         >
@@ -158,7 +158,7 @@ export function FeedbackDialog({ open, onClose, prefill }: FeedbackDialogProps) 
           />
         </Field>
 
-        <Field htmlFor="feedback-url" label="Video link" optional hint="Helps us reproduce a download problem.">
+        <Field htmlFor="feedback-url" label="ভিডিওর লিংক" optional hint="ডাউনলোডের সমস্যাটি খুঁজে বের করতে সাহায্য করে।">
           <input
             id="feedback-url"
             type="url"
@@ -173,13 +173,13 @@ export function FeedbackDialog({ open, onClose, prefill }: FeedbackDialogProps) 
 
         {details && (
           <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5">
-            <p className="text-[12px] font-medium text-slate-300">Sent along automatically</p>
+            <p className="text-[12px] font-medium text-slate-300">স্বয়ংক্রিয়ভাবে যা পাঠানো হবে</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-400 break-words">{details}</p>
           </div>
         )}
 
         {error && (
-          <Alert tone="danger" title="Not sent">
+          <Alert tone="danger" title="পাঠানো যায়নি">
             {error}
           </Alert>
         )}

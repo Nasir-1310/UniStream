@@ -108,6 +108,64 @@ export function formatTimeUntil(value: DateInput, now: number = Date.now()): str
   return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
 
+// ── Bangla variants for the public site (the admin panel stays English) ──────
+// Latin digits are kept on purpose: sizes, qualities and percentages are shown
+// that way everywhere on the site.
+
+/** Bangla time left: "7 ঘণ্টা 20 মিনিট", "45 মিনিট", "এক মিনিটেরও কম". */
+export function formatTimeUntilBn(value: DateInput, now: number = Date.now()): string {
+  const date = toDate(value)
+  if (!date) return EMPTY
+  const minutes = Math.ceil((date.getTime() - now) / 60000)
+  if (minutes <= 1) return 'এক মিনিটেরও কম'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m} মিনিট`
+  return m === 0 ? `${h} ঘণ্টা` : `${h} ঘণ্টা ${m} মিনিট`
+}
+
+/** Bangla date: "6 অক্টোবর, 2026" (with time: "6 অক্টোবর, 2026, 4:05 PM"). */
+export function formatDateBn(value: DateInput, options: DateFormatOptions = {}): string {
+  const date = toDate(value)
+  if (!date) return EMPTY
+  const { time = true, timeZone } = options
+  try {
+    return new Intl.DateTimeFormat('bn-BD-u-nu-latn', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      ...(time ? { hour: 'numeric', minute: '2-digit', hour12: true } : {}),
+      ...(timeZone ? { timeZone } : {}),
+    }).format(date)
+  } catch {
+    return formatDate(date, options)
+  }
+}
+
+/** Bangla relative time: "এইমাত্র", "3 মিনিট আগে", "5 ঘণ্টা আগে", "গতকাল", "4 দিন আগে". */
+export function formatRelativeBn(value: DateInput, now: number = Date.now()): string {
+  const date = toDate(value)
+  if (!date) return EMPTY
+  const diffSeconds = Math.round((now - date.getTime()) / 1000)
+  const future = diffSeconds < 0
+  const seconds = Math.abs(diffSeconds)
+  const wrap = (text: string) => (future ? `${text} পর` : `${text} আগে`)
+  if (seconds < 45) return future ? 'কিছুক্ষণ পর' : 'এইমাত্র'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return wrap(`${minutes} মিনিট`)
+  const hours = Math.round(seconds / 3600)
+  if (hours < 24) return wrap(`${hours} ঘণ্টা`)
+  const days = Math.round(seconds / 86400)
+  if (days === 1) return future ? 'আগামীকাল' : 'গতকাল'
+  if (days < 7) return wrap(`${days} দিন`)
+  return formatDateBn(date, { time: false })
+}
+
+/** "3টি ডাউনলোড": Bangla has no plural forms, only the counter -টি. */
+export function countBn(count: number, noun: string): string {
+  return `${formatNumber(count)}টি ${noun}`
+}
+
 /** Seconds → "4:05" or "1:02:03"; empty string for 0/unknown (live streams, images). */
 export function formatDuration(seconds: number | null | undefined): string {
   if (!seconds || !Number.isFinite(seconds) || seconds < 0) return ''

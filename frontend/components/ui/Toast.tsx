@@ -91,7 +91,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <section
-        aria-label="Notifications"
+        aria-label="নোটিফিকেশন"
         aria-live="polite"
         data-toast-viewport
         // Top of the screen on phones too: bottom toasts would cover bottom-sheet
@@ -135,7 +135,7 @@ function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
       className="ui-toast pointer-events-auto relative w-full max-w-[420px] overflow-hidden rounded-xl border border-white/10
-                 bg-[#151829]/95 backdrop-blur-md shadow-xl shadow-black/40"
+                 bg-raised/95 backdrop-blur-md shadow-xl shadow-black/40"
     >
       <span className={`absolute inset-y-0 left-0 w-1 ${tone.bar}`} aria-hidden="true" />
       <div className="flex items-start gap-3 py-3 pl-4 pr-2">
@@ -159,7 +159,7 @@ function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
         <button
           type="button"
           onClick={() => onDismiss(toast.id)}
-          aria-label="Dismiss notification"
+          aria-label="নোটিফিকেশন বন্ধ করুন"
           className="w-9 h-9 -my-1.5 flex-shrink-0 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-colors"
         >
           <X className="w-4 h-4" aria-hidden="true" />

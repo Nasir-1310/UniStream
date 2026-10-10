@@ -9,14 +9,14 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
-  title: 'Page not found',
-  description: 'This page doesn’t exist. Go to the UniStream Saver homepage or download a video.',
+  title: 'পেজ পাওয়া যায়নি',
+  description: 'এই পেজটি নেই। UniStream Saver-এর হোম পেজে যান বা ভিডিও ডাউনলোড করুন।',
   robots: { index: false, follow: false },
 }
 
 export default function NotFound() {
   return (
-    <div className="min-h-svh flex flex-col bg-[#0d0f1a]">
+    <div className="min-h-svh flex flex-col page-bg">
       <Navbar />
       <main id="main" className="relative z-10 flex-1 flex items-center px-4 sm:px-8 py-14 sm:py-20">
         <div className="w-full max-w-lg mx-auto text-center">
@@ -25,33 +25,33 @@ export default function NotFound() {
           </div>
           <p
             className="mt-6 text-sm font-semibold tracking-[0.2em] text-sky-400"
-            style={{ fontFamily: "'Source Sans 3', sans-serif" }}
+            style={{ fontFamily: 'var(--font-display)' }}
           >
-            ERROR 404
+            এরর 404
           </p>
-          <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">We can&apos;t find that page</h1>
+          <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-white">পেজটি খুঁজে পাওয়া যায়নি</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-slate-400">
-            The link may be mistyped, or the page may have moved. If you followed a password-reset link, request a new
-            one: they expire after 60 minutes.
+            লিংকটি হয়তো ভুল লেখা হয়েছে, বা পেজটি সরে গেছে। পাসওয়ার্ড রিসেটের লিংক থেকে এলে নতুন লিংক চেয়ে নিন: সেগুলো
+            ৬০ মিনিট পর মেয়াদোত্তীর্ণ হয়।
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
             <Link href="/" className="btn-primary">
               <Home className="w-4 h-4" aria-hidden="true" />
-              Go to homepage
+              হোম পেজে যান
             </Link>
             <Link href="/download" className="btn-secondary">
               <Download className="w-4 h-4" aria-hidden="true" />
-              Download a video
+              ভিডিও ডাউনলোড করুন
             </Link>
           </div>
 
           <ul className="mt-10 grid gap-2 text-left sm:grid-cols-2">
             {[
-              { href: '/#faq', label: 'Help & FAQ' },
-              { href: '/forgot-password', label: 'Forgot password?' },
-              { href: '/account', label: 'Account' },
-              { href: '/terms', label: 'Terms of Use' },
+              { href: '/#faq', label: 'সাহায্য ও প্রশ্নোত্তর' },
+              { href: '/forgot-password', label: 'পাসওয়ার্ড ভুলে গেছেন?' },
+              { href: '/account', label: 'অ্যাকাউন্ট' },
+              { href: '/terms', label: 'ব্যবহারের শর্তাবলি' },
             ].map(link => (
               <li key={link.href}>
                 <Link

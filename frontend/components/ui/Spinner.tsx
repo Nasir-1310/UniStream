@@ -16,7 +16,7 @@ export interface SpinnerProps {
 }
 
 /** Inline loading indicator. Inside buttons pass `label={null}` and keep the button text. */
-export function Spinner({ size = 'sm', label = 'Loading', className = '' }: SpinnerProps) {
+export function Spinner({ size = 'sm', label = 'লোড হচ্ছে', className = '' }: SpinnerProps) {
   const icon = <Loader2 className={`${SIZES[size]} animate-spin flex-shrink-0 ${className}`} aria-hidden="true" />
   if (label === null) return icon
   return (
@@ -35,7 +35,7 @@ export interface PageLoaderProps {
 }
 
 /** Centered spinner for whole pages or sections while data loads. */
-export function PageLoader({ label = 'Loading…', fullScreen = true }: PageLoaderProps) {
+export function PageLoader({ label = 'লোড হচ্ছে…', fullScreen = true }: PageLoaderProps) {
   return (
     <div
       role="status"

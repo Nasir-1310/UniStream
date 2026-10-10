@@ -44,7 +44,7 @@ export function Alert({ tone = 'info', title, children, action, onDismiss, live,
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Dismiss"
+          aria-label="বন্ধ করুন"
           className="-mr-1.5 -mt-1.5 w-9 h-9 flex-shrink-0 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
         >
           <X className="w-4 h-4" aria-hidden="true" />

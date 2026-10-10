@@ -25,9 +25,19 @@ export function isVideoExt(ext: string): boolean {
  * (the bitrate still shows in the details).
  */
 export function formatName(format: VideoFormat): string {
-  if (format.type === 'audio' || !isVideoExt(format.ext)) return `Audio only (${format.ext.toUpperCase()})`
+  if (format.type === 'audio' || !isVideoExt(format.ext)) return `শুধু অডিও (${format.ext.toUpperCase()})`
   const label = format.label.replace(/\s*·\s*(?:H\.?264|H\.?265|HEVC|VP0?9|AV0?1)\s*$/i, '').trim()
-  return label || format.resolution || format.ext.toUpperCase()
+  return bnQuality(label) || format.resolution || format.ext.toUpperCase()
+}
+
+/** The API's quality words ("1080p Full HD", "360p Low") with the plain ones in Bangla. */
+function bnQuality(label: string): string {
+  return label
+    .replace(/\bOriginal\b/, 'অরিজিনাল')
+    .replace(/\bVery Low\b/, 'খুব কম')
+    .replace(/\bMinimum\b/, 'সবচেয়ে কম')
+    .replace(/\bMedium\b/, 'মাঝারি')
+    .replace(/\bLow\b/, 'কম')
 }
 
 /** Height in pixels from a video resolution like "1080p"; null when unknown. Video formats only ("128kbps" is audio). */

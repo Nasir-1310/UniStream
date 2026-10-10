@@ -26,10 +26,10 @@ export interface AnalyzingStateProps {
 const EXPECTED_SECONDS: Record<string, number> = { youtube: 25, facebook: 6, instagram: 6 }
 
 const STAGES: [number, string][] = [
-  [0, 'Connecting to the server…'],
-  [15, 'Reading the video page…'],
-  [45, 'Finding the available qualities…'],
-  [80, 'Almost done: checking file sizes…'],
+  [0, 'সার্ভারের সাথে সংযোগ হচ্ছে…'],
+  [15, 'ভিডিওর পেজ পড়া হচ্ছে…'],
+  [45, 'কোন কোন কোয়ালিটি আছে খোঁজা হচ্ছে…'],
+  [80, 'প্রায় শেষ: ফাইলের সাইজ দেখা হচ্ছে…'],
 ]
 
 /** 0 → 95%: about 80% at the expected time, then ever slower. */
@@ -83,17 +83,17 @@ export function AnalyzingState({ slow, onCancel, platform = null }: AnalyzingSta
         <p className="text-sm font-semibold text-white">{stage}</p>
         <p className="text-xs leading-relaxed text-slate-500">
           {slow
-            ? 'Still working. The first request after a quiet spell can take up to a minute while the server wakes up.'
+            ? 'এখনো কাজ চলছে। কিছুক্ষণ ব্যবহার না হলে সার্ভার চালু হতে এক মিনিট পর্যন্ত লাগতে পারে।'
             : platform === 'youtube'
-            ? 'YouTube videos usually take 15–30 seconds.'
-            : 'This usually takes a few seconds.'}
+            ? 'YouTube ভিডিওতে সাধারণত 15–30 সেকেন্ড লাগে।'
+            : 'সাধারণত কয়েক সেকেন্ড লাগে।'}
         </p>
       </div>
 
       <div
         className="mt-5 h-1.5 w-full max-w-xs rounded-full bg-white/[0.08] overflow-hidden"
         role="progressbar"
-        aria-label="Getting the video (estimated)"
+        aria-label="ভিডিও আনা হচ্ছে (আনুমানিক)"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={shown}
@@ -106,7 +106,7 @@ export function AnalyzingState({ slow, onCancel, platform = null }: AnalyzingSta
 
       <button type="button" onClick={onCancel} className="btn-ghost mt-6">
         <X className="w-4 h-4" aria-hidden="true" />
-        Cancel
+        বাতিল
       </button>
     </div>
   )

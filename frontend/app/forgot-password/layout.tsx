@@ -4,8 +4,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Forgot password',
-  description: 'Get an email with a link to set a new UniStream Saver password.',
+  title: 'পাসওয়ার্ড ভুলে গেছেন',
+  description: 'নতুন UniStream Saver পাসওয়ার্ড সেট করার লিংক ইমেইলে পান।',
 }
 
 export default function ForgotPasswordLayout({ children }: { children: React.ReactNode }) {

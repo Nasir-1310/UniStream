@@ -19,6 +19,7 @@ import {
   updateAdminSession,
   type AdminAuthResponse,
 } from './adminAuth'
+import { translateServerText } from './serverText'
 import type { Platform } from './validation'
 
 declare module 'axios' {
@@ -523,6 +524,22 @@ const STATUS_MESSAGES: Record<number, string> = {
   504: 'The server took too long to respond. Please try again in a minute.',
 }
 
+/** The same, in Bangla, for the public site (the admin panel keeps English). */
+const STATUS_MESSAGES_BN: Record<number, string> = {
+  400: 'তথ্যগুলো দেখে আবার চেষ্টা করুন।',
+  401: 'আপনার সেশন শেষ হয়েছে। আবার সাইন ইন করুন।',
+  403: 'এই কাজের অনুমতি আপনার নেই।',
+  404: 'পাওয়া যায়নি। হয়তো সরিয়ে ফেলা হয়েছে।',
+  409: 'আগের তথ্যের সাথে মিলছে না।',
+  413: 'অনুরোধটি অনেক বড়।',
+  422: 'তথ্যগুলো দেখে আবার চেষ্টা করুন।',
+  429: 'অনেক বেশি অনুরোধ। কয়েক মিনিট পর আবার চেষ্টা করুন।',
+  500: 'আমাদের দিকে একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।',
+  502: 'সার্ভার চালু হচ্ছে বা পৌঁছানো যাচ্ছে না। এক মিনিট পর আবার চেষ্টা করুন।',
+  503: 'সার্ভিস সাময়িকভাবে বন্ধ। এক মিনিট পর আবার চেষ্টা করুন।',
+  504: 'সার্ভার উত্তর দিতে অনেক সময় নিচ্ছে। এক মিনিট পর আবার চেষ্টা করুন।',
+}
+
 /** FastAPI's `detail` as one readable string (also handles raw pydantic error lists). */
 function detailOf(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null
@@ -552,22 +569,31 @@ export function apiErrorStatus(err: unknown): number | undefined {
  */
 export function apiErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
   if (isAxiosError(err)) {
-    if (err.code === 'ERR_CANCELED') return 'The request was cancelled.'
+    // Public pages are in Bangla; the admin panel keeps the API's English.
+    const admin = isAdminPath(err.config?.url)
+    const messages = admin ? STATUS_MESSAGES : STATUS_MESSAGES_BN
+    if (err.code === 'ERR_CANCELED') return admin ? 'The request was cancelled.' : 'অনুরোধ বাতিল করা হয়েছে।'
     const response = err.response
     if (!response) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        return "You're offline. Check your internet connection and try again."
+        return admin
+          ? "You're offline. Check your internet connection and try again."
+          : 'আপনি অফলাইনে আছেন। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।'
       }
       if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-        return 'The server took too long to respond. It may be starting up — please try again in a moment.'
+        return admin
+          ? 'The server took too long to respond. It may be starting up — please try again in a moment.'
+          : 'সার্ভার উত্তর দিতে অনেক সময় নিচ্ছে, হয়তো চালু হচ্ছে। একটু পর আবার চেষ্টা করুন।'
       }
-      return "Can't reach the server. Check your internet connection and try again."
+      return admin
+        ? "Can't reach the server. Check your internet connection and try again."
+        : 'সার্ভারে পৌঁছানো যাচ্ছে না। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।'
     }
     const status = response.status
     const detail = detailOf(response.data)
-    if (status === 503 && !isAdminPath(err.config?.url)) return STATUS_MESSAGES[503]
-    if (detail) return detail
-    return STATUS_MESSAGES[status] ?? (status >= 500 ? STATUS_MESSAGES[500] : fallback)
+    if (status === 503 && !admin) return messages[503]
+    if (detail) return admin ? detail : translateServerText(detail)
+    return messages[status] ?? (status >= 500 ? messages[500] : fallback)
   }
   // Plain Errors thrown on purpose by page code carry a user-facing message;
   // TypeErrors and the like are bugs, not something to show.

@@ -47,12 +47,12 @@ const STATUS: Record<UserStatus, { tone: BadgeTone; label: string }> = {
   blocked: { tone: 'danger', label: 'Blocked' },
 }
 
-/** Approved / Pending / Blocked badge for a user status. */
-export function StatusBadge({ status, size = 'sm' }: { status: UserStatus; size?: 'sm' | 'md' }) {
+/** Approved / Pending / Blocked badge for a user status (`label` overrides the English text). */
+export function StatusBadge({ status, size = 'sm', label }: { status: UserStatus; size?: 'sm' | 'md'; label?: string }) {
   const s = STATUS[status] ?? { tone: 'neutral' as const, label: status }
   return (
     <Badge tone={s.tone} size={size} dot>
-      {s.label}
+      {label ?? s.label}
     </Badge>
   )
 }

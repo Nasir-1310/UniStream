@@ -10,6 +10,7 @@ import { forwardRef, type FormEvent } from 'react'
 import { Check, ClipboardPaste, Link2, Search, X } from 'lucide-react'
 import { PlatformIcon, Spinner, platformStyle } from '@/components/ui'
 import { PLATFORMS, PLATFORM_LABELS, UNSUPPORTED_URL_MESSAGE, validateVideoUrl } from '@/lib/validation'
+import { translateServerText } from '@/lib/serverText'
 import { extractLink } from './types'
 
 export interface LinkFormProps {
@@ -50,9 +51,9 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
   const describedBy = error ? `${INPUT_ID}-error` : `${INPUT_ID}-hint`
 
   return (
-    <form onSubmit={submit} noValidate className="surface-card p-3.5 sm:p-5" aria-label="Get a video from its link">
+    <form onSubmit={submit} noValidate className="surface-card p-3.5 sm:p-5" aria-label="লিংক থেকে ভিডিও আনুন">
       <label htmlFor={INPUT_ID} className="block text-[13px] font-medium text-slate-300 mb-2">
-        Video link
+        ভিডিওর লিংক
       </label>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -84,8 +85,8 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
               type="button"
               onClick={onClear}
               className="btn-icon absolute right-1 top-1/2 -translate-y-1/2"
-              aria-label="Clear link"
-              title="Clear"
+              aria-label="লিংক মুছুন"
+              title="মুছুন"
             >
               <X className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -100,7 +101,7 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
             className="btn-secondary h-12 px-4 flex-shrink-0"
           >
             <ClipboardPaste className="w-4 h-4" aria-hidden="true" />
-            Paste
+            পেস্ট
           </button>
           <button
             type="submit"
@@ -109,7 +110,7 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
             className="btn-primary h-12 px-5 flex-1 sm:flex-none sm:min-w-[132px]"
           >
             {analyzing ? <Spinner size="sm" label={null} /> : <Search className="w-4 h-4" aria-hidden="true" />}
-            {analyzing ? 'Getting video…' : 'Get video'}
+            {analyzing ? 'ভিডিও আনা হচ্ছে…' : 'ভিডিও আনুন'}
           </button>
         </div>
       </div>
@@ -124,8 +125,8 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
           className={`mt-2.5 text-xs leading-relaxed ${unsupported ? 'text-amber-300' : 'text-slate-500'}`}
         >
           {unsupported
-            ? `${UNSUPPORTED_URL_MESSAGE} Other sites aren’t available yet.`
-            : 'In the YouTube, Facebook or Instagram app, tap Share → Copy link, then paste it here.'}
+            ? `${translateServerText(UNSUPPORTED_URL_MESSAGE)} অন্য সাইট এখনো চালু হয়নি।`
+            : 'YouTube, Facebook বা Instagram অ্যাপে Share → Copy link চাপুন, তারপর এখানে পেস্ট করুন।'}
         </p>
       )}
       {lockedReason && (
@@ -134,8 +135,8 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="Supported platforms" role="group">
-        <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500 mr-1">Works with</span>
+      <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="যেসব প্ল্যাটফর্ম চলে" role="group">
+        <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500 mr-1">চলে</span>
         {PLATFORMS.map(platform => {
           const active = detected === platform
           const style = platformStyle(platform)
@@ -151,7 +152,7 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
               {active && (
                 <>
                   <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span className="sr-only">(detected)</span>
+                  <span className="sr-only">(শনাক্ত হয়েছে)</span>
                 </>
               )}
             </span>

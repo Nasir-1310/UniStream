@@ -11,7 +11,6 @@
 import { useEffect, useRef } from 'react'
 import { Database, KeyRound, LogOut } from 'lucide-react'
 import Navbar from '@/components/Navbar'
-import Footer from '@/components/Footer'
 import { Alert, useToast } from '@/components/ui'
 import { adminGetSchema, type AdminSession } from '@/lib/api'
 import { AdminCredentialsForm } from './AdminCredentialsForm'
@@ -115,7 +114,7 @@ export function AdminSetup({
           </Alert>
         )}
       </main>
-      <Footer />
+      {/* No site footer here: it is the Bangla public site's; the admin panel is English. */}
     </div>
   )
 }

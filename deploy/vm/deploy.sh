@@ -13,8 +13,10 @@ git pull --ff-only
 
 export COMMIT
 COMMIT="$(git rev-parse HEAD)"
+# One or more host names, separated by spaces, commas or new lines; Caddy
+# wants them as "a.example, b.example".
 export DOMAIN
-DOMAIN="$(tr -d '[:space:]' < /opt/unistream/domain)"
+DOMAIN="$(tr ',\n' '  ' < /opt/unistream/domain | xargs | sed 's/ /, /g')"
 
 docker compose -f deploy/vm/compose.yml -p unistream up -d --build
 docker image prune -f >/dev/null

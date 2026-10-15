@@ -9,7 +9,7 @@ Encrypt certificate. Any Ubuntu VM with ports 22, 80 and 443 open works.
 |---|---|
 | `/opt/unistream/src` | this repository (branch `ccr-83b3074e-h4txdu`) |
 | `/opt/unistream/app.env` | settings and secrets, `chmod 600` (same names as on Render) |
-| `/opt/unistream/domain` | the HTTPS host name, e.g. `unistream-api.indiasouthcentral.cloudapp.azure.com` |
+| `/opt/unistream/domain` | the HTTPS host name(s), e.g. `unistream-api.indiasouthcentral.cloudapp.azure.com`; several names separated by spaces all get a certificate |
 
 ## Update to the latest code
 

@@ -82,8 +82,18 @@ interface AnalysisResult {
   platform: Platform | null
 }
 
+/**
+ * When saveFile() last ran. The file comes straight from the API, a different
+ * origin, where browsers ignore the `download` attribute: the click starts a
+ * navigation that turns into a download, firing `beforeunload` on the way.
+ * The leave-site guard lets that one through.
+ */
+let fileSaveStartedAt = 0
+const FILE_SAVE_UNLOAD_GRACE_MS = 1500
+
 /** Hand the finished file to the browser's download manager. */
 function saveFile(href: string): void {
+  fileSaveStartedAt = Date.now()
   const anchor = document.createElement('a')
   anchor.href = href
   anchor.download = ''
@@ -228,6 +238,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   useEffect(() => {
     if (!streaming) return
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      // A finished file being saved, not the user leaving (see saveFile).
+      if (Date.now() - fileSaveStartedAt < FILE_SAVE_UNLOAD_GRACE_MS) return
       event.preventDefault()
       event.returnValue = ''
     }

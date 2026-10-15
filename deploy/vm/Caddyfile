@@ -1,0 +1,9 @@
+# HTTPS in front of the API. Caddy obtains and renews the certificate for
+# {$DOMAIN} (Let's Encrypt) as long as ports 80 and 443 reach this VM.
+{$DOMAIN} {
+	reverse_proxy api:8000 {
+		# Download progress is a Server-Sent Events stream: pass every
+		# event on at once instead of buffering it.
+		flush_interval -1
+	}
+}

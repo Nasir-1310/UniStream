@@ -1,0 +1,44 @@
+# UniStream Saver API on a single Linux VM: the API container behind Caddy,
+# which gets and renews the HTTPS certificate for DOMAIN by itself.
+# Run through deploy.sh (it sets DOMAIN and COMMIT).
+
+services:
+  api:
+    build:
+      context: ../../backend
+      args:
+        COMMIT: ${COMMIT:-local}
+    # Secrets and settings (SUPABASE_*, AUTH_SECRET, cookies...), chmod 600.
+    env_file: /opt/unistream/app.env
+    restart: unless-stopped
+    expose:
+      - "8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. in /opt/unistream/domain}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

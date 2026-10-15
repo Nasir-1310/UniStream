@@ -1,0 +1,10 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+tests/
+.env
+.commit
+cookies*.txt
+youtube-cookies*.txt
+*_cookies.txt

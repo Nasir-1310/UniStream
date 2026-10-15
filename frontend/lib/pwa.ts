@@ -10,9 +10,17 @@
 // fire before React has loaded, and promptInstall() later opens the
 // browser's own install dialog with it. Safari on iPhone/iPad has no such
 // event: installing there is Share → Add to Home Screen.
+//
+// Chrome never fires the event while the app is installed, and desktop
+// Chrome can't always say so (getInstalledRelatedApps), so this device
+// remembers an install (us_app_installed: set when installed or opened as
+// the app, cleared as soon as Chrome offers the install again) and counts
+// time on the site (us_seen_ms) to know how long Chrome may still hold
+// the offer back. The install dialog never waits longer than that.
 
 import { useSyncExternalStore } from 'react'
 import { IN_APP_BROWSER } from '@/components/download/hooks'
+import { getToken } from '@/lib/auth'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>
@@ -65,6 +73,29 @@ const SERVER_STATE: InstallState = {
   inAppBrowser: false,
 }
 
+const INSTALLED_KEY = 'us_app_installed'
+const SEEN_KEY = 'us_seen_ms'
+const SEEN_STEP_MS = 5000
+/** Chrome holds the install offer back until ~30 s were spent on the site. */
+const CHROME_ENGAGEMENT_MS = 30_000
+
+function storageGet(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function storageSet(key: string, value: string | null): void {
+  try {
+    if (value === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, value)
+  } catch {
+    // Storage blocked (private mode): the dialog just waits its full time.
+  }
+}
+
 const listeners = new Set<() => void>()
 let state: InstallState = SERVER_STATE
 let started = false
@@ -98,13 +129,16 @@ function runningStandalone(): boolean {
 function computeState(): InstallState {
   const ua = navigator.userAgent || ''
   const standalone = runningStandalone()
+  const canPrompt = Boolean(window.__installPrompt)
+  // Remembered install, unless Chrome is offering the install (so it's gone).
+  const known = alreadyInstalled || (!canPrompt && storageGet(INSTALLED_KEY) === '1')
   return {
     ready: true,
-    installed: standalone || justInstalled || alreadyInstalled,
+    installed: standalone || justInstalled || known,
     standalone,
     justInstalled,
-    alreadyInstalled,
-    canPrompt: Boolean(window.__installPrompt),
+    alreadyInstalled: known,
+    canPrompt,
     supportsPrompt: 'onbeforeinstallprompt' in window,
     dismissed,
     platform: detectPlatform(ua),
@@ -142,16 +176,45 @@ function start(): void {
     // Our own buttons offer the install; skip Chrome's mini-infobar.
     event.preventDefault()
     window.__installPrompt = event as BeforeInstallPromptEvent
+    // Chrome only offers this when the app is not installed.
+    storageSet(INSTALLED_KEY, null)
     emit()
   })
   window.addEventListener('appinstalled', () => {
     window.__installPrompt = null
     justInstalled = true
+    storageSet(INSTALLED_KEY, '1')
     emit()
   })
   window.matchMedia('(display-mode: standalone)').addEventListener?.('change', emit)
+  if (window.__installPrompt) storageSet(INSTALLED_KEY, null)
+  if (runningStandalone()) storageSet(INSTALLED_KEY, '1')
+
+  // Count visible time on the site, the way Chrome does before offering the install.
+  const counter = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    const seen = Number(storageGet(SEEN_KEY)) || 0
+    if (seen >= 2 * CHROME_ENGAGEMENT_MS) {
+      window.clearInterval(counter)
+      return
+    }
+    storageSet(SEEN_KEY, String(seen + SEEN_STEP_MS))
+  }, SEEN_STEP_MS)
+
   state = computeState()
   void checkAlreadyInstalled()
+}
+
+/**
+ * How long the install dialog should wait for Chrome's offer before saying
+ * it isn't coming (usually because the app is already installed): a moment
+ * for anyone who has used the site before, otherwise until Chrome's ~30 s of
+ * time on the site are up.
+ */
+export function installOfferWaitMs(): number {
+  const seen = Number(storageGet(SEEN_KEY)) || 0
+  if (seen >= CHROME_ENGAGEMENT_MS || getToken()) return 2500
+  return Math.min(40_000, CHROME_ENGAGEMENT_MS - seen + 5000)
 }
 
 function subscribe(listener: () => void): () => void {

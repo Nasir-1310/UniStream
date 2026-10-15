@@ -9,7 +9,7 @@
 // built-in browser and the like get a one-tap "open in Chrome" first.
 // Nothing renders inside the installed app.
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   CheckCircle2,
   Chrome,
@@ -26,6 +26,7 @@ import { Alert, Modal, Spinner, useToast } from '@/components/ui'
 import { BrandMark } from '@/components/Brand'
 import {
   chromeIntentUrl,
+  installOfferWaitMs,
   promptInstall,
   useInstallState,
   type InstallPlatform,
@@ -80,24 +81,24 @@ const DEVICES: { id: InstallPlatform; label: string; Icon: typeof Smartphone }[]
   { id: 'desktop', label: 'কম্পিউটার', Icon: Laptop },
 ]
 
-/** Seconds to wait for Chrome's install event before also showing the menu route. */
-const SLOW_AFTER_MS = 8000
-
 export function InstallDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const install = useInstallState()
   const toast = useToast()
   const [device, setDevice] = useState<InstallPlatform | null>(null)
   const [busy, setBusy] = useState(false)
-  const [slow, setSlow] = useState(false)
+  // Chrome's offer didn't come in time: most likely the app is already installed.
+  const [gaveUp, setGaveUp] = useState(false)
   const selected = device ?? install.platform
-  const view = dialogView(install, selected)
+  const view = dialogView(install, selected, gaveUp)
+  const waiting = open && view === 'waiting'
+  const waitMs = useMemo(() => (waiting ? installOfferWaitMs() : 0), [waiting])
 
-  // Chrome offers the install only after ~30 s on the site: say so if it takes long.
+  // Never wait forever: Chrome stays silent when the app is already installed.
   useEffect(() => {
-    if (!open || view !== 'waiting') return
-    const timer = window.setTimeout(() => setSlow(true), SLOW_AFTER_MS)
+    if (!waiting) return
+    const timer = window.setTimeout(() => setGaveUp(true), waitMs)
     return () => window.clearTimeout(timer)
-  }, [open, view])
+  }, [waiting, waitMs])
 
   // Closed (or still on the server): nothing to build, e.g. the Chrome link needs `window`.
   if (!open || !install.ready) return null
@@ -213,7 +214,7 @@ export function InstallDialog({ open, onClose }: { open: boolean; onClose: () =>
       )}
 
       <div className="mt-4" aria-live="polite">
-        <DialogBody view={view} install={install} selected={selected} slow={slow} onCopyLink={() => void copyLink()} />
+        <DialogBody view={view} install={install} selected={selected} waitMs={waitMs} onCopyLink={() => void copyLink()} />
       </div>
     </Modal>
   )
@@ -222,6 +223,7 @@ export function InstallDialog({ open, onClose }: { open: boolean; onClose: () =>
 type View =
   | 'ready' // one tap: the browser's install dialog
   | 'waiting' // Chrome hasn't offered the install yet
+  | 'unavailable' // ...and won't: usually the app is already installed
   | 'dismissed' // the visitor cancelled the browser's dialog
   | 'done' // installed this visit
   | 'already' // installed earlier on this device
@@ -230,7 +232,7 @@ type View =
   | 'desktop-manual' // Safari on Mac, Firefox...
   | 'other-device' // e.g. the iPhone tab on a computer
 
-function dialogView(install: InstallState, selected: InstallPlatform): View {
+function dialogView(install: InstallState, selected: InstallPlatform, gaveUp: boolean): View {
   if (install.justInstalled) return 'done'
   if (selected !== install.platform) return 'other-device'
   if (install.alreadyInstalled) return 'already'
@@ -238,7 +240,7 @@ function dialogView(install: InstallState, selected: InstallPlatform): View {
   if (install.canPrompt && !install.inAppBrowser) return 'ready'
   if (selected === 'android' && (install.inAppBrowser || !install.supportsPrompt)) return 'open-in-chrome'
   if (install.dismissed) return 'dismissed'
-  if (install.supportsPrompt && !install.inAppBrowser) return 'waiting'
+  if (install.supportsPrompt && !install.inAppBrowser) return gaveUp ? 'unavailable' : 'waiting'
   return 'desktop-manual'
 }
 
@@ -246,13 +248,13 @@ function DialogBody({
   view,
   install,
   selected,
-  slow,
+  waitMs,
   onCopyLink,
 }: {
   view: View
   install: InstallState
   selected: InstallPlatform
-  slow: boolean
+  waitMs: number
   onCopyLink: () => void
 }) {
   switch (view) {
@@ -272,16 +274,26 @@ function DialogBody({
         <>
           <AppCard />
           <p className="mt-4 text-[14px] leading-relaxed text-slate-300">
-            এক মুহূর্ত, ইনস্টল প্রস্তুত হচ্ছে। প্রস্তুত হলেই নিচের বাটন চালু হবে।
+            {waitMs > 5000
+              ? 'প্রথমবার ইনস্টলের আগে ব্রাউজার আধা মিনিটের মতো সময় নেয়। পেজটি খোলা রাখুন, প্রস্তুত হলেই নিচের বাটন চালু হবে।'
+              : 'এক মুহূর্ত, ইনস্টল প্রস্তুত হচ্ছে…'}
           </p>
-          {slow && (
-            <p className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-[13px] leading-relaxed text-slate-400">
-              বেশি সময় লাগছে? ব্রাউজারের <Key label="তিন-ডট মেনু">⋮</Key> মেনু থেকে{' '}
-              <strong className="text-slate-200">“Install app”</strong> বা{' '}
-              <strong className="text-slate-200">“Add to Home screen”</strong> চাপুন।
-            </p>
-          )}
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.08]" aria-hidden="true">
+            <div className="install-wait-bar h-full rounded-full bg-indigo-500" style={{ animationDuration: `${waitMs}ms` }} />
+          </div>
         </>
+      )
+
+    case 'unavailable':
+      return (
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+          <p className="text-[15px] font-semibold text-white">অ্যাপটি সম্ভবত আগেই ইনস্টল করা আছে</p>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-300">{WHERE_TO_FIND[install.platform]}</p>
+          <p className="mt-3 border-t border-white/[0.06] pt-3 text-[13px] leading-relaxed text-slate-400">
+            ইনস্টল করা না থাকলে: ব্রাউজারের <Key label="তিন-ডট মেনু">⋮</Key> মেনু থেকে{' '}
+            <strong className="text-slate-200">“Install app”</strong> চাপুন।
+          </p>
+        </div>
       )
 
     case 'dismissed':
@@ -301,11 +313,7 @@ function DialogBody({
       )
 
     case 'already':
-      return (
-        <Success title="অ্যাপটি আগেই ইনস্টল করা আছে">
-          হোম স্ক্রিন বা অ্যাপের তালিকায় <strong className="text-white">UniStream</strong> আইকন চাপলেই খুলবে।
-        </Success>
-      )
+      return <Success title="অ্যাপটি আগেই ইনস্টল করা আছে">{WHERE_TO_FIND[install.platform]}</Success>
 
     case 'ios':
       return <IosSteps install={install} onCopyLink={onCopyLink} />
@@ -352,6 +360,26 @@ function DialogBody({
         </>
       )
   }
+}
+
+/** Where an installed app lives, per device. */
+const WHERE_TO_FIND: Record<InstallPlatform, ReactNode> = {
+  android: (
+    <>
+      হোম স্ক্রিন বা অ্যাপের তালিকায় <strong className="text-white">UniStream</strong> আইকন চাপলেই খুলবে।
+    </>
+  ),
+  ios: (
+    <>
+      হোম স্ক্রিনে <strong className="text-white">UniStream</strong> আইকন চাপলেই খুলবে।
+    </>
+  ),
+  desktop: (
+    <>
+      ডেস্কটপ বা Start মেনুতে <strong className="text-white">UniStream</strong> খুঁজুন, অথবা ব্রাউজারের ঠিকানা বারের ডান
+      পাশের <strong className="text-white">“Open in app”</strong> আইকনে ক্লিক করুন।
+    </>
+  ),
 }
 
 const OTHER_DEVICE_TEXT: Record<InstallPlatform, ReactNode> = {

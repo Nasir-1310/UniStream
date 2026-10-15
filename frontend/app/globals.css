@@ -729,3 +729,15 @@
 .btn-feedback:active {
   transform: scale(0.98);
 }
+
+/* Install dialog: fills while waiting for the browser's install offer. */
+@keyframes installWait {
+  from { width: 4%; }
+  to { width: 100%; }
+}
+.install-wait-bar {
+  width: 4%;
+  animation-name: installWait;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}

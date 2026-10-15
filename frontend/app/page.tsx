@@ -1,7 +1,7 @@
 'use client'
 // frontend/app/page.tsx
 //
-// Landing page: what UniStream Saver is, the three supported platforms, how
+// Landing page: what UniStream Downloader is, the three supported platforms, how
 // access works, and the auth card (Sign in / Request access). Signed-in
 // visitors are sent straight to /download unless they followed an in-page
 // link (e.g. /#faq from the footer), so the FAQ stays readable for them.
@@ -44,6 +44,8 @@ import {
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { ContactSection } from '@/components/ContactCard'
+import { InstallAppSection, InstallButton } from '@/components/InstallApp'
+import { TutorialButton } from '@/components/TutorialDialog'
 import { Alert, Field, PasswordInput, Spinner, describedBy, useToast } from '@/components/ui'
 import { apiErrorMessage, apiErrorStatus, login, register, warmBackend, type PublicUser } from '@/lib/api'
 import { useSession } from '@/lib/auth'
@@ -51,6 +53,7 @@ import { CONTACT, CONTACT_MAILTO } from '@/lib/contact'
 import { formatPhone } from '@/lib/format'
 import { classifyLogin, errorOf, validateEmail, validateName, validatePhone, NAME_MAX } from '@/lib/validation'
 import { bnError, translateServerText } from '@/lib/serverText'
+import { SIGN_IN_TUTORIAL } from '@/lib/tutorials'
 
 type AuthTab = 'signin' | 'request'
 
@@ -160,6 +163,10 @@ export default function HomePage() {
                 <Sparkles className="w-4 h-4 mt-px flex-shrink-0 text-violet-300" aria-hidden="true" />
                 <span>এখন YouTube, Facebook ও Instagram — তিনটিতেই 4K পর্যন্ত।</span>
               </p>
+              <div className="mt-5 sm:mt-6 flex flex-wrap items-center gap-2.5">
+                <TutorialButton tutorial={SIGN_IN_TUTORIAL} className="btn-secondary btn-sm" />
+                <InstallButton className="btn-outline btn-sm" />
+              </div>
             </div>
 
             <div id="auth" className="relative lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-center scroll-mt-20">
@@ -182,7 +189,7 @@ export default function HomePage() {
                   'প্রতিদিন আনলিমিটেড ডাউনলোড (অ্যাকাউন্ট অনুযায়ী)',
                   '4K Ultra HD পর্যন্ত, অথবা শুধু অডিও (MP3)',
                   'ফোনের ব্রাউজারেই চলে',
-                  'কোনো বিজ্ঞাপন নেই, অ্যাপ ইনস্টলের ঝামেলা নেই',
+                  'কোনো বিজ্ঞাপন নেই; চাইলে অ্যাপ হিসেবেও ইনস্টল করুন',
                 ].map(item => (
                   <li key={item} className="flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 mt-[3px] flex-shrink-0 text-emerald-400" aria-hidden="true" />
@@ -209,6 +216,7 @@ export default function HomePage() {
         <PlatformsSection />
         <HowItWorksSection onRequestAccess={() => openAuth('request')} />
         <FeaturesSection />
+        <InstallAppSection />
         <FaqSection onOpenAuth={openAuth} />
         <CtaSection onOpenAuth={openAuth} />
         <ContactSection />
@@ -1092,10 +1100,11 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
             </li>
           ))}
         </ol>
-        <div className="mt-8">
+        <div className="mt-8 flex flex-col sm:flex-row gap-3">
           <button type="button" onClick={onRequestAccess} className="btn-primary w-full sm:w-auto">
             অ্যাক্সেসের অনুরোধ করুন <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </button>
+          <TutorialButton tutorial={SIGN_IN_TUTORIAL} className="btn-secondary w-full sm:w-auto" />
         </div>
       </div>
     </section>
@@ -1125,14 +1134,14 @@ function FeaturesSection() {
     {
       Icon: MonitorSmartphone,
       title: 'ফোনের জন্যই বানানো',
-      body: 'ফোন, ট্যাবলেট বা ল্যাপটপের যেকোনো আধুনিক ব্রাউজারে চলে। কিছু ইনস্টল করতে হয় না, কোনো বিজ্ঞাপন নেই।',
+      body: 'ফোন, ট্যাবলেট বা ল্যাপটপের যেকোনো আধুনিক ব্রাউজারে চলে। চাইলে অ্যাপ হিসেবে ইনস্টল করুন, Play Store লাগবে না।',
       tone: 'text-violet-300 bg-violet-500/10 border-violet-500/20',
     },
   ]
   return (
     <section aria-labelledby="features-title" className="border-t border-white/[0.05]">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-14 sm:py-20">
-        <SectionHeading id="features-title" eyebrow="কেন UniStream Saver" title="শিক্ষার্থীদের জন্য, একদম সহজ" />
+        <SectionHeading id="features-title" eyebrow="কেন UniStream Downloader" title="শিক্ষার্থীদের জন্য, একদম সহজ" />
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {features.map(({ Icon, title, body, tone }) => (
             <li key={title} className="feature-card">
@@ -1163,7 +1172,7 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
   const faqs: { id: string; q: string; a: ReactNode }[] = [
     {
       id: 'faq-who',
-      q: 'কারা UniStream Saver ব্যবহার করতে পারবেন?',
+      q: 'কারা UniStream Downloader ব্যবহার করতে পারবেন?',
       a: (
         <>
           আপাতত শিক্ষার্থীদের জন্য চালু করা হয়েছে। নাম, ইমেইল আর মোবাইল নম্বর দিয়ে{' '}
@@ -1219,6 +1228,18 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
           YouTube, Facebook ও Instagram — ভিডিওতে যা আছে তার মধ্যে{' '}
           <strong className="text-slate-200">4K Ultra HD</strong> পর্যন্ত যেকোনো কোয়ালিটি, অথবা শুধু অডিও MP3
           হিসেবে। প্রাইভেট, মেম্বারশিপ-অনলি ও বয়সসীমা দেওয়া ভিডিও কাজ নাও করতে পারে।
+        </>
+      ),
+    },
+    {
+      id: 'faq-app',
+      q: 'ফোনে অ্যাপ হিসেবে কীভাবে ইনস্টল করব?',
+      a: (
+        <>
+          Play Store লাগে না। Android-এ Chrome দিয়ে সাইটটি খুলে{' '}
+          <strong className="text-slate-200">অ্যাপ ইনস্টল করুন</strong> বাটন চাপুন (অথবা ⋮ মেনু থেকে “Install app”)।
+          iPhone-এ Safari-তে Share বাটন চেপে “Add to Home Screen” বেছে নিন। এরপর হোম স্ক্রিনের UniStream আইকন থেকে এক
+          ট্যাপে খুলবে, আর নতুন ফিচার নিজে থেকেই আপডেট হবে।
         </>
       ),
     },

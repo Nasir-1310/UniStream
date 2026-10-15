@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════════════════════════════╗
--- ║  UniStream Saver — Supabase schema (v2, fresh install)               ║
+-- ║  UniStream Downloader — Supabase schema (v2, fresh install)               ║
 -- ║  Run in: Supabase Dashboard → SQL Editor → New query → Run.          ║
 -- ║                                                                      ║
 -- ║  Upgrading a project that already has users or download logs? Run    ║

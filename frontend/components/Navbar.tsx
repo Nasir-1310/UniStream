@@ -16,6 +16,7 @@ import {
   LogOut,
   UserCircle,
 } from 'lucide-react'
+import { BrandLockup } from '@/components/Brand'
 import { useSession } from '@/lib/auth'
 import type { PublicUser, Usage } from '@/lib/api'
 import { formatPhone, formatTime, initials } from '@/lib/format'
@@ -37,15 +38,10 @@ export default function Navbar({ showAuth = true, rightSlot, homeHref }: NavbarP
       <div className="max-w-7xl mx-auto px-4 sm:px-8 h-14 flex items-center justify-between gap-3">
         <Link
           href={homeHref ?? (user ? '/download' : '/')}
-          className="flex items-center gap-2 flex-shrink-0 rounded-lg py-2 -my-2"
-          aria-label="UniStream Saver হোম"
+          className="flex items-center flex-shrink-0 rounded-lg py-2 -my-2"
+          aria-label="UniStream Downloader হোম"
         >
-          <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-sm shadow-indigo-900/50">
-            <Download className="w-4 h-4 text-[#fff]" strokeWidth={2.5} aria-hidden="true" />
-          </span>
-          <span className="max-[359px]:sr-only font-semibold text-[14px] text-white tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-            UniStream<span className="text-sky-400">Saver</span>
-          </span>
+          <BrandLockup hideWordmarkBelow360 />
         </Link>
 
         <div className="flex items-center gap-2 min-w-0">

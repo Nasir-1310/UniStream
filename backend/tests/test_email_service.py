@@ -107,7 +107,7 @@ class EmailStatusTests(unittest.TestCase):
         self.assertFalse(status["configured"])
         self.assertIsNone(status["provider"])
         self.assertIsNone(status["from_email"])
-        self.assertEqual(status["from_name"], "UniStream Saver")
+        self.assertEqual(status["from_name"], "UniStream Downloader")
         self.assertIn("BREVO_API_KEY", status["issue"])
 
     def test_auto_prefers_brevo_then_resend_then_smtp(self):
@@ -177,7 +177,7 @@ class BrevoTests(NoNetworkTestCase):
         self.assertEqual(kwargs["headers"]["api-key"], "xkeysib-123")
         self.assertEqual(kwargs["timeout"], 15.0)
         payload = kwargs["json"]
-        self.assertEqual(payload["sender"], {"name": "UniStream Saver", "email": "admin@example.com"})
+        self.assertEqual(payload["sender"], {"name": "UniStream Downloader", "email": "admin@example.com"})
         self.assertEqual(payload["to"], [{"email": "student@gmail.com"}])
         self.assertEqual(payload["subject"], "Hello Bcc: x@evil.com")
         self.assertEqual(payload["htmlContent"], "<p>Hi</p>")
@@ -356,9 +356,9 @@ class TemplateTests(NoNetworkTestCase):
 
     def test_credentials_email_content(self):
         subject, html_body, text = self._credentials()
-        self.assertEqual(subject, "Your UniStream Saver account is ready")
+        self.assertEqual(subject, "Your UniStream Downloader account is ready")
         for fragment in (
-            "UniStream Saver",
+            "UniStream Downloader",
             "Hi Nasir Uddin,",
             "student@gmail.com",
             "+8801712345678",
@@ -424,7 +424,7 @@ class TemplateTests(NoNetworkTestCase):
             subject, html_body, text = email_service.build_password_reset_email(
                 to="student@gmail.com", name="", reset_url=url,
             )
-        self.assertEqual(subject, "Reset your UniStream Saver password")
+        self.assertEqual(subject, "Reset your UniStream Downloader password")
         self.assertIn('href="https://unistream.example/reset-password?token=abc.def&amp;x=1"', html_body)
         self.assertIn("60 minutes", html_body)
         self.assertIn("ignore this email", html_body)
@@ -446,9 +446,9 @@ class TemplateTests(NoNetworkTestCase):
             email_service.send_test_email("admin@example.com")
         subjects = [call.kwargs["json"]["subject"] for call in post.call_args_list]
         self.assertEqual(subjects, [
-            "Your UniStream Saver account is ready",
-            "Reset your UniStream Saver password",
-            "UniStream Saver test email",
+            "Your UniStream Downloader account is ready",
+            "Reset your UniStream Downloader password",
+            "UniStream Downloader test email",
         ])
         first = post.call_args_list[0].kwargs["json"]
         self.assertIn("Kx7m-Pq4t-Zr9w", first["htmlContent"])

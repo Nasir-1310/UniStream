@@ -1,4 +1,4 @@
-# UniStream Saver API on a Hugging Face Docker Space.
+# UniStream Downloader API on a Hugging Face Docker Space.
 #
 # The Space holds only this file and README.md: the image builds the backend
 # straight from the public GitHub repository, so every push to BRANCH is

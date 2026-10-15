@@ -23,8 +23,8 @@ export function credentialsMessage(entry: CredentialsEntry, origin: string): str
   const lines = [
     `Hi ${user.name?.trim() || 'there'},`,
     '',
-    'Your UniStream Saver account is ready.',
-    `Sign in: ${origin || 'the UniStream Saver website'}/`,
+    'Your UniStream Downloader account is ready.',
+    `Sign in: ${origin || 'the UniStream Downloader website'}/`,
   ]
   if (user.email) lines.push(`Email: ${user.email}`)
   if (user.phone) lines.push(`Phone: ${user.phone}`)

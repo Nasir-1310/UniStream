@@ -283,7 +283,7 @@ function EmailCard({ settings }: { settings: Settings }) {
 {`EMAIL_PROVIDER=brevo
 BREVO_API_KEY=xkeysib-…
 EMAIL_FROM=you@yourdomain.com
-EMAIL_FROM_NAME=UniStream Saver`}
+EMAIL_FROM_NAME=UniStream Downloader`}
           </pre>
           <p>
             Resend (<code className="text-slate-300">RESEND_API_KEY</code>) and SMTP (<code className="text-slate-300">SMTP_HOST</code>,{' '}

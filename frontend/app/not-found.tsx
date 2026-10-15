@@ -10,7 +10,7 @@ import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
   title: 'পেজ পাওয়া যায়নি',
-  description: 'এই পেজটি নেই। UniStream Saver-এর হোম পেজে যান বা ভিডিও ডাউনলোড করুন।',
+  description: 'এই পেজটি নেই। UniStream Downloader-এর হোম পেজে যান বা ভিডিও ডাউনলোড করুন।',
   robots: { index: false, follow: false },
 }
 

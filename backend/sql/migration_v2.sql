@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════════════════════════════╗
--- ║  UniStream Saver — database upgrade v2                               ║
+-- ║  UniStream Downloader — database upgrade v2                               ║
 -- ║  Accounts with passwords, daily download limits and admin tools.     ║
 -- ║                                                                      ║
 -- ║  Run once in: Supabase Dashboard → SQL Editor → New query → Run.     ║

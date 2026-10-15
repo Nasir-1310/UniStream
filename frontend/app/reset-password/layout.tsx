@@ -5,7 +5,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'নতুন পাসওয়ার্ড সেট করুন',
-  description: 'আপনার UniStream Saver অ্যাকাউন্টের নতুন পাসওয়ার্ড দিয়ে সাইন ইন করুন।',
+  description: 'আপনার UniStream Downloader অ্যাকাউন্টের নতুন পাসওয়ার্ড দিয়ে সাইন ইন করুন।',
   referrer: 'no-referrer',
   robots: { index: false, follow: false },
 }

@@ -1,4 +1,4 @@
-# UniStream Saver API on a single Linux VM: the API container behind Caddy,
+# UniStream Downloader API on a single Linux VM: the API container behind Caddy,
 # which gets and renews the HTTPS certificate for DOMAIN by itself.
 # Run through deploy.sh (it sets DOMAIN and COMMIT).
 

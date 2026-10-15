@@ -9,7 +9,7 @@ first configured of brevo -> resend -> smtp):
              SMTP_PASSWORD. Render's free instances block outbound SMTP ports,
              so prefer an HTTP provider there.
 EMAIL_FROM (the sender address) is required; EMAIL_FROM_NAME defaults to
-"UniStream Saver". Configuration is read at call time, so the admin panel
+"UniStream Downloader". Configuration is read at call time, so the admin panel
 reflects the current environment and tests can patch os.environ.
 
 Every interpolated value is HTML-escaped; links are restricted to http(s).
@@ -38,7 +38,7 @@ load_dotenv(dotenv_path=backend_dir / ".env")
 
 logger = logging.getLogger(__name__)
 
-BRAND = "UniStream Saver"
+BRAND = "UniStream Downloader"
 DEFAULT_FROM_NAME = BRAND
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 RESEND_URL = "https://api.resend.com/emails"

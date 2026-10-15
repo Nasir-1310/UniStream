@@ -3,6 +3,7 @@
 // What the page shows before the first link: three steps and what each
 // platform supports, so nobody has to guess why a private post fails.
 
+import type { ReactNode } from 'react'
 import { ClipboardPaste, Download, Search } from 'lucide-react'
 import { PlatformIcon } from '@/components/ui'
 import { PLATFORMS, PLATFORM_LABELS, type Platform } from '@/lib/validation'
@@ -19,13 +20,19 @@ const PLATFORM_NOTES: Record<Platform, string> = {
   instagram: 'পাবলিক Reels ও ভিডিও পোস্ট।',
 }
 
-export function GettingStarted() {
+/** `help`: e.g. the "how to use" guide button, shown beside the heading. */
+export function GettingStarted({ help }: { help?: ReactNode }) {
   return (
     <section aria-labelledby="start-title" className="surface-card p-5 sm:p-7">
-      <h2 id="start-title" className="text-base sm:text-lg font-semibold text-white" style={{ letterSpacing: 0 }}>
-        শুরু করতে প্রস্তুত
-      </h2>
-      <p className="mt-1 text-[13px] text-slate-400">কোন কোন কোয়ালিটি আছে দেখতে ওপরে একটি লিংক পেস্ট করুন।</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 id="start-title" className="text-base sm:text-lg font-semibold text-white" style={{ letterSpacing: 0 }}>
+            শুরু করতে প্রস্তুত
+          </h2>
+          <p className="mt-1 text-[13px] text-slate-400">কোন কোন কোয়ালিটি আছে দেখতে ওপরে একটি লিংক পেস্ট করুন।</p>
+        </div>
+        {help && <div className="flex-shrink-0">{help}</div>}
+      </div>
 
       <ol className="mt-5 grid gap-3 sm:grid-cols-3">
         {STEPS.map(({ Icon, title, text }, i) => (

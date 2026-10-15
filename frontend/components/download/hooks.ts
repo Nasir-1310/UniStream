@@ -58,7 +58,7 @@ export function useOnline(): boolean {
 // browser, which often ignores file downloads. Most of our users arrive that
 // way, so the page tells them to switch to Chrome or Safari up front.
 
-const IN_APP_BROWSER = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|MicroMessenger|Line\/|; wv\)/i
+export const IN_APP_BROWSER = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|MicroMessenger|Line\/|; wv\)/i
 
 /** True inside a social app's built-in browser or an Android WebView. */
 export function useInAppBrowser(): boolean {

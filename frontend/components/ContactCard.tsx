@@ -1,6 +1,6 @@
 // components/ContactCard.tsx
 //
-// "Contact & help": who built UniStream Saver and how to reach him on
+// "Contact & help": who built UniStream Downloader and how to reach him on
 // WhatsApp or by email. On the home page, right above the footer.
 
 import { Mail } from 'lucide-react'

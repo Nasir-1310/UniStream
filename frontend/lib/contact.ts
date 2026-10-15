@@ -14,4 +14,4 @@ export const CONTACT = {
   email: 'nasir.iit.du@gmail.com',
 } as const
 
-export const CONTACT_MAILTO = `mailto:${CONTACT.email}?subject=${encodeURIComponent('UniStream Saver: সাহায্য দরকার')}`
+export const CONTACT_MAILTO = `mailto:${CONTACT.email}?subject=${encodeURIComponent('UniStream Downloader: সাহায্য দরকার')}`

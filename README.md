@@ -1,4 +1,4 @@
-# UniStream Saver
+# UniStream Downloader
 
 > A video downloader for university students: **YouTube · Facebook · Instagram**.
 > Access is approved by an admin, every account has a password and a fair daily
@@ -142,7 +142,7 @@ verified single sender, and no domain is needed.
    confirm the verification email.
 3. **SMTP & API → API keys → Generate a new API key**.
 4. On Render set `BREVO_API_KEY` to that key and `EMAIL_FROM` to the verified
-   address (`EMAIL_FROM_NAME` defaults to "UniStream Saver").
+   address (`EMAIL_FROM_NAME` defaults to "UniStream Downloader").
 5. In the admin panel open **Settings → Send test email** to check delivery.
    Ask students to look in their spam folder for the first email.
 

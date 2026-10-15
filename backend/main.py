@@ -62,7 +62,7 @@ load_dotenv(dotenv_path=backend_dir / ".env")
 # is refused by YouTube). Starts in the background; a no-op otherwise.
 warp_proxy.start_in_background()
 
-app = FastAPI(title="UniStream Saver API", version="2.0.0")
+app = FastAPI(title="UniStream Downloader API", version="2.0.0")
 logger = logging.getLogger(__name__)
 # uvicorn configures only its own loggers; without this the app's INFO lines
 # (analysis timings) never reach the host's logs.
@@ -507,7 +507,7 @@ def health():
     # Shows whether a push is live yet (Render or the Hugging Face image).
     return {
         "status": "ok",
-        "service": "UniStream Saver API v2",
+        "service": "UniStream Downloader API v2",
         "commit": deployed_commit(),
     }
 

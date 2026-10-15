@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════════════════════════════╗
--- ║  UniStream Saver — feedback and problem reports                      ║
+-- ║  UniStream Downloader — feedback and problem reports                      ║
 -- ║                                                                      ║
 -- ║  Run once in: Supabase Dashboard → SQL Editor → New query → Run.     ║
 -- ║  Safe to run again. Until it has run, the rest of the site works;    ║

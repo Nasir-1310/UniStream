@@ -640,6 +640,11 @@
   letter-spacing: normal !important;
 }
 
+/* The Latin "DOWNLOADER" line of the logo keeps its wide tracking. */
+[data-theme='light'] .brand-tracking {
+  letter-spacing: 0.26em !important;
+}
+
 [data-theme='light'] :is(h1, h2, h3) {
   line-height: 1.32 !important;
   font-weight: 700;

@@ -12,7 +12,7 @@ import Footer from '@/components/Footer'
 export const metadata: Metadata = {
   title: 'ব্যবহারের শর্তাবলি',
   description:
-    'UniStream Saver ব্যবহারের নিয়ম: ব্যক্তিগত ও পড়াশোনার কাজে ব্যবহার, কপিরাইট মেনে চলা, ডাউনলোডের সীমা আর অ্যাকাউন্টের নিয়ম।',
+    'UniStream Downloader ব্যবহারের নিয়ম: ব্যক্তিগত ও পড়াশোনার কাজে ব্যবহার, কপিরাইট মেনে চলা, ডাউনলোডের সীমা আর অ্যাকাউন্টের নিয়ম।',
 }
 
 const LAST_UPDATED = '10 অক্টোবর 2026'
@@ -24,11 +24,11 @@ const A = 'text-indigo-300 hover:text-indigo-200 underline underline-offset-2'
 const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
   {
     id: 'service',
-    title: 'UniStream Saver সম্পর্কে',
+    title: 'UniStream Downloader সম্পর্কে',
     body: (
       <>
         <p className={P}>
-          UniStream Saver (&ldquo;সার্ভিস&rdquo;, &ldquo;আমরা&rdquo;) একটি স্বাধীনভাবে পরিচালিত সার্ভিস, যা অনুমোদিত
+          UniStream Downloader (&ldquo;সার্ভিস&rdquo;, &ldquo;আমরা&rdquo;) একটি স্বাধীনভাবে পরিচালিত সার্ভিস, যা অনুমোদিত
           সদস্যদের ব্যক্তিগত পড়াশোনা আর অফলাইনে দেখার জন্য YouTube, Facebook ও Instagram থেকে ভিডিও সেভ করতে দেয়।
           অনুমোদিত শিক্ষার্থীদের জন্য এটি ফ্রি, আর অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।
         </p>
@@ -66,7 +66,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'গ্রহণযোগ্য ব্যবহার',
     body: (
       <>
-        <p className={P}>UniStream Saver শুধু ব্যক্তিগত, অ-বাণিজ্যিক ও পড়াশোনার কাজে ব্যবহার করুন। যা করা যাবে না:</p>
+        <p className={P}>UniStream Downloader শুধু ব্যক্তিগত, অ-বাণিজ্যিক ও পড়াশোনার কাজে ব্যবহার করুন। যা করা যাবে না:</p>
         <ul className={UL}>
           <li>
             যে ভিডিও সেভ করার অধিকার আপনার নেই, যেমন মালিক ডাউনলোড নিষেধ করেছেন এমন কনটেন্ট, তা ডাউনলোড করা (আপনার দেশের
@@ -87,7 +87,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <>
         <p className={P}>
-          ভিডিওগুলোর মালিক তাদের নির্মাতা ও স্বত্বাধিকারীরা, আমরা নই। UniStream Saver কোনো ভিডিও হোস্ট, প্রকাশ বা সমর্থন
+          ভিডিওগুলোর মালিক তাদের নির্মাতা ও স্বত্বাধিকারীরা, আমরা নই। UniStream Downloader কোনো ভিডিও হোস্ট, প্রকাশ বা সমর্থন
           করে না: আপনি যে ফাইল চান তা এনে আপনাকে দেয়। ডাউনলোড করা ফাইল আপনাকে দেওয়ার সঙ্গে সঙ্গে, আর না নিলে কয়েক
           মিনিটের মধ্যে আমাদের সার্ভার থেকে মুছে ফেলা হয়।
         </p>
@@ -135,7 +135,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'সার্ভিসের প্রাপ্যতা ও পরিবর্তন',
     body: (
       <p className={P}>
-        UniStream Saver চালু রাখতে আমরা চেষ্টা করি, তবে এটি ফ্রি আর &ldquo;যেমন আছে তেমন&rdquo; ভিত্তিতে দেওয়া হয়। যেকোনো
+        UniStream Downloader চালু রাখতে আমরা চেষ্টা করি, তবে এটি ফ্রি আর &ldquo;যেমন আছে তেমন&rdquo; ভিত্তিতে দেওয়া হয়। যেকোনো
         সময় এটি ধীর বা বন্ধ হতে পারে, বা বদলাতে পারে, আর প্ল্যাটফর্ম যেভাবে ভিডিও দেয় তার কারণে কিছু ভিডিও ডাউনলোড করা
         যায় না। প্ল্যাটফর্মগুলো প্রায়ই বদলায়, তাই আজ যা কাজ করছে তা কাল বন্ধ হয়ে যেতে পারে। আমরা ফিচার (সাপোর্ট করা
         প্ল্যাটফর্মসহ) যোগ করতে, বদলাতে বা সরিয়ে দিতে পারি।
@@ -167,7 +167,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <p className={P}>
         আইন যতটুকু অনুমতি দেয়, সার্ভিস ব্যবহার বা ডাউনলোড করা ভিডিও থেকে সৃষ্ট কোনো পরোক্ষ ক্ষতি, তথ্য হারানো বা দাবির জন্য
-        UniStream Saver ও এর পরিচালকেরা দায়ী নন। আইন অনুযায়ী যেসব অধিকার সীমিত করা যায় না, এই শর্তাবলি সেগুলো সীমিত করে
+        UniStream Downloader ও এর পরিচালকেরা দায়ী নন। আইন অনুযায়ী যেসব অধিকার সীমিত করা যায় না, এই শর্তাবলি সেগুলো সীমিত করে
         না।
       </p>
     ),
@@ -188,7 +188,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'যোগাযোগ',
     body: (
       <p className={P}>
-        এই শর্তাবলি নিয়ে প্রশ্ন আছে? UniStream Saver থেকে পাওয়া যেকোনো ইমেইলের উত্তর দিন, অথবা যে অ্যাডমিন আপনার অ্যাকাউন্ট
+        এই শর্তাবলি নিয়ে প্রশ্ন আছে? UniStream Downloader থেকে পাওয়া যেকোনো ইমেইলের উত্তর দিন, অথবা যে অ্যাডমিন আপনার অ্যাকাউন্ট
         অনুমোদন করেছেন তার সাথে যোগাযোগ করুন।
       </p>
     ),
@@ -221,7 +221,7 @@ export default function TermsPage() {
             <div className="mt-6 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-4 sm:p-5">
               <h2 className="text-sm font-semibold text-white">সংক্ষেপে</h2>
               <ul className="mt-2 space-y-1.5 pl-5 list-disc marker:text-indigo-400 text-[14px] leading-relaxed text-slate-300">
-                <li>UniStream Saver ব্যবহার করুন নিজের পড়াশোনা আর অফলাইনে দেখার জন্য।</li>
+                <li>UniStream Downloader ব্যবহার করুন নিজের পড়াশোনা আর অফলাইনে দেখার জন্য।</li>
                 <li>শুধু অনুমতি আছে এমন ভিডিও সেভ করুন, আর কখনো আবার আপলোড, শেয়ার বা বিক্রি করবেন না।</li>
                 <li>প্রতিজনের একটি অ্যাকাউন্ট। পাসওয়ার্ড নিজের কাছে রাখুন।</li>
                 <li>অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড। নিয়ম ভাঙলে অ্যাকাউন্ট ব্লক করা হতে পারে।</li>

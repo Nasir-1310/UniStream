@@ -20,6 +20,8 @@ import { KeyRound, LogIn, MessageSquareHeart, RefreshCw } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { FeedbackDialog, type FeedbackPrefill } from '@/components/FeedbackDialog'
+import { InstallBanner } from '@/components/InstallApp'
+import { TutorialButton } from '@/components/TutorialDialog'
 import { Alert, Modal, PageLoader, useToast } from '@/components/ui'
 import { AnalyzingState, useAnalysisProgress } from '@/components/download/AnalyzingState'
 import { FormatMatrix } from '@/components/download/FormatMatrix'
@@ -50,6 +52,7 @@ import {
 import { clearSession, getCachedUser, getToken, refreshSession, useSession } from '@/lib/auth'
 import { countBn } from '@/lib/format'
 import { bnError, translateServerText } from '@/lib/serverText'
+import { DOWNLOAD_TUTORIAL } from '@/lib/tutorials'
 import { validateVideoUrl, type Platform } from '@/lib/validation'
 
 /** The API's message for an expired or revoked session, as the page shows it (in Bangla). */
@@ -730,16 +733,24 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
             YouTube, Facebook বা Instagram-এর লিংক পেস্ট করুন, 4K পর্যন্ত কোয়ালিটি বেছে নিন, আর অফলাইনে দেখার জন্য সেভ করুন।
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setFeedback({ kind: 'feedback' })}
-          aria-haspopup="dialog"
-          aria-expanded={feedback !== null}
-          className={`btn-feedback btn-sm self-start sm:self-auto whitespace-nowrap ${feedback !== null ? 'is-open' : ''}`}
-        >
-          <MessageSquareHeart className="w-4 h-4" aria-hidden="true" />
-          সমস্যা জানান / মতামত দিন
-        </button>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
+          <TutorialButton
+            tutorial={DOWNLOAD_TUTORIAL}
+            shortLabel={DOWNLOAD_TUTORIAL.video ? 'ভিডিও গাইড' : 'ব্যবহারের নিয়ম'}
+            className="btn-secondary btn-sm whitespace-nowrap"
+          />
+          <button
+            type="button"
+            onClick={() => setFeedback({ kind: 'feedback' })}
+            aria-haspopup="dialog"
+            aria-expanded={feedback !== null}
+            className={`btn-feedback btn-sm whitespace-nowrap ${feedback !== null ? 'is-open' : ''}`}
+          >
+            <MessageSquareHeart className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            <span className="sm:hidden">সমস্যা / মতামত</span>
+            <span className="hidden sm:inline">সমস্যা জানান / মতামত দিন</span>
+          </button>
+        </div>
       </header>
 
       <div className="space-y-3 mb-4 sm:mb-5 empty:hidden">
@@ -774,6 +785,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
             {limitNotice}
           </Alert>
         )}
+        <InstallBanner />
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
@@ -835,7 +847,15 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
             </div>
           </>
         ) : (
-          <GettingStarted />
+          <GettingStarted
+            help={
+              <TutorialButton
+                tutorial={DOWNLOAD_TUTORIAL}
+                label={DOWNLOAD_TUTORIAL.video ? 'ভিডিও গাইড দেখুন' : 'বিস্তারিত নিয়ম দেখুন'}
+                className="btn-outline btn-sm"
+              />
+            }
+          />
         )}
       </div>
 

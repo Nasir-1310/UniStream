@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'অ্যাকাউন্ট',
-  description: 'আপনার UniStream Saver তথ্য, আজকের ডাউনলোড আর পাসওয়ার্ড।',
+  description: 'আপনার UniStream Downloader তথ্য, আজকের ডাউনলোড আর পাসওয়ার্ড।',
   robots: { index: false, follow: false },
 }
 

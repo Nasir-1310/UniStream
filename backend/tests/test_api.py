@@ -43,7 +43,7 @@ ENV = {
     "EMAIL_PROVIDER": "brevo",
     "BREVO_API_KEY": "test-brevo-key",
     "EMAIL_FROM": "noreply@unistream.test",
-    "EMAIL_FROM_NAME": "UniStream Saver",
+    "EMAIL_FROM_NAME": "UniStream Downloader",
     "FRONTEND_URL": "https://app.unistream.test",
     "APP_TIMEZONE": "Asia/Dhaka",
 }

@@ -1,7 +1,9 @@
 // components/Footer.tsx
 import Link from 'next/link'
-import { Download, Facebook, Instagram, Mail, Youtube } from 'lucide-react'
+import { Facebook, Instagram, Mail, Youtube } from 'lucide-react'
+import { BrandLockup } from '@/components/Brand'
 import { WhatsAppIcon } from '@/components/ContactCard'
+import { InstallListItem } from '@/components/InstallApp'
 import { CONTACT, CONTACT_MAILTO } from '@/lib/contact'
 
 // Evaluated once per page load rather than during render.
@@ -20,13 +22,8 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8 sm:py-10">
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="max-w-sm">
-            <Link href="/" className="inline-flex items-center gap-2 rounded-lg">
-              <span className="w-7 h-7 rounded-lg bg-indigo-600/90 flex items-center justify-center">
-                <Download className="w-3.5 h-3.5 text-[#fff]" strokeWidth={2.5} aria-hidden="true" />
-              </span>
-              <span className="font-semibold text-sm text-white" style={{ fontFamily: 'var(--font-display)' }}>
-                UniStream<span className="text-sky-400">Saver</span>
-              </span>
+            <Link href="/" className="inline-flex items-center rounded-lg" aria-label="UniStream Downloader হোম">
+              <BrandLockup size="sm" />
             </Link>
             <p className="mt-3 text-[13px] leading-relaxed text-slate-500">
               YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত কোয়ালিটিতে সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি,
@@ -81,13 +78,14 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
                   প্রাইভেসি পলিসি
                 </Link>
               </li>
+              <InstallListItem className={linkClass} />
             </ul>
           </nav>
         </div>
 
         <div className="mt-8 pt-5 border-t border-white/[0.05] flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-slate-600">
           <p>
-            © <span suppressHydrationWarning>{YEAR}</span> UniStream Saver। শুধু ব্যক্তিগত ও পড়াশোনার কাজে — কপিরাইট ও
+            © <span suppressHydrationWarning>{YEAR}</span> UniStream Downloader। শুধু ব্যক্তিগত ও পড়াশোনার কাজে — কপিরাইট ও
             প্রতিটি প্ল্যাটফর্মের নিয়ম মেনে চলুন।
             <span className="block mt-1">
               তৈরি করেছেন <span className="text-slate-400 font-medium">{CONTACT.name}</span> · {CONTACT.roleShort}

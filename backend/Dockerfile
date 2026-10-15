@@ -1,4 +1,4 @@
-# UniStream Saver API image (built from this folder).
+# UniStream Downloader API image (built from this folder).
 # Used by deploy/vm (docker compose behind Caddy); any Docker host works.
 
 FROM python:3.12-slim

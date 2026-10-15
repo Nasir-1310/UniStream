@@ -56,7 +56,7 @@ services:
       - key: EMAIL_FROM
         sync: false
       - key: EMAIL_FROM_NAME
-        value: UniStream Saver
+        value: UniStream Downloader
       # SMTP is only for hosts that allow outbound SMTP (not Render's free plan).
       - key: SMTP_HOST
         sync: false

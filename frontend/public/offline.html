@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fbf6ec">
+<title>অফলাইন · UniStream Downloader</title>
+<style>
+  /* Shown by sw.js when the installed app opens without internet: no
+     external files, everything needed is in this page. */
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    background-color: #fbf6ec;
+    background-image: radial-gradient(rgb(122 92 46 / 0.13) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: #4a4236;
+    font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Nirmala UI', system-ui, sans-serif;
+  }
+  main {
+    width: 100%; max-width: 380px; text-align: center;
+    background: #fffcf5; border: 1px solid rgb(122 92 46 / 0.16); border-radius: 20px;
+    padding: 32px 24px; box-shadow: 0 8px 24px -12px rgb(60 40 10 / 0.12);
+  }
+  svg { width: 64px; height: 64px; display: block; margin: 0 auto 18px; }
+  h1 { margin: 0; font-size: 21px; line-height: 1.35; color: #1c2a22; }
+  p { margin: 8px 0 0; font-size: 15px; line-height: 1.6; }
+  button {
+    margin-top: 22px; width: 100%; min-height: 46px; border: 0; border-radius: 12px;
+    background: #0b6b4b; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #08573d; }
+  small { display: block; margin-top: 14px; font-size: 13px; color: #7d6f5a; }
+</style>
+</head>
+<body>
+<main>
+  <svg viewBox="0 0 512 512" aria-hidden="true">
+    <defs>
+      <linearGradient id="o-tile" x1="60" y1="30" x2="452" y2="482" gradientUnits="userSpaceOnUse"><stop stop-color="#17a370"/><stop offset=".55" stop-color="#0b6b4b"/><stop offset="1" stop-color="#053a29"/></linearGradient>
+      <linearGradient id="o-arrow" x1="256" y1="110" x2="256" y2="300" gradientUnits="userSpaceOnUse"><stop stop-color="#d4ffe9"/><stop offset="1" stop-color="#6ff0b4"/></linearGradient>
+    </defs>
+    <rect width="512" height="512" rx="116" fill="url(#o-tile)"/>
+    <path d="M156 146V278a100 100 0 0 0 200 0V146" fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round"/>
+    <path d="M256 124V250" fill="none" stroke="url(#o-arrow)" stroke-width="34" stroke-linecap="round"/>
+    <path d="M218 242h76l-38 50z" fill="url(#o-arrow)" stroke="url(#o-arrow)" stroke-width="12" stroke-linejoin="round"/>
+  </svg>
+  <h1>আপনি অফলাইনে আছেন</h1>
+  <p>ভিডিও আনতে আর ডাউনলোড করতে ইন্টারনেট লাগে। Wi-Fi বা মোবাইল ডেটা চালু করে আবার চেষ্টা করুন।</p>
+  <button type="button" id="retry">আবার চেষ্টা করুন</button>
+  <small>সংযোগ ফিরলে পেজটি নিজে থেকেই খুলবে।</small>
+</main>
+<script>
+  document.getElementById('retry').addEventListener('click', function () { location.reload() })
+  window.addEventListener('online', function () { location.reload() })
+</script>
+</body>
+</html>

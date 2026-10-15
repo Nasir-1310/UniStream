@@ -34,7 +34,7 @@ const KINDS: { id: FeedbackKind; label: string; hint: string; Icon: typeof Bug }
 const PLACEHOLDERS: Record<FeedbackKind, string> = {
   problem: 'কী হয়েছিল? যেমন: “4K ডাউনলোড 99%-এ এসে merging-এর সময় থেমে গেছে।”',
   feedback: 'কী ভালো লেগেছে, আর কী আরও ভালো হতে পারে?',
-  idea: 'UniStream Saver-এ আর কী চান?',
+  idea: 'UniStream Downloader-এ আর কী চান?',
 }
 
 const MAX_MESSAGE = 2000

@@ -27,5 +27,13 @@ docker compose -f deploy/vm/compose.yml -p unistream restart api     # after edi
 
 ## Settings for a 1 GB VM
 
-`MAX_CONCURRENT_DOWNLOADS=2` and `YOUTUBE_ANALYSIS_SLOTS=1` keep memory in
-check (2 GB swap is configured as well); raise them on a bigger VM.
+Measured on Standard_B2ats_v2 (2 vCPU, 1 GB RAM, 2 GB swap):
+
+- `YOUTUBE_ANALYSIS_SLOTS=1`: one YouTube lookup takes ~7 s and both vCPUs.
+  Two at once were only ~25% faster overall and pushed ~190 MB into swap;
+  three at once were slower than one by one and swapped ~680 MB.
+- `MAX_CONCURRENT_DOWNLOADS=3`: downloads reuse the analysed info, so they
+  are light on memory (3 at once, 4K + 2 × 1080p, peaked at ~150 MB) but use
+  the CPU fully (the WARP tunnel). More slots would not add throughput.
+
+Raise both on a VM with more RAM and vCPUs.

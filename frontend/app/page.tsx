@@ -213,10 +213,10 @@ export default function HomePage() {
           </div>
         </section>
 
+        <InstallAppSection />
         <PlatformsSection />
         <HowItWorksSection onRequestAccess={() => openAuth('request')} />
         <FeaturesSection />
-        <InstallAppSection />
         <FaqSection onOpenAuth={openAuth} />
         <CtaSection onOpenAuth={openAuth} />
         <ContactSection />
@@ -1236,10 +1236,10 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'ফোনে অ্যাপ হিসেবে কীভাবে ইনস্টল করব?',
       a: (
         <>
-          Play Store লাগে না। Android-এ Chrome দিয়ে সাইটটি খুলে{' '}
-          <strong className="text-slate-200">অ্যাপ ইনস্টল করুন</strong> বাটন চাপুন (অথবা ⋮ মেনু থেকে “Install app”)।
-          iPhone-এ Safari-তে Share বাটন চেপে “Add to Home Screen” বেছে নিন। এরপর হোম স্ক্রিনের UniStream আইকন থেকে এক
-          ট্যাপে খুলবে, আর নতুন ফিচার নিজে থেকেই আপডেট হবে।
+          Play Store লাগে না। <strong className="text-slate-200">অ্যাপ ইনস্টল করুন</strong> বাটন চাপুন, আপনার ডিভাইস
+          নিজে থেকেই বেছে নেওয়া থাকবে; তারপর <strong className="text-slate-200">ইনস্টল করুন</strong> চাপলেই হয়ে যাবে
+          (Android ও কম্পিউটারে Chrome বা Edge)। iPhone-এ Safari-র Share বাটন থেকে “Add to Home Screen” বেছে নিতে হয়,
+          বাটন চাপলে ছবিসহ দেখিয়ে দেবে। এরপর হোম স্ক্রিনের UniStream আইকন থেকে এক ট্যাপে খুলবে।
         </>
       ),
     },

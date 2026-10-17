@@ -38,6 +38,8 @@ export interface FormatMatrixProps {
   onReport?: (format: VideoFormat, message: string) => void
   /** Why no download can start right now (limit reached, offline); null when they can. */
   blockedReason: string | null
+  /** When set, blocked download buttons stay pressable and call this (daily limit: offer more). */
+  onBlockedClick?: () => void
   /** Receives focus after an analysis so screen readers land on the results. */
   headingRef?: Ref<HTMLHeadingElement>
 }
@@ -215,17 +217,19 @@ interface FormatRowProps {
   /** Another format is downloading. */
   locked: boolean
   blockedReason: string | null
+  onBlockedClick?: () => void
   onDownload: (format: VideoFormat) => void
   onCancel: () => void
   onReport?: (format: VideoFormat, message: string) => void
 }
 
-function FormatRow({ format, state, badge, locked, blockedReason, onDownload, onCancel, onReport }: FormatRowProps) {
+function FormatRow({ format, state, badge, locked, blockedReason, onBlockedClick, onDownload, onCancel, onReport }: FormatRowProps) {
   const audio = format.type === 'audio' || !isVideoExt(format.ext)
   const size = sizeOf(format)
   const resolution = audio ? null : format.resolution
   const Icon = audio ? Music : Video
-  const disabled = locked || Boolean(blockedReason)
+  const disabled = locked || (Boolean(blockedReason) && !onBlockedClick)
+  const press = () => (blockedReason && onBlockedClick ? onBlockedClick() : onDownload(format))
   const label = formatName(format)
   const name = `${label}${size ? `, ${size}` : ''}`
 
@@ -253,7 +257,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
     action = (
       <button
         type="button"
-        onClick={() => onDownload(format)}
+        onClick={press}
         disabled={disabled}
         aria-label={`আবার চেষ্টা: ${name} ডাউনলোড`}
         aria-describedby={blockedReason ? BLOCKED_ID : undefined}
@@ -267,7 +271,7 @@ function FormatRow({ format, state, badge, locked, blockedReason, onDownload, on
     action = (
       <button
         type="button"
-        onClick={() => onDownload(format)}
+        onClick={press}
         disabled={disabled}
         aria-label={`${name} ডাউনলোড করুন`}
         aria-describedby={blockedReason ? BLOCKED_ID : undefined}
@@ -378,6 +382,7 @@ export function FormatMatrix({
   onCancel,
   onReport,
   blockedReason,
+  onBlockedClick,
   headingRef,
 }: FormatMatrixProps) {
   const [filter, setFilter] = useState<Filter>('all')
@@ -455,7 +460,17 @@ export function FormatMatrix({
           className="mb-3 flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-300"
         >
           <Lock className="w-4 h-4 mt-0.5 flex-shrink-0 text-slate-500" aria-hidden="true" />
-          <span>{blockedReason}</span>
+          <span>
+            {blockedReason}
+            {onBlockedClick && (
+              <>
+                {' '}
+                <button type="button" onClick={onBlockedClick} className="font-semibold text-indigo-300 underline underline-offset-2">
+                  আরও ডাউনলোড চাই
+                </button>
+              </>
+            )}
+          </span>
         </p>
       )}
 
@@ -506,6 +521,7 @@ export function FormatMatrix({
                     badge={badges[format.format_id]}
                     locked={activeId !== null && activeId !== format.format_id}
                     blockedReason={blockedReason}
+                    onBlockedClick={onBlockedClick}
                     onDownload={onDownload}
                     onCancel={onCancel}
                     onReport={onReport}

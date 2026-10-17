@@ -29,9 +29,11 @@ export interface QuotaCardProps {
   /** Current time from useClock(); 0 until known. */
   now: number
   className?: string
+  /** Limit reached: show "আরও ডাউনলোড চাই" (opens the subscription contact). */
+  onMore?: () => void
 }
 
-export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
+export function QuotaCard({ usage, now, className = '', onMore }: QuotaCardProps) {
   const unlimited = usage.limit === null
   const limit = usage.limit ?? 0
   const remaining = unlimited ? null : Math.max(0, usage.remaining ?? limit - usage.used)
@@ -102,6 +104,11 @@ export function QuotaCard({ usage, now, className = '' }: QuotaCardProps) {
             {headline}
           </h2>
           <p className="mt-0.5 text-[13px] leading-relaxed text-slate-400">{detail}</p>
+          {onMore && !unlimited && (limit === 0 || remaining === 0) && (
+            <button type="button" onClick={onMore} className="btn-primary btn-sm mt-3">
+              আরও ডাউনলোড চাই
+            </button>
+          )}
         </div>
       </div>
 

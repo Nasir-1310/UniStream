@@ -27,6 +27,7 @@ import { AnalyzingState, useAnalysisProgress } from '@/components/download/Analy
 import { FormatMatrix } from '@/components/download/FormatMatrix'
 import { GettingStarted } from '@/components/download/GettingStarted'
 import { LinkForm } from '@/components/download/LinkForm'
+import { MoreDownloadsDialog } from '@/components/download/MoreDownloadsDialog'
 import { QuotaCard, resetTimeText } from '@/components/download/QuotaCard'
 import { VideoSummary } from '@/components/download/VideoSummary'
 import { useClock, useInAppBrowser, useOnline } from '@/components/download/hooks'
@@ -194,6 +195,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   /** True once the server is actually downloading (the stream is open), not while the ticket is fetched. */
   const [streaming, setStreaming] = useState(false)
   const [limitNotice, setLimitNotice] = useState<string | null>(null)
+  // Daily limit reached: the "contact us for more (subscription)" popup.
+  const [moreOpen, setMoreOpen] = useState(false)
   const [authIssue, setAuthIssue] = useState<string | null>(null)
   const [hideTempNotice, setHideTempNotice] = useState(false)
   const [hideInAppNotice, setHideInAppNotice] = useState(false)
@@ -582,6 +585,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       // Today's downloads are used up (or taken by downloads in progress), or
       // downloads are turned off for the account: the quota banner, not Retry.
       setLimitNotice(message)
+      setMoreOpen(true)
       setRow(formatId, { status: 'error', message, retryable: false })
       // The server counted downloads this page doesn't know about (another tab or device).
       refresh().catch(() => undefined)
@@ -650,6 +654,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
         break
       case 'limit':
         setLimitNotice(message)
+        setMoreOpen(true)
         setRow(formatId, { status: 'error', message, retryable: false })
         // The server counted something this page doesn't know about yet.
         refresh().catch(() => undefined)
@@ -806,7 +811,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           onCancel={cancelAnalysis}
           lockedReason={lockedReason}
         />
-        <QuotaCard usage={usage} now={now} />
+        <QuotaCard usage={usage} now={now} onMore={() => setMoreOpen(true)} />
       </div>
 
       <div ref={resultsRef} className="mt-5 sm:mt-6 scroll-mt-20">
@@ -842,6 +847,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
                 onCancel={cancelDownload}
                 onReport={reportProblem}
                 blockedReason={blockedReason}
+                onBlockedClick={online && exhausted ? () => setMoreOpen(true) : undefined}
                 headingRef={headingRef}
               />
             </div>
@@ -858,6 +864,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           />
         )}
       </div>
+
+      <MoreDownloadsDialog open={moreOpen} onClose={() => setMoreOpen(false)} user={user} usage={usage} />
 
       <FeedbackDialog
         key={feedback ? JSON.stringify(feedback) : 'closed'}

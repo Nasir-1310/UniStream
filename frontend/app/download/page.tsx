@@ -95,9 +95,29 @@ interface AnalysisResult {
 let fileSaveStartedAt = 0
 const FILE_SAVE_UNLOAD_GRACE_MS = 1500
 
-/** Hand the finished file to the browser's download manager. */
+/** iPhone/iPad Safari ignores downloads started inside a frame. */
+function isIos(): boolean {
+  const ua = navigator.userAgent
+  return /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+}
+
+/**
+ * Hand the finished file to the browser's download manager. A hidden frame
+ * fetches it, so the page never leaves: following the link instead showed
+ * the API's address over the page, most visibly in the installed app,
+ * where any other site opens in a browser bar.
+ */
 function saveFile(href: string): void {
   fileSaveStartedAt = Date.now()
+  if (!isIos()) {
+    const frame = document.createElement('iframe')
+    frame.hidden = true
+    frame.src = href
+    document.body.appendChild(frame)
+    // Long enough for the browser to take over the download, then tidy up.
+    window.setTimeout(() => frame.remove(), 60_000)
+    return
+  }
   const anchor = document.createElement('a')
   anchor.href = href
   anchor.download = ''

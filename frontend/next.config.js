@@ -51,7 +51,8 @@ function contentSecurityPolicy() {
     // (EventSource) and the YouTube check connect to FastAPI directly. Dev
     // adds websockets for hot reload.
     'connect-src': ["'self'", ...(backend ? [backend] : []), ...(isDev ? ['ws:', 'wss:'] : [])],
-    'frame-src': ["'none'"],
+    // Only the API, for the hidden frame that saves a finished download.
+    'frame-src': backend ? [backend] : ["'none'"],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],
     'form-action': ["'self'"],

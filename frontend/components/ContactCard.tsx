@@ -1,9 +1,10 @@
 // components/ContactCard.tsx
 //
-// "Contact & help": who built UniStream Downloader and how to reach him on
-// WhatsApp or by email. On the home page, right above the footer.
+// "Contact & help": how to reach the UniStream Downloader team on WhatsApp
+// or by email. On the home page, right above the footer.
 
 import { Mail } from 'lucide-react'
+import { BrandMark } from '@/components/Brand'
 import { CONTACT, CONTACT_MAILTO } from '@/lib/contact'
 
 /** WhatsApp's mark (lucide has no brand icon for it). */
@@ -31,14 +32,9 @@ export function ContactSection() {
         <div className="mt-8 portal-card p-5 sm:p-7">
           <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4 min-w-0">
-              <span
-                className="w-16 h-16 flex-shrink-0 rounded-2xl bg-indigo-600 text-[#fff] flex items-center justify-center text-xl font-bold"
-                aria-hidden="true"
-              >
-                NU
-              </span>
+              <BrandMark className="w-16 h-16 flex-shrink-0 drop-shadow-sm" />
               <div className="min-w-0">
-                <p className="text-[12px] font-medium text-indigo-300">নির্মাতা ও পরিচালক</p>
+                <p className="text-[12px] font-medium text-indigo-300">সাপোর্ট টিম</p>
                 <p className="mt-0.5 text-lg font-bold text-white">{CONTACT.name}</p>
                 <p className="text-[13px] text-slate-400">{CONTACT.role}</p>
               </div>

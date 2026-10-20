@@ -88,7 +88,7 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
             © <span suppressHydrationWarning>{YEAR}</span> UniStream Downloader। শুধু ব্যক্তিগত ও পড়াশোনার কাজে — কপিরাইট ও
             প্রতিটি প্ল্যাটফর্মের নিয়ম মেনে চলুন।
             <span className="block mt-1">
-              তৈরি করেছেন <span className="text-slate-400 font-medium">{CONTACT.name}</span> · {CONTACT.roleShort}
+              তৈরি ও পরিচালনায় <span className="text-slate-400 font-medium">{CONTACT.name}</span>
             </span>
           </p>
           {showAdminLink && (

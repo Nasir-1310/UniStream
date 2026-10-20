@@ -11,7 +11,7 @@ export const CONTACT = {
   whatsapp: '01580-902180',
   /** wa.me wants the international number without + or spaces. */
   whatsappLink: 'https://wa.me/8801580902180',
-  email: 'nasir.iit.du@gmail.com',
+  email: 'unistreamdownloader.bd@gmail.com',
 } as const
 
 export const CONTACT_MAILTO = `mailto:${CONTACT.email}?subject=${encodeURIComponent('UniStream Downloader: সাহায্য দরকার')}`

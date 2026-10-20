@@ -84,6 +84,13 @@ def validate_name(s) -> str:
     return name
 
 
+def validate_optional_email(s) -> str | None:
+    """None for a blank email (sign-ups may leave it out), else validate_email()."""
+    if s is None or (isinstance(s, str) and not s.strip()):
+        return None
+    return validate_email(s)
+
+
 def validate_email(s) -> str:
     """Return the lowercased email address or raise ValueError with a specific hint."""
     if not isinstance(s, str) or not s.strip():

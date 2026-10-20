@@ -1233,13 +1233,14 @@ def find_conflicts(email: str | None, phone: str | None, exclude_id: str | None 
 def create_user(
     *,
     name: str,
-    email: str,
+    email: str | None,
     phone: str,
     note: str | None = None,
     status: str = "pending",
     daily_limit: int | None = None,
 ) -> dict:
-    """Create an account whose login identifier is its email.
+    """Create an account whose login identifier is its email, or its phone
+    when it has no email.
 
     Accounts created as approved get approved_at now. Raises
     DuplicateUserError when the email or phone is taken.
@@ -1250,8 +1251,10 @@ def create_user(
     phone = _clean_text(phone)
     name = _clean_text(name)
     note = _clean_text(note)
-    if not email:
-        raise ValueError("email is required.")
+    email = email or None
+    identifier = email or phone
+    if not identifier:
+        raise ValueError("email or phone is required.")
     now = _utcnow()
     approved_at = now if status == "approved" else None
 
@@ -1260,7 +1263,7 @@ def create_user(
         if conflict:
             raise DuplicateUserError(conflict)
         payload = {
-            "identifier": email,
+            "identifier": identifier,
             "status": status,
             "name": name,
             "note": note,
@@ -1276,7 +1279,7 @@ def create_user(
             return rows[0] if rows else None
 
         row = _remote("create user", operation, idempotent=False)
-        user = _user_from_row(row) if row else get_user_by_login(email)
+        user = _user_from_row(row) if row else get_user_by_login(identifier)
         if user is None:
             raise StorageUnavailableError("The new account could not be read back.")
         return user
@@ -1295,7 +1298,7 @@ def create_user(
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?)
                 """,
                 (
-                    email, status, name, note, email, phone, daily_limit,
+                    identifier, status, name, note, email, phone, daily_limit,
                     _local_value(approved_at), _db_ts(now), _db_ts(now),
                 ),
             )

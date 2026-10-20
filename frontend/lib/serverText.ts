@@ -24,6 +24,8 @@ const SENTENCES: Record<string, string> = {
     'এই ইমেইল দিয়ে আগেই রেজিস্ট্রেশন করা আছে। সাইন ইন করুন বা পাসওয়ার্ড রিসেট করুন।',
   'This phone number is already registered. Sign in or reset your password.':
     'এই মোবাইল নম্বর দিয়ে আগেই রেজিস্ট্রেশন করা আছে। সাইন ইন করুন বা পাসওয়ার্ড রিসেট করুন।',
+  "Request received. An administrator will review it and send your password to your phone (WhatsApp) once it's approved.":
+    'অনুরোধ পাওয়া গেছে। অ্যাডমিন দেখে অনুমোদন দিলে আপনার মোবাইল নম্বরে (WhatsApp-এ) পাসওয়ার্ড পাঠানো হবে।',
   "Request received. An administrator will review it, and you'll get your password by email once it's approved. Check your spam folder too.":
     'অনুরোধ পাওয়া গেছে। অ্যাডমিন দেখে অনুমোদন দিলে ইমেইলে পাসওয়ার্ড পাবেন। Spam ফোল্ডারও দেখবেন।',
   "Your password has been reset. You're now signed in.": 'আপনার পাসওয়ার্ড রিসেট হয়েছে। আপনি এখন সাইন ইন করা অবস্থায় আছেন।',

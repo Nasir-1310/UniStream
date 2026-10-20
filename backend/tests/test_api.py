@@ -316,6 +316,26 @@ class RegistrationTests(ApiTestCase):
         self.assertIsNone(user["password_hash"])
         self.assertEqual(self.sent, [])
 
+    def test_register_without_email_signs_in_with_the_phone(self):
+        response = self.register(email=None, phone="01912345678")
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertIn("WhatsApp", response.json()["message"])
+        user = storage.get_user_by_login("+8801912345678")
+        self.assertIsNone(user["email"])
+        self.assertEqual(user["identifier"], "+8801912345678")
+
+        # Blank text counts as no email too.
+        self.assertEqual(self.register(email="  ", phone="01812345678", ip="198.51.100.9").status_code, 201)
+        self.assertIsNone(storage.get_user_by_login("+8801812345678")["email"])
+
+        # Approval can't email it: the admin gets the password to share by hand.
+        response = self.admin("POST", f"/admin/users/{user['id']}/approve", json={})
+        self.assertEqual(response.status_code, 200, response.text)
+        credentials = response.json()["credentials"]
+        self.assertFalse(credentials["emailed"])
+        self.assertTrue(credentials["password"])
+        self.assertEqual(self.login("01912345678", credentials["password"]).status_code, 200)
+
     def test_register_rejects_invalid_fields_with_the_shared_messages(self):
         cases = [
             ({"email": "rahim@gmail"}, "Missing domain — e.g. @gmail.com"),

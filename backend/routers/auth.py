@@ -101,7 +101,9 @@ def _password_input(value, empty_message: str):
 
 class RegisterRequest(StrictBody):
     name: str
-    email: str
+    # Optional: without one the phone number is the login, and the admin
+    # shares the password by hand (e.g. WhatsApp).
+    email: Optional[str] = None
     phone: str
     note: Optional[str] = None
 
@@ -113,7 +115,7 @@ class RegisterRequest(StrictBody):
     @field_validator("email", mode="before")
     @classmethod
     def _email(cls, value):
-        return security.validate_email(value)
+        return security.validate_optional_email(value)
 
     @field_validator("phone", mode="before")
     @classmethod
@@ -250,6 +252,13 @@ def register(body: RegisterRequest, request: Request):
         )
     except storage.DuplicateUserError as exc:
         raise HTTPException(status_code=409, detail=DUPLICATE_MESSAGES[exc.field]) from None
+    if not body.email:
+        return {
+            "message": (
+                "Request received. An administrator will review it and send your "
+                "password to your phone (WhatsApp) once it's approved."
+            ),
+        }
     return {
         "message": (
             "Request received. An administrator will review it, and you'll get "

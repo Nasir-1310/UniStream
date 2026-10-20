@@ -584,7 +584,7 @@ type RequestField = 'name' | 'email' | 'phone'
 
 interface RequestSuccess {
   name: string
-  email: string
+  email: string | null
   phone: string
   message: string
 }
@@ -607,7 +607,8 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
 
   const checks = {
     name: validateName(name),
-    email: validateEmail(email),
+    // Optional: left empty, the phone number is the login and the password comes on WhatsApp.
+    email: email.trim() ? validateEmail(email) : { ok: true as const, value: null },
     phone: validatePhone(phone),
   }
   const show = (field: RequestField) => submitted || (touched[field] && (field === 'name' ? name : field === 'email' ? email : phone).trim() !== '')
@@ -648,7 +649,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
         note: note.trim() || null,
       }
       const { message } = await register(body)
-      setSuccess({ name: body.name, email: body.email, phone: body.phone, message })
+      setSuccess({ name: body.name, email: body.email ?? null, phone: body.phone, message })
     } catch (err) {
       setFormError({
         message: apiErrorMessage(err, 'অনুরোধ পাঠানো যায়নি। আবার চেষ্টা করুন।'),
@@ -674,7 +675,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
   }
 
   if (success) {
-    return <RequestSuccessPanel success={success} onSignIn={() => onSignIn(success.email)} onStartOver={startOver} />
+    return <RequestSuccessPanel success={success} onSignIn={() => onSignIn(success.email ?? success.phone)} onStartOver={startOver} />
   }
 
   const isDuplicate = formError?.status === 409
@@ -682,15 +683,17 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
   const duplicatePrefill =
     /phone|মোবাইল|ফোন/i.test(formError?.message ?? '') && checks.phone.ok
       ? checks.phone.value
-      : checks.email.ok
+      : checks.email.ok && checks.email.value
       ? checks.email.value
+      : checks.phone.ok
+      ? checks.phone.value
       : ''
 
   return (
     <form onSubmit={onSubmit} noValidate className="relative" aria-describedby="request-intro">
       <h2 className="text-lg sm:text-xl font-bold text-white">অ্যাক্সেসের অনুরোধ</h2>
       <p id="request-intro" className="mt-1 mb-5 text-[13px] sm:text-sm text-slate-400">
-        শিক্ষার্থীদের জন্য ফ্রি। অ্যাডমিন অনুমোদন দিলেই ইমেইলে পাসওয়ার্ড পাঠিয়ে দেব।
+        শিক্ষার্থীদের জন্য ফ্রি। অ্যাডমিন অনুমোদন দিলেই ইমেইলে, অথবা ইমেইল না থাকলে WhatsApp-এ পাসওয়ার্ড পাঠিয়ে দেব।
       </p>
 
       {formError && (
@@ -711,7 +714,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
                 </button>
                 <Link
                   href={
-                    checks.email.ok
+                    checks.email.ok && checks.email.value
                       ? `/forgot-password?email=${encodeURIComponent(checks.email.value)}`
                       : '/forgot-password'
                   }
@@ -753,9 +756,9 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
 
         <Field
           htmlFor="request-email"
-          label="ইমেইল"
+          label="ইমেইল (ঐচ্ছিক)"
           error={errors.email}
-          hint="অনুমোদন আর পাসওয়ার্ড এখানেই যাবে, তাই নিয়মিত দেখেন এমন ইমেইল দিন।"
+          hint="দিলে পাসওয়ার্ড এখানে যাবে আর নিজেই পাসওয়ার্ড রিসেট করতে পারবেন। না থাকলে খালি রাখুন, পাসওয়ার্ড WhatsApp-এ পাবেন।"
         >
           <input
             id="request-email"
@@ -779,7 +782,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
             aria-describedby={describedBy(
               'request-email',
               errors.email,
-              'অনুমোদন আর পাসওয়ার্ড এখানেই যাবে, তাই নিয়মিত দেখেন এমন ইমেইল দিন।',
+              'দিলে পাসওয়ার্ড এখানে যাবে আর নিজেই পাসওয়ার্ড রিসেট করতে পারবেন। না থাকলে খালি রাখুন, পাসওয়ার্ড WhatsApp-এ পাবেন।',
             )}
             className="input-field"
           />
@@ -913,21 +916,32 @@ function RequestSuccessPanel({
       title: 'অ্যাডমিন আপনার অনুরোধ দেখবেন',
       body: 'প্রতিটি অনুরোধ হাতে যাচাই করা হয়, তাই কত সময় লাগবে তা অ্যাডমিনের ওপর নির্ভর করে।',
     },
-    {
-      title: 'ইমেইলে পাসওয়ার্ড পাবেন',
-      body: (
-        <>
-          পাঠানো হবে <span className="text-slate-200 break-all">{success.email}</span> ঠিকানায়। না পেলে Spam বা
-          Promotions ফোল্ডার দেখুন।
-        </>
-      ),
-    },
+    success.email
+      ? {
+          title: 'ইমেইলে পাসওয়ার্ড পাবেন',
+          body: (
+            <>
+              পাঠানো হবে <span className="text-slate-200 break-all">{success.email}</span> ঠিকানায়। না পেলে Spam বা
+              Promotions ফোল্ডার দেখুন।
+            </>
+          ),
+        }
+      : {
+          title: 'WhatsApp-এ পাসওয়ার্ড পাবেন',
+          body: (
+            <>
+              পাঠানো হবে <span className="text-slate-200 whitespace-nowrap">{formatPhone(success.phone)}</span> নম্বরে।
+              নম্বরটিতে WhatsApp চালু রাখুন।
+            </>
+          ),
+        },
     {
       title: 'সাইন ইন করে নিজের পাসওয়ার্ড সেট করুন',
       body: (
         <>
-          ইমেইল বা <span className="text-slate-200 whitespace-nowrap">{formatPhone(success.phone)}</span> আর অস্থায়ী
-          পাসওয়ার্ড দিয়ে সাইন ইন করুন, তারপর অ্যাকাউন্ট পেজে পাসওয়ার্ড বদলে নিন।
+          {success.email ? 'ইমেইল বা ' : ''}
+          <span className="text-slate-200 whitespace-nowrap">{formatPhone(success.phone)}</span> আর অস্থায়ী পাসওয়ার্ড দিয়ে
+          সাইন ইন করুন, তারপর অ্যাকাউন্ট পেজে পাসওয়ার্ড বদলে নিন।
         </>
       ),
     },
@@ -1062,12 +1076,12 @@ function HowItWorksSection({ onRequestAccess }: { onRequestAccess: () => void })
     {
       Icon: UserPlus,
       title: 'অ্যাক্সেসের অনুরোধ করুন',
-      body: 'নাম, ইমেইল আর মোবাইল নম্বর দিন। এক মিনিটও লাগে না।',
+      body: 'নাম আর মোবাইল নম্বর দিন, ইমেইল থাকলে সেটাও। এক মিনিটও লাগে না।',
     },
     {
       Icon: MailCheck,
-      title: 'ইমেইলে পাসওয়ার্ড পান',
-      body: 'অ্যাডমিন অনুমোদন দিলে ইমেইলে একটি অস্থায়ী পাসওয়ার্ড পাঠানো হবে। ইনবক্সে না পেলে Spam ফোল্ডার দেখুন।',
+      title: 'পাসওয়ার্ড পান',
+      body: 'অ্যাডমিন অনুমোদন দিলে ইমেইলে (ইমেইল না দিলে WhatsApp-এ) একটি অস্থায়ী পাসওয়ার্ড পাঠানো হবে। ইমেইলে না পেলে Spam ফোল্ডার দেখুন।',
     },
     {
       Icon: ClipboardPaste,
@@ -1196,7 +1210,8 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'অনুমোদন পেয়েছি। পাসওয়ার্ড কোথায়?',
       a: (
         <>
-          রেজিস্ট্রেশনের ইমেইল ঠিকানায় পাঠানো মেইলেই আছে। ইনবক্সে না পেলে Spam বা Promotions ফোল্ডার দেখুন। ইমেইল
+          রেজিস্ট্রেশনের ইমেইল ঠিকানায় পাঠানো মেইলে আছে (না পেলে Spam বা Promotions ফোল্ডার দেখুন)। ইমেইল না দিয়ে
+          থাকলে পাসওয়ার্ড আপনার মোবাইল নম্বরে WhatsApp-এ পাঠানো হয়। ইমেইল
           বা মোবাইল নম্বর আর ওই পাসওয়ার্ড দিয়ে সাইন ইন করুন, তারপর{' '}
           <Link href="/account" className={linkClass}>
             অ্যাকাউন্ট

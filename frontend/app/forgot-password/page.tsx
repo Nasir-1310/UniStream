@@ -14,6 +14,7 @@ import Footer from '@/components/Footer'
 import { Alert, Field, PageLoader, Spinner, describedBy } from '@/components/ui'
 import { apiErrorMessage, apiErrorStatus, forgotPassword } from '@/lib/api'
 import { validateEmail } from '@/lib/validation'
+import { CONTACT } from '@/lib/contact'
 import { bnError, translateServerText } from '@/lib/serverText'
 
 /** Seconds before "Resend" is offered again (the API allows 3 links per email per hour). */
@@ -202,6 +203,13 @@ function ForgotPasswordForm() {
       <h1 className="text-2xl font-bold text-white">পাসওয়ার্ড ভুলে গেছেন?</h1>
       <p id="forgot-intro" className="mt-2 mb-6 text-sm leading-relaxed text-slate-400">
         অ্যাকাউন্টের ইমেইল ঠিকানা দিন, নতুন পাসওয়ার্ড সেট করার লিংক পাঠিয়ে দেব।
+      </p>
+      <p className="-mt-3 mb-6 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3.5 py-3 text-[13px] leading-relaxed text-slate-400">
+        রেজিস্ট্রেশনে ইমেইল দেননি?{' '}
+        <a href={CONTACT.whatsappLink} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-300 underline underline-offset-2">
+          WhatsApp-এ ({CONTACT.whatsapp})
+        </a>{' '}
+        আপনার মোবাইল নম্বর জানান, নতুন পাসওয়ার্ড পাঠিয়ে দেব।
       </p>
 
       {error && (

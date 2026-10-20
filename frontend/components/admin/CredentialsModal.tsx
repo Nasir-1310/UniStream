@@ -10,6 +10,7 @@ import { useSyncExternalStore } from 'react'
 import { KeyRound, MailCheck, MailWarning } from 'lucide-react'
 import { Alert, Modal } from '@/components/ui'
 import { formatPhone } from '@/lib/format'
+import { WhatsAppIcon } from '@/components/ContactCard'
 import { userLabel, type CredentialsEntry } from './AdminContext'
 import { CopyButton } from './parts'
 
@@ -17,20 +18,29 @@ const noopSubscribe = () => () => {}
 const readOrigin = () => window.location.origin
 const serverOrigin = () => ''
 
-/** Message the admin can paste into WhatsApp / SMS / email. */
+/** Message for WhatsApp / SMS / email, in Bangla like the site the user signs in to. */
 export function credentialsMessage(entry: CredentialsEntry, origin: string): string {
   const { user, credentials } = entry
+  const name = user.name?.trim()
   const lines = [
-    `Hi ${user.name?.trim() || 'there'},`,
+    name ? `হ্যালো ${name},` : 'হ্যালো,',
     '',
-    'Your UniStream Downloader account is ready.',
-    `Sign in: ${origin || 'the UniStream Downloader website'}/`,
+    'আপনার UniStream Downloader অ্যাকাউন্ট চালু হয়েছে।',
+    `সাইন ইন: ${origin || 'UniStream Downloader ওয়েবসাইট'}/`,
   ]
-  if (user.email) lines.push(`Email: ${user.email}`)
-  if (user.phone) lines.push(`Phone: ${user.phone}`)
-  lines.push(`Temporary password: ${credentials.password ?? ''}`)
-  lines.push('', 'You can sign in with your email or phone number. Please change this password after signing in (Account → Change password).')
+  if (user.phone) lines.push(`মোবাইল: ${formatPhone(user.phone)}`)
+  if (user.email) lines.push(`ইমেইল: ${user.email}`)
+  lines.push(`অস্থায়ী পাসওয়ার্ড: ${credentials.password ?? ''}`)
+  lines.push(
+    '',
+    `${user.email ? 'ইমেইল বা মোবাইল নম্বর' : 'মোবাইল নম্বর'} আর এই পাসওয়ার্ড দিয়ে সাইন ইন করুন, তারপর অ্যাকাউন্ট পেজে নিজের পাসওয়ার্ড সেট করে নিন।`,
+  )
   return lines.join('\n')
+}
+
+/** wa.me link that opens a chat with this user, the message already typed. */
+function whatsappLink(phone: string, text: string): string {
+  return `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
 
 export function CredentialsModal({
@@ -59,7 +69,7 @@ export function CredentialsModal({
       title={manual.length ? (single ? 'Share this password' : `Share ${manual.length} passwords`) : 'Passwords emailed'}
       description={
         manual.length
-          ? 'The email could not be sent, so copy the temporary password and send it yourself. It is shown only once — if you lose it, send a new password.'
+          ? 'Not emailed (no email address, or sending failed): send it on WhatsApp, or copy it. It is shown only once — if you lose it, send a new password.'
           : undefined
       }
       icon={
@@ -104,10 +114,21 @@ export function CredentialsModal({
               </output>
               <CopyButton text={entry.credentials.password ?? ''} label="Copy password" className="btn-secondary btn-sm" />
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {entry.user.phone && (
+                <a
+                  href={whatsappLink(entry.user.phone, credentialsMessage(entry, origin))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary btn-sm !bg-[#1fa855] hover:!bg-[#178f47]"
+                >
+                  <WhatsAppIcon className="w-4 h-4" />
+                  Send on WhatsApp
+                </a>
+              )}
               <CopyButton
                 text={credentialsMessage(entry, origin)}
-                label="Copy message for WhatsApp / SMS"
+                label="Copy message"
                 copiedLabel="Message copied"
                 className="btn-ghost btn-sm px-2 text-indigo-300 hover:text-indigo-200"
               />
@@ -131,7 +152,7 @@ export function CredentialsModal({
           </Alert>
         )}
 
-        {manual.length > 0 && (
+        {manual.some(entry => entry.user.email) && (
           <p className="text-xs text-slate-500">
             Set up email under <span className="text-slate-300">Settings → Email delivery</span> so future passwords are sent automatically.
           </p>

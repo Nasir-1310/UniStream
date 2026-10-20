@@ -261,7 +261,8 @@ export interface AuthResponse {
 
 export interface RegisterRequest {
   name: string
-  email: string
+  /** Optional: without one the phone number is the login. */
+  email?: string | null
   /** Send the normalised E.164 value from validatePhone(). */
   phone: string
   /** Institution / department (optional). */

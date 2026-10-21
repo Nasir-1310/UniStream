@@ -150,14 +150,14 @@ export default function HomePage() {
                 className="text-[1.875rem] leading-[1.1] sm:text-5xl lg:text-[3.4rem] font-extrabold text-white max-w-2xl"
                 style={{ letterSpacing: '-0.025em' }}
               >
-                YouTube, Facebook ও Instagram ভিডিও ডাউনলোড করুন{' '}
+                YouTube, Facebook ও Instagram ভিডিও Download করুন{' '}
                 <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-violet-400 bg-clip-text text-transparent">
                   4K পর্যন্ত কোয়ালিটিতে।
                 </span>
               </h1>
               <p className="mt-3 sm:mt-5 text-[15px] sm:text-base leading-relaxed text-slate-400 max-w-xl">
-                লেকচার থেকে শুরু করে প্রিয় ভিডিও, Reels, গান — পছন্দের যেকোনো পাবলিক ভিডিও ডাউনলোড করুন। লিংক পেস্ট করুন,
-                কোয়ালিটি বেছে নিন, ডাউনলোড। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।
+                লেকচার থেকে শুরু করে প্রিয় ভিডিও, Reels, গান — পছন্দের যেকোনো পাবলিক ভিডিও Download করুন। লিংক পেস্ট করুন,
+                কোয়ালিটি বেছে নিন, Download। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।
               </p>
               <p className="mt-3 inline-flex items-start gap-2 text-[13px] sm:text-sm leading-relaxed text-violet-200/90">
                 <Sparkles className="w-4 h-4 mt-px flex-shrink-0 text-violet-300" aria-hidden="true" />

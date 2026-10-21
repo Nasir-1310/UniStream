@@ -4,6 +4,7 @@ import { Facebook, Instagram, Mail, Youtube } from 'lucide-react'
 import { BrandLockup } from '@/components/Brand'
 import { WhatsAppIcon } from '@/components/ContactCard'
 import { InstallListItem } from '@/components/InstallApp'
+import { ShareListItem } from '@/components/ShareSite'
 import { CONTACT, CONTACT_MAILTO } from '@/lib/contact'
 
 // Evaluated once per page load rather than during render.
@@ -79,6 +80,7 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
                 </Link>
               </li>
               <InstallListItem className={linkClass} />
+              <ShareListItem className={linkClass} />
             </ul>
           </nav>
         </div>

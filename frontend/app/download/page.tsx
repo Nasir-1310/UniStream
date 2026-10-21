@@ -21,6 +21,7 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { FeedbackDialog, type FeedbackPrefill } from '@/components/FeedbackDialog'
 import { InstallBanner } from '@/components/InstallApp'
+import { SharePrompt } from '@/components/ShareSite'
 import { TutorialButton } from '@/components/TutorialDialog'
 import { Alert, Modal, PageLoader, useToast } from '@/components/ui'
 import { AnalyzingState, useAnalysisProgress } from '@/components/download/AnalyzingState'
@@ -217,6 +218,8 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
   const [limitNotice, setLimitNotice] = useState<string | null>(null)
   // Daily limit reached: the "contact us for more (subscription)" popup.
   const [moreOpen, setMoreOpen] = useState(false)
+  // A download finished on this page: time to suggest sharing the site.
+  const [savedOne, setSavedOne] = useState(false)
   const [authIssue, setAuthIssue] = useState<string | null>(null)
   const [hideTempNotice, setHideTempNotice] = useState(false)
   const [hideInAppNotice, setHideInAppNotice] = useState(false)
@@ -626,6 +629,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
     }
     saveFile(downloadFileUrl(event.token))
     setRow(formatId, { status: 'complete' })
+    setSavedOne(true)
 
     if (event.usage) {
       // Read the cache, not this render's `user`: it may have been refreshed meanwhile.
@@ -835,6 +839,11 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
       </div>
 
       <div ref={resultsRef} className="mt-5 sm:mt-6 scroll-mt-20">
+        {savedOne && (
+          <div className="mb-4 empty:hidden">
+            <SharePrompt show={savedOne} />
+          </div>
+        )}
         {analyzing ? (
           // Phones show the progress inside the link card (LinkForm); the large
           // card is for wide screens, where it fills the empty results area.

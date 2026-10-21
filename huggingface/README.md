@@ -11,6 +11,6 @@ short_description: Backend API of UniStream Downloader
 
 # UniStream Downloader API
 
-The FastAPI backend of [UniStream Downloader](https://uni-stream-saver.vercel.app/).
+The FastAPI backend of [UniStream Downloader](https://unistream-downloader.vercel.app/).
 The image builds from the public GitHub repository (see `Dockerfile`); this
 Space only holds the build recipe and its secrets.

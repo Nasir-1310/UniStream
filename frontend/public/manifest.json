@@ -12,7 +12,7 @@
   "theme_color": "#fbf6ec",
   "categories": ["utilities", "productivity", "education"],
   "related_applications": [
-    { "platform": "webapp", "url": "https://uni-stream-saver.vercel.app/manifest.json" }
+    { "platform": "webapp", "url": "https://unistream-downloader.vercel.app/manifest.json" }
   ],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

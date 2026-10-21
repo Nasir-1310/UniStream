@@ -31,7 +31,7 @@ for anything private and **New variable** for the rest.
 | `SUPABASE_SERVICE_KEY` | secret | same as Render |
 | `ADMIN_SECRET` | secret | same as Render |
 | `AUTH_SECRET` | secret | **same as Render** (a new value signs everyone out) |
-| `FRONTEND_URL` | variable | `https://uni-stream-saver.vercel.app` |
+| `FRONTEND_URL` | variable | `https://unistream-downloader.vercel.app` |
 | `APP_TIMEZONE` | variable | `Asia/Dhaka` |
 | `EMAIL_PROVIDER`, `EMAIL_FROM`, `EMAIL_FROM_NAME` | variable | same as Render |
 | `BREVO_API_KEY` (or `RESEND_API_KEY`) | secret | same as Render |

@@ -13,10 +13,9 @@ const description =
   'YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত কোয়ালিটিতে, বা শুধু অডিও MP3 হিসেবে সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি, অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।'
 const shareDescription = 'YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।'
 
-// Absolute base for the share image: the production domain on Vercel.
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'http://localhost:3000')
+// Absolute base for the share image and og:url: the public address (set
+// NEXT_PUBLIC_SITE_URL if it ever changes again).
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://unistream-downloader.vercel.app'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

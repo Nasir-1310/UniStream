@@ -87,8 +87,8 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
 
         <div className="mt-8 pt-5 border-t border-white/[0.05] flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-slate-600">
           <p>
-            © <span suppressHydrationWarning>{YEAR}</span> UniStream Downloader। শুধু ব্যক্তিগত ও পড়াশোনার কাজে — কপিরাইট ও
-            প্রতিটি প্ল্যাটফর্মের নিয়ম মেনে চলুন।
+            © <span suppressHydrationWarning>{YEAR}</span> UniStream Downloader। ব্যক্তিগত ব্যবহারের জন্য — ডাউনলোড করা কনটেন্টের
+            দায় ব্যবহারকারীর।
             <span className="block mt-1">
               তৈরি ও পরিচালনায় <span className="text-slate-400 font-medium">{CONTACT.name}</span>
             </span>

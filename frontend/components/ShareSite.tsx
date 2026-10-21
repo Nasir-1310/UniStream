@@ -16,8 +16,8 @@ const readOrigin = () => window.location.origin
 const serverOrigin = () => ''
 
 const SHARE_TEXT =
-  'লেকচার আর টিউটোরিয়াল ভিডিও অফলাইনে দেখার জন্য আমি UniStream Downloader ব্যবহার করি: YouTube, Facebook ও ' +
-  'Instagram থেকে 4K পর্যন্ত, শিক্ষার্থীদের জন্য ফ্রি। তুমিও দেখো 👇'
+  'পছন্দের ভিডিও, Reels, গান বা লেকচার: YouTube, Facebook ও Instagram থেকে 4K পর্যন্ত সেভ করি UniStream ' +
+  'Downloader দিয়ে, শিক্ষার্থীদের জন্য ফ্রি। তুমিও দেখো 👇'
 
 function isPhone(): boolean {
   return /android|iphone|ipad|ipod/i.test(navigator.userAgent)

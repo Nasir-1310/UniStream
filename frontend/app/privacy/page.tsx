@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     'UniStream Downloader কী তথ্য রাখে (নাম, ইমেইল, মোবাইল নম্বর ও ডাউনলোড হিস্টোরি), কেন রাখে, কারা দেখতে পারে, আর কীভাবে মুছে ফেলতে বলবেন।',
 }
 
-const LAST_UPDATED = '10 অক্টোবর 2026'
+const LAST_UPDATED = '21 অক্টোবর 2026'
 
 const P = 'mt-3 text-[15px] leading-7 text-slate-300'
 const UL = 'mt-3 space-y-2 pl-5 list-disc marker:text-slate-600 text-[15px] leading-7 text-slate-300'
@@ -28,8 +28,8 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'আমরা কারা',
     body: (
       <p className={P}>
-        UniStream Downloader একটি স্বাধীনভাবে পরিচালিত সার্ভিস, যা অনুমোদিত সদস্যদের পড়াশোনা আর অফলাইনে দেখার জন্য YouTube,
-        Facebook ও Instagram ভিডিও সেভ করতে দেয়। আপনার সম্পর্কে আমরা কী তথ্য রাখি, কেন রাখি, আর আপনার কী কী সুযোগ আছে —
+        UniStream Downloader একটি স্বাধীনভাবে পরিচালিত সার্ভিস, যা অনুমোদিত সদস্যদের ব্যক্তিগত ব্যবহার আর অফলাইনে দেখার জন্য
+        YouTube, Facebook ও Instagram ভিডিও সেভ করতে দেয়। আপনার সম্পর্কে আমরা কী তথ্য রাখি, কেন রাখি, আর আপনার কী কী সুযোগ আছে —
         এই পলিসিতে তা বলা হয়েছে। এটি আমাদের{' '}
         <Link href="/terms" className={A}>
           ব্যবহারের শর্তাবলি

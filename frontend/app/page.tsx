@@ -867,7 +867,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
               <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 প্রাইভেসি পলিসি
               </Link>{' '}
-              মেনে নিচ্ছি, এবং শুধু ব্যক্তিগত বা পড়াশোনার কাজে ভিডিও ডাউনলোড করব।
+              মেনে নিচ্ছি। ডাউনলোড করা কনটেন্টের দায় আমার।
             </span>
           </label>
           <div id={`${agreeId}-error`} aria-live="polite" className="empty:hidden">
@@ -1016,7 +1016,7 @@ const PLATFORM_CARDS: { name: string; Icon: LucideIcon; tone: string; ring: stri
     Icon: Youtube,
     tone: 'text-red-400',
     ring: 'bg-red-500/10 border-red-500/20',
-    what: 'লেকচার, টিউটোরিয়াল, Shorts',
+    what: 'লেকচার, টিউটোরিয়াল, Shorts, গান',
     detail: 'ডেটা বাঁচানো 360p থেকে 4K Ultra HD পর্যন্ত যেকোনো কোয়ালিটি, অথবা শুধু অডিও MP3 হিসেবে।',
   },
   {
@@ -1130,7 +1130,7 @@ function FeaturesSection() {
     {
       Icon: SlidersHorizontal,
       title: 'নিজের মতো কোয়ালিটি',
-      body: 'বড় স্ক্রিনের জন্য 4K Ultra HD, মোবাইল ডেটা বাঁচাতে ছোট ফাইল, অথবা শুধু শোনার জন্য লেকচারের অডিও (MP3)।',
+      body: 'বড় স্ক্রিনের জন্য 4K Ultra HD, মোবাইল ডেটা বাঁচাতে ছোট ফাইল, অথবা শুধু শোনার জন্য গান বা লেকচারের অডিও (MP3)।',
       tone: 'text-sky-300 bg-sky-500/10 border-sky-500/20',
     },
     {
@@ -1284,8 +1284,9 @@ function FaqSection({ onOpenAuth }: { onOpenAuth: (tab: AuthTab) => void }) {
       q: 'কী ধরনের ভিডিও ডাউনলোড করা যাবে?',
       a: (
         <>
-          নিজের ব্যক্তিগত বা পড়াশোনার কাজের ভিডিও, যেমন অফলাইনে পড়ার জন্য। কপিরাইট আর প্রতিটি প্ল্যাটফর্মের নিয়ম
-          মেনে চলুন: অন্যের ভিডিও আবার আপলোড, শেয়ার বা বিক্রি করবেন না। বিস্তারিত জানতে{' '}
+          YouTube, Facebook ও Instagram-এর যেকোনো পাবলিক ভিডিও: লেকচার, টিউটোরিয়াল, Reels, গান বা পছন্দের যেকোনো
+          ভিডিও, ব্যক্তিগত ব্যবহারের জন্য। আমরা কনটেন্ট যাচাই করি না, তাই কী ডাউনলোড করবেন আর কীভাবে ব্যবহার করবেন তার
+          দায় আপনার। বিস্তারিত জানতে{' '}
           <Link href="/terms" className={linkClass}>
             ব্যবহারের শর্তাবলি
           </Link>{' '}

@@ -225,7 +225,7 @@ export default function TermsPage() {
             <div className="mt-6 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-4 sm:p-5">
               <h2 className="text-sm font-semibold text-white">সংক্ষেপে</h2>
               <ul className="mt-2 space-y-1.5 pl-5 list-disc marker:text-indigo-400 text-[14px] leading-relaxed text-slate-300">
-                <li>লেকচার থেকে পছন্দের যেকোনো পাবলিক ভিডিও, ব্যক্তিগত ব্যবহারের জন্য সেভ করুন।</li>
+                <li>লেকচার থেকে পছন্দের যেকোনো পাবলিক ভিডিও, ব্যক্তিগত ব্যবহারের জন্য ডাউনলোড করুন।</li>
                 <li>আমরা কনটেন্ট যাচাই করি না: কী ডাউনলোড করবেন আর কীভাবে ব্যবহার করবেন, তার দায় আপনার।</li>
                 <li>প্রতিজনের একটি অ্যাকাউন্ট। পাসওয়ার্ড নিজের কাছে রাখুন।</li>
                 <li>অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড। নিয়ম ভাঙলে অ্যাকাউন্ট ব্লক করা হতে পারে।</li>

@@ -759,7 +759,7 @@ function Workspace({ user, refresh, signOut, setUser }: WorkspaceProps) {
           {firstName && <p className="text-[13px] font-medium text-indigo-300/90">হ্যালো, {firstName}</p>}
           <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold text-white">ভিডিও ডাউনলোড করুন</h1>
           <p className="mt-1.5 text-sm sm:text-[15px] leading-relaxed text-slate-400 max-w-2xl">
-            YouTube, Facebook বা Instagram-এর লিংক পেস্ট করুন, 4K পর্যন্ত কোয়ালিটি বেছে নিন, আর অফলাইনে দেখার জন্য সেভ করুন।
+            YouTube, Facebook বা Instagram-এর লিংক পেস্ট করুন, 4K পর্যন্ত কোয়ালিটি বেছে নিন, আর অফলাইনে দেখার জন্য ডাউনলোড করুন।
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">

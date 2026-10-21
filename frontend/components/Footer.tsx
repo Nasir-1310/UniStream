@@ -27,7 +27,7 @@ export default function Footer({ showAdminLink = false }: FooterProps) {
               <BrandLockup size="sm" />
             </Link>
             <p className="mt-3 text-[13px] leading-relaxed text-slate-500">
-              YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত কোয়ালিটিতে সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি,
+              YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত কোয়ালিটিতে ডাউনলোড করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি,
               অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।
             </p>
           </div>

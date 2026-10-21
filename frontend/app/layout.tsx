@@ -10,7 +10,7 @@ const SITE_NAME = 'UniStream Downloader'
 // Shared by every page that doesn't set its own; also the landing page's
 // metadata (it's a client component, so it can't export any).
 const description =
-  'YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত কোয়ালিটিতে, বা শুধু অডিও MP3 হিসেবে সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি, অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।'
+  'লেকচার থেকে শুরু করে প্রিয় ভিডিও, Reels, গান — YouTube, Facebook ও Instagram-এর পছন্দের যেকোনো পাবলিক ভিডিও 4K পর্যন্ত, বা শুধু অডিও MP3 হিসেবে সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।'
 const shareDescription = 'YouTube, Facebook ও Instagram ভিডিও 4K পর্যন্ত সেভ করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।'
 
 // Absolute base for the share image and og:url: the public address (set

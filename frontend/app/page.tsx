@@ -156,8 +156,8 @@ export default function HomePage() {
                 </span>
               </h1>
               <p className="mt-3 sm:mt-5 text-[15px] sm:text-base leading-relaxed text-slate-400 max-w-xl">
-                সহজ আর দ্রুত: লিংক পেস্ট করুন, কোয়ালিটি বেছে নিন, ডাউনলোড করুন। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি, আর
-                অ্যাকাউন্ট অনুযায়ী প্রতিদিন আনলিমিটেড ডাউনলোড।
+                লেকচার থেকে শুরু করে প্রিয় ভিডিও, Reels, গান — পছন্দের যেকোনো পাবলিক ভিডিও সেভ করুন। লিংক পেস্ট করুন,
+                কোয়ালিটি বেছে নিন, ডাউনলোড। অনুমোদিত শিক্ষার্থীদের জন্য ফ্রি।
               </p>
               <p className="mt-3 inline-flex items-start gap-2 text-[13px] sm:text-sm leading-relaxed text-violet-200/90">
                 <Sparkles className="w-4 h-4 mt-px flex-shrink-0 text-violet-300" aria-hidden="true" />
@@ -867,7 +867,7 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
               <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 প্রাইভেসি পলিসি
               </Link>{' '}
-              মেনে নিচ্ছি। ডাউনলোড করা কনটেন্টের দায় আমার।
+              মেনে নিচ্ছি।
             </span>
           </label>
           <div id={`${agreeId}-error`} aria-live="polite" className="empty:hidden">

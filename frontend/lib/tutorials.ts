@@ -1,15 +1,19 @@
 // lib/tutorials.ts
 //
 // The "how to use" guides behind the video buttons (components/TutorialDialog).
-// Each guide shows its screen recording, when there is one, above the steps.
-// To add a recording: put the MP4 in public/tutorials/ and set `video`, e.g.
-//   video: { src: '/tutorials/sign-in.mp4', poster: '/tutorials/sign-in.jpg' }
+// Each guide shows its screen recording, when there is one, above the steps:
+// phones get the portrait recording, laptops and desktops the landscape one.
+// The MP4s live in public/tutorials/ (H.264 + AAC, 720p, "faststart" so they
+// start playing before the whole file has arrived).
 
 export interface TutorialVideo {
-  /** MP4 (H.264) path under /public, or a full URL. */
+  /** Landscape recording for laptops and desktops: MP4 path under /public. */
   src: string
-  /** Still shown before playing (optional). */
+  /** Still shown before it plays. */
   poster?: string
+  /** Portrait recording for phones; falls back to `src`. */
+  mobileSrc?: string
+  mobilePoster?: string
 }
 
 export interface Tutorial {
@@ -19,10 +23,19 @@ export interface Tutorial {
   steps: { title: string; text: string }[]
 }
 
+/** Sign in, paste a link, pick a quality, download — narrated in Bangla. */
+const HOW_TO_VIDEO: TutorialVideo = {
+  src: '/tutorials/how-to-desktop.mp4',
+  poster: '/tutorials/how-to-desktop.jpg',
+  mobileSrc: '/tutorials/how-to-phone.mp4',
+  mobilePoster: '/tutorials/how-to-phone.jpg',
+}
+
 /** Home page: from creating an account to the first saved video. */
 export const SIGN_IN_TUTORIAL: Tutorial = {
   title: 'সাইন ইন করে ভিডিও ডাউনলোড',
   description: 'অ্যাকাউন্ট খোলা থেকে প্রথম ভিডিও সেভ পর্যন্ত, ধাপে ধাপে।',
+  video: HOW_TO_VIDEO,
   steps: [
     {
       title: 'অ্যাক্সেসের অনুরোধ করুন',
@@ -47,6 +60,7 @@ export const SIGN_IN_TUTORIAL: Tutorial = {
 export const DOWNLOAD_TUTORIAL: Tutorial = {
   title: 'কীভাবে ডাউনলোড করবেন',
   description: 'লিংক কপি করা থেকে ফাইল সেভ, আর আজ কতগুলো ডাউনলোড বাকি তা কোথায় দেখবেন।',
+  video: HOW_TO_VIDEO,
   steps: [
     {
       title: 'ভিডিওর লিংক কপি করুন',

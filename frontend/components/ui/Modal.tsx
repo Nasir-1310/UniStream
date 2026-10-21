@@ -17,6 +17,7 @@ const FOCUSABLE = [
   'select:not([disabled])',
   'textarea:not([disabled])',
   'summary',
+  'video[controls]',
   '[tabindex]:not([tabindex="-1"])',
   '[contenteditable="true"]',
 ].join(',')
@@ -65,6 +66,8 @@ const SIZES = {
   md: 'sm:max-w-md',
   lg: 'sm:max-w-lg',
   xl: 'sm:max-w-2xl',
+  /** Wide enough for a 16:9 video to be comfortable on a laptop. */
+  video: 'sm:max-w-3xl',
 } as const
 
 export interface ModalProps {

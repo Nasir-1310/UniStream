@@ -859,15 +859,14 @@ function RequestAccessForm({ onSignIn }: { onSignIn: (prefill: string) => void }
               />
             </span>
             <span>
-              আমি{' '}
               <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 ব্যবহারের শর্তাবলি
               </Link>{' '}
               ও{' '}
               <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-indigo-300 hover:text-indigo-200 underline underline-offset-2">
                 প্রাইভেসি পলিসি
-              </Link>{' '}
-              মেনে নিচ্ছি।
+              </Link>
+              -তে সম্মতি দিচ্ছি।
             </span>
           </label>
           <div id={`${agreeId}-error`} aria-live="polite" className="empty:hidden">

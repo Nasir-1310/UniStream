@@ -138,6 +138,14 @@ const SENTENCES: Record<string, string> = {
   'Something went wrong on our side. Please try again in a moment.': 'আমাদের দিকে একটি সমস্যা হয়েছে। একটু পর আবার চেষ্টা করুন।',
 }
 
+/**
+ * A private, friends-only or group video. Only public videos can be
+ * downloaded for now; the link box shows this as a "coming soon" notice
+ * rather than an error (see LinkForm).
+ */
+export const PRIVATE_VIDEO_TEXT =
+  'এটি একটি প্রাইভেট ভিডিও মনে হচ্ছে। প্রাইভেট ভিডিও ডাউনলোডের সুবিধা শীঘ্রই আসছে! আপাতত পাবলিক ভিডিওর লিংক দিন।'
+
 /** Messages with numbers or names in them. */
 const PATTERNS: [RegExp, (...groups: string[]) => string][] = [
   [/(\d+) minutes?\b/g, n => `${n} মিনিট`],
@@ -164,7 +172,10 @@ const PATTERNS: [RegExp, (...groups: string[]) => string][] = [
   [/Unexpected field: ([^.]+)\./g, f => `অপ্রত্যাশিত তথ্য: ${f}।`],
   [/^Use at least (\d+) characters\.$/g, n => `অন্তত ${n}টি অক্ষর দিন।`],
   // Common yt-dlp answers that reach the page unchanged.
-  [/.*\bPrivate video\b.*/gi, () => 'এটি একটি প্রাইভেট ভিডিও। শুধু পাবলিক ভিডিও ডাউনলোড করা যায়।'],
+  // A private video. YouTube says "Private video"; Facebook's page for a
+  // private, friends-only or group video holds no video data, which yt-dlp
+  // reports as "Cannot parse data".
+  [/.*\b(?:Private video|Cannot parse data|This (?:video|post|account) is private)\b.*/gi, () => PRIVATE_VIDEO_TEXT],
   [/.*\b(?:Video unavailable|This video is (?:not available|unavailable))\b.*/gi, () => 'ভিডিওটি পাওয়া যাচ্ছে না (মুছে ফেলা হয়েছে বা আপনার এলাকায় বন্ধ)।'],
   [/.*\bSign in to confirm your age\b.*/gi, () => 'এই ভিডিওতে বয়সসীমা দেওয়া আছে, তাই ডাউনলোড করা যাচ্ছে না।'],
   [/.*\b(?:members-only|Join this channel)\b.*/gi, () => 'এটি মেম্বারশিপ-অনলি ভিডিও, তাই ডাউনলোড করা যাচ্ছে না।'],

@@ -7,10 +7,10 @@
 // reach the API.
 
 import { forwardRef, type FormEvent } from 'react'
-import { Check, ClipboardPaste, Link2, Search, X } from 'lucide-react'
+import { Check, ClipboardPaste, Link2, Lock, Search, X } from 'lucide-react'
 import { PlatformIcon, Spinner, platformStyle } from '@/components/ui'
 import { PLATFORMS, PLATFORM_LABELS, UNSUPPORTED_URL_MESSAGE, validateVideoUrl } from '@/lib/validation'
-import { translateServerText } from '@/lib/serverText'
+import { PRIVATE_VIDEO_TEXT, translateServerText } from '@/lib/serverText'
 import { AnalysisProgressInline, type AnalysisProgress } from './AnalyzingState'
 import { extractLink } from './types'
 
@@ -48,6 +48,8 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
   // Only nag about unsupported sites once the text looks like a link.
   const looksLikeLink = /^\S+\.\S{2,}/.test(trimmed)
   const unsupported = !error && Boolean(check && !check.ok && looksLikeLink)
+  // A private video is not the user's mistake: "coming soon", not an error.
+  const privateVideo = error === PRIVATE_VIDEO_TEXT
   const locked = Boolean(lockedReason)
 
   function submit(event: FormEvent) {
@@ -127,7 +129,13 @@ export const LinkForm = forwardRef<HTMLInputElement, LinkFormProps>(function Lin
 
       {/* Errors are announced; hints are not. */}
       <div id={`${INPUT_ID}-error`} aria-live="polite" className="empty:hidden">
-        {error && <p className="mt-2.5 text-[13px] leading-relaxed text-red-300">{error}</p>}
+        {error && privateVideo && (
+          <div className="mt-2.5 flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5">
+            <Lock className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" aria-hidden="true" />
+            <p className="min-w-0 text-[13px] leading-relaxed text-slate-200">{error}</p>
+          </div>
+        )}
+        {error && !privateVideo && <p className="mt-2.5 text-[13px] leading-relaxed text-red-300">{error}</p>}
       </div>
       {!error && !analyzing && (
         <p

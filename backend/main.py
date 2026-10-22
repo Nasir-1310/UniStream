@@ -74,9 +74,9 @@ class RedactTokens(logging.Filter):
     """Blank `ticket=` and `token=` query values in uvicorn's access log.
 
     EventSource cannot send headers, so the download stream is opened with a
-    ticket in its URL (and the file with a one-time token). Both are
-    short-lived and single-use, but a live credential still has no place in
-    the host's logs.
+    ticket in its URL (and the file with a short-lived token). Both expire
+    within minutes, but a live credential still has no place in the host's
+    logs.
     """
 
     _PATTERN = re.compile(r"((?:^|[?&])(?:token|ticket)=)[^&\s\"]+")

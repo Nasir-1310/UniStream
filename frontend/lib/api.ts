@@ -388,7 +388,7 @@ export interface DownloadProgressEvent {
   position?: number | null
   /** On the first event: private code for downloadResumeUrl() if the stream drops. */
   resume?: string
-  /** On `complete`: one-time token for downloadFileUrl(). */
+  /** On `complete`: file token for downloadFileUrl() (valid 10 minutes). */
   token?: string
   /** On `error`: message to show. */
   error?: string
@@ -723,8 +723,8 @@ export function isDailyLimitError(err: unknown): boolean {
 }
 
 /**
- * URL that saves the finished file (token from the `complete` event; single
- * use, 5 minutes). Straight from the API, not through the /api rewrite: a
+ * URL that saves the finished file (token from the `complete` event; works
+ * for 10 minutes, as Android Chrome requests it again after asking to save). Straight from the API, not through the /api rewrite: a
  * video can be gigabytes, and every byte through the rewrite would also count
  * against the frontend host's bandwidth.
  */

@@ -910,10 +910,18 @@ class DownloadTests(ApiTestCase):
         file_response = self.client.get("/download/file", params={"token": complete["token"]})
         self.assertEqual(file_response.content, b"x" * 2048)
         self.assertEqual(file_response.headers["cache-control"], "no-store")
-        # The file token is single-use.
+        # Android Chrome fetches the file again after asking "Download this
+        # file?": the token keeps working until it expires...
         again = self.client.get("/download/file", params={"token": complete["token"]})
-        self.assertEqual(again.status_code, 404)
-        self.assertEqual(again.json()["detail"], download_router.FILE_GONE_MESSAGE)
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.content, b"x" * 2048)
+        # ...and then the file is gone.
+        entry["expires"] = time.time() - 1
+        expired = self.client.get("/download/file", params={"token": complete["token"]})
+        self.assertEqual(expired.status_code, 410)
+        self.assertEqual(expired.json()["detail"], download_router.FILE_GONE_MESSAGE)
+        self.assertFalse(served_dir.exists())
+        self.assertEqual(self.client.get("/download/file", params={"token": complete["token"]}).status_code, 404)
 
         log = self.logs()[0]
         self.assertEqual(

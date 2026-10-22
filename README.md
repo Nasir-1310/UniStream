@@ -299,7 +299,7 @@ take `Authorization: Bearer <admin token>` from `/admin/auth/login`, or the
 | `POST` | `/video-info` | List a video's formats (YouTube, Facebook, Instagram only) |
 | `POST` | `/download/ticket` | Step 1 of a download (`url`, `format_id`, `ext`, `height?`, `source?`): checks the link and today's limit and returns `{"ticket", "expires_in": 60}`, a single-use ticket |
 | `GET` | `/download/progress?ticket=` | SSE download progress; refusals arrive as an `error` event with `code` = `auth`, `limit`, `platform` or `busy` |
-| `GET` | `/download/file` | Fetch the finished file once (one-time token) |
+| `GET` | `/download/file` | Fetch the finished file (token valid for 10 minutes; Android Chrome fetches it again after asking to save) |
 | `POST` | `/admin/auth/login` | Admin sign-in (`username`, `password`, `remember?`) → `{"token", "username", "must_change_password", "expires_at"}` |
 | `GET` | `/admin/auth/me` | Signed-in admin, whether a new password is required, recovery mode |
 | `POST` | `/admin/auth/change-credentials` | New admin password (and optionally username); other admin sessions end |

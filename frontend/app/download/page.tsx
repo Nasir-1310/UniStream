@@ -11,7 +11,7 @@
 // opens with that ticket, straight to FastAPI because the proxy can buffer it.
 // EventSource cannot send headers, and the session token must never appear in
 // a URL (proxy and access logs), hence the ticket. A finished download arrives
-// as a one-time file token plus the account's updated usage, which feeds the
+// as a short-lived file token plus the account's updated usage, which feeds the
 // quota card and the Navbar pill through the shared session cache.
 
 import { useEffect, useRef, useState } from 'react'

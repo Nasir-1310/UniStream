@@ -5,7 +5,7 @@
 #   POST /download/ticket    — checks the link and today's limit, returns a
 #                              single-use ticket valid for 60 seconds
 #   GET  /download/progress  — SSE stream with real-time yt-dlp progress
-#   GET  /download/file      — serve the finished file via a one-time token
+#   GET  /download/file      — serve the finished file via a short-lived token
 #
 # EventSource cannot send an Authorization header, and a session token in a
 # URL ends up in proxy and access logs, so the stream is opened with a ticket
@@ -120,7 +120,12 @@ _queue = DownloadQueue(MAX_CONCURRENT, MAX_QUEUED)
 
 # Tickets per account and hour; each one is a pre-check against the database.
 TICKETS_PER_USER = (30, 3600)
-FILE_TOKEN_TTL_SECONDS = 300
+# The file token works for every request until it expires, not just once.
+# Android Chrome drops its first request for a file saved from the page,
+# asks "Download this file?", and only after the tap fetches it again; it
+# may also add parallel requests for parts of the file. A single-use token
+# sent all of those a 404, so the phone saved nothing.
+FILE_TOKEN_TTL_SECONDS = 600
 FILE_TOKEN_MAX = 128
 
 TICKET_EXPIRED_MESSAGE = "This download link has expired. Please start the download again."
@@ -129,7 +134,7 @@ FILE_GONE_MESSAGE = (
 )
 
 TEMP_PREFIX = "unistream_"
-# Older than any live download (1-hour stream cap + 5-minute file token).
+# Older than any live download (1-hour stream cap + 10-minute file token).
 STALE_TEMP_SECONDS = 2 * 3600
 
 
@@ -809,7 +814,7 @@ async def download_with_progress(
                 # user, but keep an actionable server-side audit failure.
                 logger.exception("Completed download could not be written to the audit log")
 
-            # Unguessable, single-use and tied to this job and account.
+            # Unguessable, short-lived and tied to this job and account.
             token = secrets.token_urlsafe(32)
             _jobs[f"token:{token}"] = {
                 "filename": str(out_file),
@@ -826,14 +831,15 @@ async def download_with_progress(
                 "done":     True,
             })
 
-            async def _expire_unclaimed_file():
+            async def _expire_file():
+                # The file stays until its token expires, fetched or not.
                 await asyncio.sleep(FILE_TOKEN_TTL_SECONDS)
                 entry = _jobs.pop(f"token:{token}", None)
                 _jobs.pop(job_id, None)
                 if entry:
                     shutil.rmtree(Path(entry["filename"]).parent, ignore_errors=True)
 
-            asyncio.create_task(_expire_unclaimed_file())
+            asyncio.create_task(_expire_file())
 
         except Exception as exc:
             # A failed download is never served, so its partial files go now.
@@ -872,7 +878,8 @@ async def download_with_progress(
 async def serve_download_file(token: str = Query(..., min_length=1, max_length=FILE_TOKEN_MAX)):
     """
     Called by the browser immediately after the SSE stream emits 'complete'.
-    Serves the temp file once, then schedules deletion.
+    Serves the temp file to every request until the token expires (see
+    FILE_TOKEN_TTL_SECONDS); _run_download deletes it then.
     """
     entry = _jobs.get(f"token:{token}")
 
@@ -889,19 +896,7 @@ async def serve_download_file(token: str = Query(..., min_length=1, max_length=F
         _jobs.pop(f"token:{token}", None)
         raise HTTPException(status_code=404, detail=FILE_GONE_MESSAGE)
 
-    # One-time use: remove token immediately
-    _jobs.pop(f"token:{token}", None)
-
     clean_name = _clean_filename(filepath.stem) + filepath.suffix
-
-    async def _cleanup():
-        await asyncio.sleep(30)
-        try:
-            shutil.rmtree(filepath.parent, ignore_errors=True)
-        except Exception:
-            pass
-
-    asyncio.create_task(_cleanup())
 
     return FileResponse(
         path=str(filepath),
